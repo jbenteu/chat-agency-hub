@@ -93,11 +93,9 @@ Deno.serve(async (req) => {
     const { action, instanceName } = body;
 
     const baseUrl = EVOLUTION_API_URL.replace(/\/$/, "");
-    const headers = {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "Accept": "application/json",
       apikey: EVOLUTION_API_KEY,
-      Authorization: `Bearer ${EVOLUTION_API_KEY}`,
     };
 
     const parseEvolutionResponse = async (response: Response, operation: string): Promise<any> => {
