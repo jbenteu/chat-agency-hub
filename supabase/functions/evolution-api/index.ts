@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
       }
 
       // Save instance to DB
-      const { error: dbError } = await supabase.from("whatsapp_instances").insert({
+      const { error: dbError } = await supabaseAdmin.from("whatsapp_instances").insert({
         tenant_id: tenantId,
         instance_name: instanceName,
         instance_id: evoData.instance?.instanceName || instanceName,
