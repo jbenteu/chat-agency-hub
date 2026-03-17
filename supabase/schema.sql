@@ -86,8 +86,9 @@ CREATE TABLE public.activities (
 CREATE TABLE public.whatsapp_instances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID REFERENCES public.tenants(id) ON DELETE CASCADE NOT NULL,
-  instance_name TEXT NOT NULL,
-  instance_id TEXT, -- Evolution API instance ID
+  instance_name TEXT NOT NULL,       -- internal ID sent to Evolution API
+  display_name TEXT,                 -- friendly name visible to the user
+  instance_id TEXT,                  -- Evolution API instance ID
   status TEXT DEFAULT 'disconnected',
   phone_number TEXT,
   qr_code TEXT,

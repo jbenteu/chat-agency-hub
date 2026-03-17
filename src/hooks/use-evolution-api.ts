@@ -91,6 +91,7 @@ export function useEvolutionApi() {
     getConnectionStatus,
     listInstances,
     deleteInstance,
+    updateDisplayName,
   };
 }
 
