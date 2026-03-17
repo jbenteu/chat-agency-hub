@@ -11,6 +11,8 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  console.log("Env check:", { hasUrl: !!Deno.env.get("EVOLUTION_API_URL"), hasKey: !!Deno.env.get("EVOLUTION_API_KEY") });
+
   const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL");
   if (!EVOLUTION_API_URL) {
     return new Response(
