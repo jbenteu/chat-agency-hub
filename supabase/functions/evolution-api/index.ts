@@ -250,7 +250,7 @@ Deno.serve(async (req) => {
       }
 
       // Delete from DB
-      await supabase
+      await supabaseAdmin
         .from("whatsapp_instances")
         .delete()
         .eq("instance_name", instanceName)
