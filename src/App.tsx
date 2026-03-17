@@ -9,6 +9,7 @@ import LoginPage from "@/components/auth/LoginPage";
 import Index from "./pages/Index";
 import CRM from "./pages/CRM";
 import WhatsApp from "./pages/WhatsApp";
+import WhatsAppInbox from "./pages/WhatsAppInbox";
 import SettingsPage from "./pages/Settings";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
