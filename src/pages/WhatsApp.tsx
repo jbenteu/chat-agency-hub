@@ -23,7 +23,7 @@ const WhatsApp = () => {
     useEvolutionApi();
 
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  
   
   const [qrCodeData, setQrCodeData] = useState<{ base64?: string; instanceName?: string } | null>(null);
   const [checkingStatus, setCheckingStatus] = useState<string | null>(null);
