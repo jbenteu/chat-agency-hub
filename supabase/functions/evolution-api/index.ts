@@ -200,7 +200,7 @@ Deno.serve(async (req) => {
       const newStatus = isConnected ? "connected" : "connecting";
 
       // Update status in DB
-      await supabase
+      await supabaseAdmin
         .from("whatsapp_instances")
         .update({ status: newStatus })
         .eq("instance_name", instanceName)
