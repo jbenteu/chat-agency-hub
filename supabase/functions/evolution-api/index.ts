@@ -92,7 +92,11 @@ Deno.serve(async (req) => {
     }
     const { action, instanceName } = body;
 
-    const baseUrl = EVOLUTION_API_URL.replace(/\/$/, "");
+    const normalizedUrl = EVOLUTION_API_URL.trim().replace(/\/$/, "");
+    const baseUrl = normalizedUrl.endsWith("/manager")
+      ? normalizedUrl.slice(0, -"/manager".length)
+      : normalizedUrl;
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       apikey: EVOLUTION_API_KEY,
@@ -150,18 +154,40 @@ Deno.serve(async (req) => {
         );
       }
 
-      const evoData = await requestEvolution(
-        "/instance/create",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            instanceName,
-            integration: "WHATSAPP-BAILEYS",
-            qrcode: true,
-          }),
-        },
-        "create_instance",
-      );
+      const createPayload = JSON.stringify({
+        instanceName,
+        integration: "WHATSAPP-BAILEYS",
+        qrcode: true,
+      });
+
+      const createPaths = ["/instance/create", "/api/instance/create", "/manager/api/instance/create"];
+      let evoData: any = null;
+      let lastCreateError: unknown = null;
+
+      for (const createPath of createPaths) {
+        try {
+          evoData = await requestEvolution(
+            createPath,
+            {
+              method: "POST",
+              body: createPayload,
+            },
+            "create_instance",
+          );
+          break;
+        } catch (error) {
+          lastCreateError = error;
+          const isNotFound = error instanceof Error && error.message.includes("[404]");
+          if (!isNotFound) throw error;
+          console.warn(`Evolution create_instance path failed: ${createPath}`);
+        }
+      }
+
+      if (!evoData) {
+        throw lastCreateError instanceof Error
+          ? lastCreateError
+          : new Error("Evolution API create_instance failed on all known paths");
+      }
 
       // Save instance to DB
       const { error: dbError } = await supabaseAdmin.from("whatsapp_instances").insert({
