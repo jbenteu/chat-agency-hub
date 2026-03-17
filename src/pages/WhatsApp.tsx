@@ -128,41 +128,11 @@ const WhatsApp = () => {
               Gerencie suas instâncias e conversas do WhatsApp
             </p>
           </div>
-          <Button onClick={() => setShowCreateForm(!showCreateForm)} size="sm">
-            <Plus className="mr-1.5 h-4 w-4" />
+          <Button onClick={() => handleCreate()} size="sm" disabled={loading}>
+            {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 h-4 w-4" />}
             Nova Instância
           </Button>
         </div>
-
-        {/* Create Instance Form */}
-        {showCreateForm && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Criar Nova Instância</CardTitle>
-              <CardDescription>
-                Crie uma instância para conectar um número do WhatsApp
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleCreate} className="flex items-end gap-3">
-                <div className="flex-1 space-y-2">
-                  <Label htmlFor="instanceName">Nome da Instância</Label>
-                  <Input
-                    id="instanceName"
-                    placeholder="ex: atendimento-principal"
-                    value={newInstanceName}
-                    onChange={(e) => setNewInstanceName(e.target.value)}
-                    required
-                  />
-                </div>
-                <Button type="submit" disabled={loading}>
-                  {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <QrCode className="mr-1.5 h-4 w-4" />}
-                  Criar e Gerar QR
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        )}
 
         {/* QR Code Display */}
         {qrCodeData?.base64 && (
