@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,6 +10,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  console.log("Env check:", { hasUrl: !!Deno.env.get("EVOLUTION_API_URL"), hasKey: !!Deno.env.get("EVOLUTION_API_KEY") });
 
   const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL");
   if (!EVOLUTION_API_URL) {
@@ -71,8 +73,16 @@ Deno.serve(async (req) => {
   const tenantId = roleData.tenant_id;
 
   try {
-    const body = await req.json();
-    const { action, instanceName, instanceId } = body;
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const { action, instanceName } = body;
 
     const baseUrl = EVOLUTION_API_URL.replace(/\/$/, "");
     const headers = {
