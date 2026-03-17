@@ -90,7 +90,7 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    const { action, instanceName } = body;
+    const { action, instanceName, displayName } = body;
 
     const normalizedUrl = EVOLUTION_API_URL.trim().replace(/\/$/, "");
     const baseUrl = normalizedUrl.endsWith("/manager")
