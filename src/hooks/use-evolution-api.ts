@@ -20,6 +20,37 @@ interface QrCodeData {
   code?: string;
 }
 
+interface Conversation {
+  id: string;
+  tenant_id: string;
+  instance_id: string;
+  contact_id: string | null;
+  remote_jid: string;
+  contact_name: string | null;
+  contact_phone: string | null;
+  last_message: string | null;
+  last_message_at: string | null;
+  unread_count: number;
+  status: string;
+  assigned_to: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface WhatsAppMessage {
+  id: string;
+  tenant_id: string;
+  conversation_id: string;
+  message_id: string | null;
+  direction: "inbound" | "outbound";
+  content: string | null;
+  media_url: string | null;
+  media_type: string | null;
+  status: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
 export function useEvolutionApi() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +114,30 @@ export function useEvolutionApi() {
     [callEvolution]
   );
 
+  const listConversations = useCallback(
+    (instanceId?: string) =>
+      callEvolution({ action: "list_conversations", instanceId }),
+    [callEvolution]
+  );
+
+  const listMessages = useCallback(
+    (conversationId: string) =>
+      callEvolution({ action: "list_messages", conversationId }),
+    [callEvolution]
+  );
+
+  const sendText = useCallback(
+    (instanceName: string, remoteJid: string, text: string) =>
+      callEvolution({ action: "send_text", instanceName, remoteJid, text }),
+    [callEvolution]
+  );
+
+  const sendMedia = useCallback(
+    (instanceName: string, remoteJid: string, mediatype: string, media: string, caption?: string, fileName?: string) =>
+      callEvolution({ action: "send_media", instanceName, remoteJid, mediatype, media, caption, fileName }),
+    [callEvolution]
+  );
+
   return {
     loading,
     error,
@@ -92,7 +147,11 @@ export function useEvolutionApi() {
     listInstances,
     deleteInstance,
     updateDisplayName,
+    listConversations,
+    listMessages,
+    sendText,
+    sendMedia,
   };
 }
 
-export type { EvolutionInstance, QrCodeData };
+export type { EvolutionInstance, QrCodeData, Conversation, WhatsAppMessage };
