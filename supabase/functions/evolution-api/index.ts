@@ -193,6 +193,7 @@ Deno.serve(async (req) => {
       const { error: dbError } = await supabaseAdmin.from("whatsapp_instances").insert({
         tenant_id: tenantId,
         instance_name: instanceName,
+        display_name: (displayName as string) || null,
         instance_id: evoData.instance?.instanceName || instanceName,
         status: "connecting",
         qr_code: evoData.qrcode?.base64 || null,
