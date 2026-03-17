@@ -5,6 +5,7 @@ interface EvolutionInstance {
   id: string;
   tenant_id: string;
   instance_name: string;
+  display_name: string | null;
   instance_id: string | null;
   status: string;
   phone_number: string | null;
@@ -51,7 +52,14 @@ export function useEvolutionApi() {
   }, []);
 
   const createInstance = useCallback(
-    (instanceName: string) => callEvolution({ action: "create_instance", instanceName }),
+    (instanceName: string, displayName?: string) =>
+      callEvolution({ action: "create_instance", instanceName, displayName }),
+    [callEvolution]
+  );
+
+  const updateDisplayName = useCallback(
+    (instanceName: string, displayName: string) =>
+      callEvolution({ action: "update_display_name", instanceName, displayName }),
     [callEvolution]
   );
 
@@ -83,6 +91,7 @@ export function useEvolutionApi() {
     getConnectionStatus,
     listInstances,
     deleteInstance,
+    updateDisplayName,
   };
 }
 

@@ -90,7 +90,7 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    const { action, instanceName } = body;
+    const { action, instanceName, displayName } = body;
 
     const normalizedUrl = EVOLUTION_API_URL.trim().replace(/\/$/, "");
     const baseUrl = normalizedUrl.endsWith("/manager")
@@ -193,6 +193,7 @@ Deno.serve(async (req) => {
       const { error: dbError } = await supabaseAdmin.from("whatsapp_instances").insert({
         tenant_id: tenantId,
         instance_name: instanceName,
+        display_name: (displayName as string) || null,
         instance_id: evoData.instance?.instanceName || instanceName,
         status: "connecting",
         qr_code: evoData.qrcode?.base64 || null,
@@ -318,6 +319,31 @@ Deno.serve(async (req) => {
         .delete()
         .eq("instance_name", instanceName)
         .eq("tenant_id", tenantId);
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Action: update display name
+    if (action === "update_display_name") {
+      if (!instanceName || !displayName) {
+        return new Response(
+          JSON.stringify({ error: "instanceName and displayName are required" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { error: updateError } = await supabaseAdmin
+        .from("whatsapp_instances")
+        .update({ display_name: displayName as string })
+        .eq("instance_name", instanceName)
+        .eq("tenant_id", tenantId);
+
+      if (updateError) {
+        throw new Error(`DB update error: ${updateError.message}`);
+      }
 
       return new Response(
         JSON.stringify({ success: true }),
