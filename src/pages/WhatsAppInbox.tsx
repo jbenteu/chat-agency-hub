@@ -251,7 +251,7 @@ const WhatsAppInbox = () => {
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                onClick={() => navigate("/whatsapp")}
+                onClick={() => navigate("/whatsapp/settings")}
                 title="Gerenciar instâncias"
               >
                 <Plus className="h-4 w-4" />

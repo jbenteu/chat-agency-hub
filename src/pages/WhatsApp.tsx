@@ -89,7 +89,7 @@ const WhatsApp = () => {
             description: "Redirecionando para o gerenciador de conversas…",
           });
           await fetchInstances();
-          navigate("/whatsapp/inbox");
+          navigate("/whatsapp");
         }
       } catch {
         // silently retry on next interval
