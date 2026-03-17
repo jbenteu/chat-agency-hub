@@ -52,7 +52,14 @@ export function useEvolutionApi() {
   }, []);
 
   const createInstance = useCallback(
-    (instanceName: string) => callEvolution({ action: "create_instance", instanceName }),
+    (instanceName: string, displayName?: string) =>
+      callEvolution({ action: "create_instance", instanceName, displayName }),
+    [callEvolution]
+  );
+
+  const updateDisplayName = useCallback(
+    (instanceName: string, displayName: string) =>
+      callEvolution({ action: "update_display_name", instanceName, displayName }),
     [callEvolution]
   );
 
