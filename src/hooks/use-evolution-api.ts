@@ -5,6 +5,7 @@ interface EvolutionInstance {
   id: string;
   tenant_id: string;
   instance_name: string;
+  display_name: string | null;
   instance_id: string | null;
   status: string;
   phone_number: string | null;
