@@ -214,7 +214,7 @@ Deno.serve(async (req) => {
 
     // Action: list instances from DB
     if (action === "list_instances") {
-      const { data: instances, error: listError } = await supabase
+      const { data: instances, error: listError } = await supabaseAdmin
         .from("whatsapp_instances")
         .select("*")
         .eq("tenant_id", tenantId)
