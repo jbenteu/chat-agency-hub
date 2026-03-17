@@ -192,8 +192,8 @@ const WhatsApp = () => {
               <p className="text-xs text-muted-foreground/70 mt-1 mb-4">
                 Crie uma instância e escaneie o QR Code para começar
               </p>
-              <Button onClick={() => setShowCreateForm(true)} variant="outline" size="sm">
-                <Plus className="mr-1.5 h-4 w-4" />
+              <Button onClick={() => handleCreate()} variant="outline" size="sm" disabled={loading}>
+                {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 h-4 w-4" />}
                 Criar Instância
               </Button>
             </CardContent>
