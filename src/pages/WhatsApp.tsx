@@ -275,14 +275,10 @@ const WhatsApp = () => {
                   <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
                   Atualizar QR
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => handleCheckStatus(qrCodeData!.instanceName!)}
-                  disabled={loading}
-                >
-                  <Wifi className="mr-1.5 h-3.5 w-3.5" />
-                  Verificar Conexão
-                </Button>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Aguardando leitura do QR Code…
               </div>
             </CardContent>
           </Card>
