@@ -23,6 +23,7 @@ import {
 
 const WhatsApp = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const {
     loading,
     createInstance,
@@ -50,6 +51,9 @@ const WhatsApp = () => {
   const [renameInstance, setRenameInstance] = useState<EvolutionInstance | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
+  // Auto-poll ref
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const fetchInstances = useCallback(async () => {
     try {
       const data = await listInstances();
@@ -64,6 +68,38 @@ const WhatsApp = () => {
   useEffect(() => {
     fetchInstances();
   }, []);
+
+  // Auto-poll connection status while QR is displayed
+  useEffect(() => {
+    if (!qrCodeData?.instanceName) {
+      if (pollRef.current) clearInterval(pollRef.current);
+      return;
+    }
+
+    const instanceName = qrCodeData.instanceName;
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const data = await getConnectionStatus(instanceName);
+        if (data.connected) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setQrCodeData(null);
+          toast({
+            title: "WhatsApp conectado!",
+            description: "Redirecionando para o gerenciador de conversas…",
+          });
+          await fetchInstances();
+          navigate("/whatsapp/inbox");
+        }
+      } catch {
+        // silently retry on next interval
+      }
+    }, 5000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [qrCodeData?.instanceName]);
 
   const getDisplayLabel = (inst: EvolutionInstance) =>
     inst.display_name || inst.phone_number || "Instância WhatsApp";
