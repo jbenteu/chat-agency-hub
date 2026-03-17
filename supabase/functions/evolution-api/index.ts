@@ -95,7 +95,67 @@ Deno.serve(async (req) => {
     const baseUrl = EVOLUTION_API_URL.replace(/\/$/, "");
     const headers = {
       "Content-Type": "application/json",
+      "Accept": "application/json",
       apikey: EVOLUTION_API_KEY,
+      Authorization: `Bearer ${EVOLUTION_API_KEY}`,
+    };
+
+    const parseEvolutionResponse = async (response: Response, operation: string): Promise<any> => {
+      const responseText = await response.text();
+      const contentType = response.headers.get("content-type") || "unknown";
+
+      let parsed: any = null;
+      try {
+        parsed = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        parsed = null;
+      }
+
+      if (!parsed) {
+        const snippet = responseText.substring(0, 180).replace(/\s+/g, " ").trim();
+        throw new Error(
+          `Evolution API ${operation} invalid response [${response.status}] (${contentType}): ${snippet || "empty body"}`,
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(`Evolution API ${operation} failed [${response.status}]: ${JSON.stringify(parsed)}`);
+      }
+
+      return parsed;
+    };
+
+    const requestEvolution = async (
+      path: string,
+      init: RequestInit,
+      operation: string,
+    ): Promise<any> => {
+      const primaryUrl = `${baseUrl}${path}`;
+      const primaryRes = await fetch(primaryUrl, {
+        ...init,
+        headers: {
+          ...headers,
+          ...(init.headers || {}),
+        },
+      });
+
+      try {
+        return await parseEvolutionResponse(primaryRes, operation);
+      } catch (primaryError) {
+        const retryable404 = primaryRes.status === 404;
+        if (!retryable404) throw primaryError;
+
+        const retryUrl = `${primaryUrl}${primaryUrl.includes("?") ? "&" : "?"}apikey=${encodeURIComponent(EVOLUTION_API_KEY)}`;
+        const retryRes = await fetch(retryUrl, {
+          ...init,
+          headers: {
+            ...headers,
+            ...(init.headers || {}),
+          },
+        });
+
+        return await parseEvolutionResponse(retryRes, `${operation} (retry with query apikey)`);
+      }
     };
 
     // Action: create instance
@@ -107,27 +167,18 @@ Deno.serve(async (req) => {
         );
       }
 
-      const evoRes = await fetch(`${baseUrl}/instance/create`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          instanceName,
-          integration: "WHATSAPP-BAILEYS",
-          qrcode: true,
-        }),
-      });
-
-      const evoText = await evoRes.text();
-      let evoData: Record<string, unknown>;
-      try {
-        evoData = JSON.parse(evoText);
-      } catch {
-        console.error("Evolution API returned non-JSON:", evoText.substring(0, 500));
-        throw new Error(`Evolution API returned invalid response (status ${evoRes.status}). Check EVOLUTION_API_URL configuration.`);
-      }
-      if (!evoRes.ok) {
-        throw new Error(`Evolution API create failed [${evoRes.status}]: ${JSON.stringify(evoData)}`);
-      }
+      const evoData = await requestEvolution(
+        "/instance/create",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            instanceName,
+            integration: "WHATSAPP-BAILEYS",
+            qrcode: true,
+          }),
+        },
+        "create_instance",
+      );
 
       // Save instance to DB
       const { error: dbError } = await supabaseAdmin.from("whatsapp_instances").insert({
@@ -161,22 +212,13 @@ Deno.serve(async (req) => {
         );
       }
 
-      const evoRes = await fetch(`${baseUrl}/instance/connect/${instanceName}`, {
-        method: "GET",
-        headers,
-      });
-
-      const evoText = await evoRes.text();
-      let evoData: Record<string, unknown>;
-      try {
-        evoData = JSON.parse(evoText);
-      } catch {
-        console.error("Evolution API QR returned non-JSON:", evoText.substring(0, 500));
-        throw new Error(`Evolution API returned invalid response (status ${evoRes.status}). Check EVOLUTION_API_URL.`);
-      }
-      if (!evoRes.ok) {
-        throw new Error(`Evolution API QR failed [${evoRes.status}]: ${JSON.stringify(evoData)}`);
-      }
+      const evoData = await requestEvolution(
+        `/instance/connect/${instanceName}`,
+        {
+          method: "GET",
+        },
+        "get_qrcode",
+      );
 
       // Update QR in DB
       await supabaseAdmin
@@ -200,22 +242,13 @@ Deno.serve(async (req) => {
         );
       }
 
-      const evoRes = await fetch(`${baseUrl}/instance/connectionState/${instanceName}`, {
-        method: "GET",
-        headers,
-      });
-
-      const evoText = await evoRes.text();
-      let evoData: Record<string, unknown>;
-      try {
-        evoData = JSON.parse(evoText);
-      } catch {
-        console.error("Evolution API status returned non-JSON:", evoText.substring(0, 500));
-        throw new Error(`Evolution API returned invalid response (status ${evoRes.status}). Check EVOLUTION_API_URL.`);
-      }
-      if (!evoRes.ok) {
-        throw new Error(`Evolution API status failed [${evoRes.status}]: ${JSON.stringify(evoData)}`);
-      }
+      const evoData = await requestEvolution(
+        `/instance/connectionState/${instanceName}`,
+        {
+          method: "GET",
+        },
+        "connection_status",
+      );
 
       const isConnected = evoData.instance?.state === "open";
       const newStatus = isConnected ? "connected" : "connecting";
