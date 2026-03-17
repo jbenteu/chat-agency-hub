@@ -326,6 +326,125 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Action: send text message
+    if (action === "send_text") {
+      const { remoteJid, text } = body as { remoteJid?: string; text?: string; [k: string]: unknown };
+      if (!instanceName || !remoteJid || !text) {
+        return new Response(
+          JSON.stringify({ error: "instanceName, remoteJid, and text are required" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const evoData = await requestEvolution(
+        `/message/sendText/${instanceName}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ number: remoteJid, text }),
+        },
+        "send_text",
+      );
+
+      return new Response(
+        JSON.stringify({ success: true, data: evoData }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Action: send media (image, audio, video, document)
+    if (action === "send_media") {
+      const { remoteJid, mediatype, media, caption, fileName } = body as {
+        remoteJid?: string;
+        mediatype?: string;
+        media?: string;
+        caption?: string;
+        fileName?: string;
+        [k: string]: unknown;
+      };
+      if (!instanceName || !remoteJid || !mediatype || !media) {
+        return new Response(
+          JSON.stringify({ error: "instanceName, remoteJid, mediatype, and media are required" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const sendBody: Record<string, unknown> = {
+        number: remoteJid,
+        mediatype,
+        media,
+      };
+      if (caption) sendBody.caption = caption;
+      if (fileName) sendBody.fileName = fileName;
+
+      const evoData = await requestEvolution(
+        `/message/sendMedia/${instanceName}`,
+        {
+          method: "POST",
+          body: JSON.stringify(sendBody),
+        },
+        "send_media",
+      );
+
+      return new Response(
+        JSON.stringify({ success: true, data: evoData }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Action: fetch conversations from DB
+    if (action === "list_conversations") {
+      const { instanceId: filterInstanceId } = body as { instanceId?: string; [k: string]: unknown };
+      
+      let query = supabaseAdmin
+        .from("whatsapp_conversations")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("last_message_at", { ascending: false });
+
+      if (filterInstanceId) {
+        query = query.eq("instance_id", filterInstanceId);
+      }
+
+      const { data: conversations, error: convErr } = await query;
+      if (convErr) throw new Error(`DB error: ${convErr.message}`);
+
+      return new Response(
+        JSON.stringify({ success: true, conversations: conversations || [] }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Action: fetch messages for a conversation
+    if (action === "list_messages") {
+      const { conversationId } = body as { conversationId?: string; [k: string]: unknown };
+      if (!conversationId) {
+        return new Response(
+          JSON.stringify({ error: "conversationId is required" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { data: messages, error: msgErr } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .select("*")
+        .eq("conversation_id", conversationId)
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: true });
+
+      if (msgErr) throw new Error(`DB error: ${msgErr.message}`);
+
+      // Mark as read
+      await supabaseAdmin
+        .from("whatsapp_conversations")
+        .update({ unread_count: 0 })
+        .eq("id", conversationId);
+
+      return new Response(
+        JSON.stringify({ success: true, messages: messages || [] }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Action: update display name
     if (action === "update_display_name") {
       if (!instanceName || !displayName) {
