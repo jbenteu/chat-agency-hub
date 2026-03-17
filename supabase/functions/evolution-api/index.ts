@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
       }
 
       // Update QR in DB
-      await supabase
+      await supabaseAdmin
         .from("whatsapp_instances")
         .update({ qr_code: evoData.base64 || null, status: "connecting" })
         .eq("instance_name", instanceName)
