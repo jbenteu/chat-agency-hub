@@ -40,9 +40,15 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  // Client with user's JWT for auth validation
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     global: { headers: { Authorization: authHeader } },
   });
+
+  // Admin client to bypass RLS for tenant lookup
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
   const token = authHeader.replace("Bearer ", "");
   const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
@@ -55,13 +61,15 @@ Deno.serve(async (req) => {
 
   const userId = claimsData.claims.sub as string;
 
-  // Get user's tenant
-  const { data: roleData } = await supabase
+  // Get user's tenant using admin client (bypasses RLS)
+  const { data: roleData, error: roleError } = await supabaseAdmin
     .from("user_roles")
     .select("tenant_id")
     .eq("user_id", userId)
     .limit(1)
     .single();
+
+  console.log("Tenant lookup:", { userId, roleData, roleError: roleError?.message });
 
   if (!roleData?.tenant_id) {
     return new Response(
@@ -115,7 +123,7 @@ Deno.serve(async (req) => {
       }
 
       // Save instance to DB
-      const { error: dbError } = await supabase.from("whatsapp_instances").insert({
+      const { error: dbError } = await supabaseAdmin.from("whatsapp_instances").insert({
         tenant_id: tenantId,
         instance_name: instanceName,
         instance_id: evoData.instance?.instanceName || instanceName,
@@ -157,7 +165,7 @@ Deno.serve(async (req) => {
       }
 
       // Update QR in DB
-      await supabase
+      await supabaseAdmin
         .from("whatsapp_instances")
         .update({ qr_code: evoData.base64 || null, status: "connecting" })
         .eq("instance_name", instanceName)
@@ -192,7 +200,7 @@ Deno.serve(async (req) => {
       const newStatus = isConnected ? "connected" : "connecting";
 
       // Update status in DB
-      await supabase
+      await supabaseAdmin
         .from("whatsapp_instances")
         .update({ status: newStatus })
         .eq("instance_name", instanceName)
@@ -206,7 +214,7 @@ Deno.serve(async (req) => {
 
     // Action: list instances from DB
     if (action === "list_instances") {
-      const { data: instances, error: listError } = await supabase
+      const { data: instances, error: listError } = await supabaseAdmin
         .from("whatsapp_instances")
         .select("*")
         .eq("tenant_id", tenantId)
@@ -242,7 +250,7 @@ Deno.serve(async (req) => {
       }
 
       // Delete from DB
-      await supabase
+      await supabaseAdmin
         .from("whatsapp_instances")
         .delete()
         .eq("instance_name", instanceName)
