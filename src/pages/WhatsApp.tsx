@@ -182,7 +182,7 @@ const WhatsApp = () => {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </CardContent>
           </Card>
-        ) : instances.length === 0 && !showCreateForm ? (
+        ) : instances.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16">
               <MessageCircle className="mb-4 h-12 w-12 text-muted-foreground/50" />
