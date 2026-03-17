@@ -46,20 +46,17 @@ const WhatsApp = () => {
     fetchInstances();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = newInstanceName.trim().replace(/\s+/g, "-").toLowerCase();
-    if (!name) return;
+  const handleCreate = async () => {
+    const name = `inst-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
     try {
       const data = await createInstance(name);
-      toast({ title: "Instância criada!", description: `"${name}" foi criada com sucesso.` });
+      toast({ title: "Instância criada!", description: "Escaneie o QR Code para conectar." });
 
       if (data.qrcode?.base64) {
         setQrCodeData({ base64: data.qrcode.base64, instanceName: name });
       }
 
-      setNewInstanceName("");
       setShowCreateForm(false);
       await fetchInstances();
     } catch (err: any) {
