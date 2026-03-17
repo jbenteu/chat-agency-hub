@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useEvolutionApi, type EvolutionInstance } from "@/hooks/use-evolution-api";
@@ -25,8 +23,8 @@ const WhatsApp = () => {
     useEvolutionApi();
 
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newInstanceName, setNewInstanceName] = useState("");
+  
+  
   const [qrCodeData, setQrCodeData] = useState<{ base64?: string; instanceName?: string } | null>(null);
   const [checkingStatus, setCheckingStatus] = useState<string | null>(null);
   const [loadingInstances, setLoadingInstances] = useState(true);
@@ -46,21 +44,18 @@ const WhatsApp = () => {
     fetchInstances();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = newInstanceName.trim().replace(/\s+/g, "-").toLowerCase();
-    if (!name) return;
+  const handleCreate = async () => {
+    const name = `inst-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
     try {
       const data = await createInstance(name);
-      toast({ title: "Instância criada!", description: `"${name}" foi criada com sucesso.` });
+      toast({ title: "Instância criada!", description: "Escaneie o QR Code para conectar." });
 
       if (data.qrcode?.base64) {
         setQrCodeData({ base64: data.qrcode.base64, instanceName: name });
       }
 
-      setNewInstanceName("");
-      setShowCreateForm(false);
+      
       await fetchInstances();
     } catch (err: any) {
       toast({ title: "Erro ao criar instância", description: err.message, variant: "destructive" });
@@ -131,41 +126,11 @@ const WhatsApp = () => {
               Gerencie suas instâncias e conversas do WhatsApp
             </p>
           </div>
-          <Button onClick={() => setShowCreateForm(!showCreateForm)} size="sm">
-            <Plus className="mr-1.5 h-4 w-4" />
+          <Button onClick={() => handleCreate()} size="sm" disabled={loading}>
+            {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 h-4 w-4" />}
             Nova Instância
           </Button>
         </div>
-
-        {/* Create Instance Form */}
-        {showCreateForm && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Criar Nova Instância</CardTitle>
-              <CardDescription>
-                Crie uma instância para conectar um número do WhatsApp
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleCreate} className="flex items-end gap-3">
-                <div className="flex-1 space-y-2">
-                  <Label htmlFor="instanceName">Nome da Instância</Label>
-                  <Input
-                    id="instanceName"
-                    placeholder="ex: atendimento-principal"
-                    value={newInstanceName}
-                    onChange={(e) => setNewInstanceName(e.target.value)}
-                    required
-                  />
-                </div>
-                <Button type="submit" disabled={loading}>
-                  {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <QrCode className="mr-1.5 h-4 w-4" />}
-                  Criar e Gerar QR
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        )}
 
         {/* QR Code Display */}
         {qrCodeData?.base64 && (
@@ -217,7 +182,7 @@ const WhatsApp = () => {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </CardContent>
           </Card>
-        ) : instances.length === 0 && !showCreateForm ? (
+        ) : instances.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16">
               <MessageCircle className="mb-4 h-12 w-12 text-muted-foreground/50" />
@@ -227,8 +192,8 @@ const WhatsApp = () => {
               <p className="text-xs text-muted-foreground/70 mt-1 mb-4">
                 Crie uma instância e escaneie o QR Code para começar
               </p>
-              <Button onClick={() => setShowCreateForm(true)} variant="outline" size="sm">
-                <Plus className="mr-1.5 h-4 w-4" />
+              <Button onClick={() => handleCreate()} variant="outline" size="sm" disabled={loading}>
+                {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 h-4 w-4" />}
                 Criar Instância
               </Button>
             </CardContent>
