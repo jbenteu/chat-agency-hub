@@ -55,7 +55,7 @@ const WhatsApp = () => {
         setQrCodeData({ base64: data.qrcode.base64, instanceName: name });
       }
 
-      setShowCreateForm(false);
+      
       await fetchInstances();
     } catch (err: any) {
       toast({ title: "Erro ao criar instância", description: err.message, variant: "destructive" });
