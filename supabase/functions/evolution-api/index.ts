@@ -128,8 +128,9 @@ Deno.serve(async (req) => {
       init: RequestInit,
       operation: string,
     ): Promise<any> => {
-      const primaryUrl = `${baseUrl}${path}`;
-      const primaryRes = await fetch(primaryUrl, {
+      const url = `${baseUrl}${path}`;
+      console.log(`Evolution API request: ${init.method || "GET"} ${url}`);
+      const res = await fetch(url, {
         ...init,
         headers: {
           ...headers,
@@ -137,23 +138,7 @@ Deno.serve(async (req) => {
         },
       });
 
-      try {
-        return await parseEvolutionResponse(primaryRes, operation);
-      } catch (primaryError) {
-        const retryable404 = primaryRes.status === 404;
-        if (!retryable404) throw primaryError;
-
-        const retryUrl = `${primaryUrl}${primaryUrl.includes("?") ? "&" : "?"}apikey=${encodeURIComponent(EVOLUTION_API_KEY)}`;
-        const retryRes = await fetch(retryUrl, {
-          ...init,
-          headers: {
-            ...headers,
-            ...(init.headers || {}),
-          },
-        });
-
-        return await parseEvolutionResponse(retryRes, `${operation} (retry with query apikey)`);
-      }
+      return await parseEvolutionResponse(res, operation);
     };
 
     // Action: create instance
