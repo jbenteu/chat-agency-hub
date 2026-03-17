@@ -117,7 +117,14 @@ Deno.serve(async (req) => {
         }),
       });
 
-      const evoData = await evoRes.json();
+      const evoText = await evoRes.text();
+      let evoData: Record<string, unknown>;
+      try {
+        evoData = JSON.parse(evoText);
+      } catch {
+        console.error("Evolution API returned non-JSON:", evoText.substring(0, 500));
+        throw new Error(`Evolution API returned invalid response (status ${evoRes.status}). Check EVOLUTION_API_URL configuration.`);
+      }
       if (!evoRes.ok) {
         throw new Error(`Evolution API create failed [${evoRes.status}]: ${JSON.stringify(evoData)}`);
       }
