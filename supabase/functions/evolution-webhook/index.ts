@@ -184,19 +184,23 @@ Deno.serve(async (req) => {
       } else {
         contactId = conversation.contact_id;
 
-        // Update conversation
+        // Update conversation — for groups don't overwrite name with individual pushName
+        const updateData: Record<string, unknown> = {
+          last_message: isGroup ? `${pushName}: ${content}` : content,
+          last_message_at: new Date().toISOString(),
+          unread_count: fromMe ? 0 : (conversation.unread_count || 0) + 1,
+        };
+        if (!isGroup) {
+          updateData.contact_name = pushName;
+        }
+
         await supabaseAdmin
           .from("whatsapp_conversations")
-          .update({
-            last_message: content,
-            last_message_at: new Date().toISOString(),
-            contact_name: pushName,
-            unread_count: fromMe ? 0 : (conversation.unread_count || 0) + 1,
-          })
+          .update(updateData)
           .eq("id", conversation.id);
 
-        // Update contact name if changed
-        if (contactId) {
+        // Update contact name if changed (only for individual chats)
+        if (contactId && !isGroup) {
           await supabaseAdmin
             .from("contacts")
             .update({ name: pushName })
@@ -205,17 +209,18 @@ Deno.serve(async (req) => {
       }
 
       if (conversation) {
-        // Insert message
+        // Insert message — for groups, include sender info in metadata
+        const participant = isGroup ? (data.key?.participant || data.participant || null) : null;
         await supabaseAdmin.from("whatsapp_messages").insert({
           tenant_id: tenantId,
           conversation_id: conversation.id,
           message_id: messageId,
           direction,
-          content,
+          content: isGroup && !fromMe ? `${pushName}: ${content}` : content,
           media_url: mediaUrl || null,
           media_type: mediaType || null,
           status: fromMe ? "sent" : "received",
-          metadata: { pushName, key },
+          metadata: { pushName, key: data.key, participant, isGroup },
         });
       }
 
