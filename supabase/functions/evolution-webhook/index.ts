@@ -81,7 +81,8 @@ const unwrapMessageContent = (message: Record<string, any> | null | undefined): 
   return current;
 };
 
-const parseMessagePayload = (message: Record<string, any>) => {
+const parseMessagePayload = (entry: Record<string, any>, data: Record<string, any>) => {
+  const message = entry?.message || data?.message || {};
   const contentNode = unwrapMessageContent(message);
 
   let content = "";
