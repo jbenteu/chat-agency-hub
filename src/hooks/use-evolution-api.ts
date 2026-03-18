@@ -33,6 +33,7 @@ interface Conversation {
   unread_count: number;
   status: string;
   assigned_to: string | null;
+  profile_picture_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +47,10 @@ interface WhatsAppMessage {
   content: string | null;
   media_url: string | null;
   media_type: string | null;
+  media_mime_type: string | null;
+  media_thumbnail: string | null;
+  media_width: number | null;
+  media_height: number | null;
   status: string;
   metadata: Record<string, unknown>;
   created_at: string;

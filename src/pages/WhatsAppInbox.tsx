@@ -203,6 +203,18 @@ const WhatsAppInbox = () => {
       const convs = await queryConversations(selectedInstanceId);
       setConversations(convs);
       setCachedConversations(selectedInstanceId, convs);
+      // Seed profile pics from DB-stored profile_picture_url
+      const picUpdates: Record<string, string> = {};
+      for (const c of convs) {
+        if (c.profile_picture_url && !profilePicsResolvedRef.current.has(c.remote_jid)) {
+          picUpdates[c.remote_jid] = c.profile_picture_url;
+          setCachedProfilePic(c.remote_jid, c.profile_picture_url);
+          profilePicsResolvedRef.current.add(c.remote_jid);
+        }
+      }
+      if (Object.keys(picUpdates).length > 0) {
+        setProfilePics((prev) => ({ ...prev, ...picUpdates }));
+      }
       updateBootstrapProgress(88, "Aplicando sincronização inicial…");
       if (!silent) completeBootstrap();
     } catch {
@@ -659,7 +671,8 @@ const WhatsAppInbox = () => {
     const optimisticMessage: WhatsAppMessage = {
       id: tempId, tenant_id: selectedConv.tenant_id, conversation_id: selectedConv.id,
       message_id: null, direction: "outbound", content: payloadText, media_url: null,
-      media_type: null, status: "pending",
+      media_type: null, media_mime_type: null, media_thumbnail: null, media_width: null, media_height: null,
+      status: "pending",
       metadata: { optimistic: true, quotedMessageId: currentReply?.messageId || null, quotedContent: currentReply?.content || null },
       created_at: now,
     };
@@ -728,6 +741,10 @@ const WhatsAppInbox = () => {
         content: previewText,
         media_url: previewMediaUrl,
         media_type: mediatype,
+        media_mime_type: file.type || null,
+        media_thumbnail: null,
+        media_width: null,
+        media_height: null,
         status: "pending",
         metadata: { optimistic: true, fileName: file.name },
         created_at: now,
@@ -1031,7 +1048,7 @@ const WhatsAppInbox = () => {
                   <button key={c.id} onClick={() => { setSelectedConv(c); setShowContactPanel(false); setReplyTarget(null); setContactDetails(null); setEditingContact(false); setInviteLink(null); }}
                     className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 ${selectedConv?.id === c.id ? "bg-muted" : ""}`}>
                     <Avatar className="h-9 w-9 shrink-0">
-                      {profilePics[c.remote_jid] && <AvatarImage src={profilePics[c.remote_jid]} alt={c.contact_name || ""} />}
+                      {(profilePics[c.remote_jid] || c.profile_picture_url) && <AvatarImage src={profilePics[c.remote_jid] || c.profile_picture_url!} alt={c.contact_name || ""} />}
                       <AvatarFallback className="bg-primary/10 text-xs text-primary">
                         {isGroupJid(c.remote_jid) ? <Users className="h-4 w-4" /> : getInitials(c.contact_name)}
                       </AvatarFallback>
@@ -1129,6 +1146,9 @@ const WhatsAppInbox = () => {
                                   instanceName={currentInstName}
                                   remoteJid={selectedConv.remote_jid}
                                   isOutbound={isOutbound}
+                                  mediaThumbnail={msg.media_thumbnail}
+                                  mediaWidth={msg.media_width}
+                                  mediaHeight={msg.media_height}
                                 />
                               )}
                               {msg.media_type === "document" && (msg.media_url || msg.message_id) && (

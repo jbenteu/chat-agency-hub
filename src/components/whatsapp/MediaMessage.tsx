@@ -13,6 +13,9 @@ interface MediaMessageProps {
   instanceName: string;
   remoteJid: string;
   isOutbound: boolean;
+  mediaThumbnail?: string | null;
+  mediaWidth?: number | null;
+  mediaHeight?: number | null;
 }
 
 function isExpirableUrl(url: string): boolean {
@@ -114,7 +117,7 @@ function AudioPlayer({ src, isOutbound }: { src: string; isOutbound: boolean }) 
   );
 }
 
-export function MediaMessage({ messageId, mediaUrl, mediaType, content, instanceName, remoteJid, isOutbound }: MediaMessageProps) {
+export function MediaMessage({ messageId, mediaUrl, mediaType, content, instanceName, remoteJid, isOutbound, mediaThumbnail, mediaWidth, mediaHeight }: MediaMessageProps) {
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -206,6 +209,19 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   };
 
   if (loading) {
+    // Show thumbnail as placeholder while loading full media
+    if (mediaThumbnail && (mediaType === "image" || mediaType === "video")) {
+      const thumbSrc = mediaThumbnail.startsWith("data:") ? mediaThumbnail : `data:image/jpeg;base64,${mediaThumbnail}`;
+      return (
+        <div className="relative mb-1">
+          <img src={thumbSrc} alt="Carregando…" className="max-w-full rounded-lg opacity-60 blur-[2px]"
+            style={mediaWidth && mediaHeight ? { aspectRatio: `${mediaWidth}/${mediaHeight}`, maxHeight: 300 } : undefined} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-white drop-shadow" />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="mb-1 flex items-center justify-center gap-2 rounded-lg bg-background/10 p-4">
         <Loader2 className="h-4 w-4 animate-spin" />
