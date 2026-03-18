@@ -536,6 +536,37 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Action: get profile picture
+    if (action === "get_profile_picture") {
+      const { remoteJid } = body as { remoteJid?: string; [k: string]: unknown };
+      if (!instanceName || !remoteJid) {
+        return new Response(
+          JSON.stringify({ error: "instanceName and remoteJid are required" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      try {
+        const evoData = await requestEvolution(
+          `/chat/fetchProfilePictureUrl/${instanceName}`,
+          {
+            method: "POST",
+            body: JSON.stringify({ number: remoteJid }),
+          },
+          "get_profile_picture",
+        );
+        return new Response(
+          JSON.stringify({ success: true, profilePictureUrl: evoData?.profilePictureUrl || evoData?.picture || null }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch {
+        return new Response(
+          JSON.stringify({ success: true, profilePictureUrl: null }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     return new Response(
       JSON.stringify({ error: `Unknown action: ${action}` }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
