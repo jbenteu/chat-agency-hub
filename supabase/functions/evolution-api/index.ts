@@ -55,10 +55,12 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) return jsonResponse({ error: "Unauthorized" }, 401);
 
-  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: authHeader } } });
+  const token = authHeader.replace("Bearer ", "");
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  const { data: userData, error: userError } = await userClient.auth.getUser();
+  // Validate token by passing it explicitly to getUser
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: authHeader } } });
+  const { data: userData, error: userError } = await userClient.auth.getUser(token);
   if (userError || !userData?.user?.id) return jsonResponse({ error: "Invalid token" }, 401);
 
   const userId = userData.user.id;

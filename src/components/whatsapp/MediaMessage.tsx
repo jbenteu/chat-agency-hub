@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Image as ImageIcon, FileText, Download, Play, Volume2 } from "lucide-react";
+import { Loader2, Image as ImageIcon, FileText, Download, Play, Pause, Volume2 } from "lucide-react";
 
 // Module-level cache for downloaded media
 const mediaCache = new Map<string, string>();
@@ -15,11 +15,103 @@ interface MediaMessageProps {
   isOutbound: boolean;
 }
 
-/**
- * Detects if a URL is a WhatsApp CDN URL (which expires quickly)
- */
 function isExpirableUrl(url: string): boolean {
-  return url.includes("mmg.whatsapp.net") || url.includes("media.whatsapp") || url.includes("enc.") ;
+  return url.includes("mmg.whatsapp.net") || url.includes("media.whatsapp") || url.includes("enc.");
+}
+
+// ── WhatsApp-style Audio Player ──
+function AudioPlayer({ src, isOutbound }: { src: string; isOutbound: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [waveform] = useState(() =>
+    Array.from({ length: 28 }, () => 0.15 + Math.random() * 0.85)
+  );
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onLoaded = () => setDuration(audio.duration || 0);
+    const onTime = () => setCurrentTime(audio.currentTime || 0);
+    const onEnded = () => { setPlaying(false); setCurrentTime(0); };
+    audio.addEventListener("loadedmetadata", onLoaded);
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("ended", onEnded);
+    return () => {
+      audio.removeEventListener("loadedmetadata", onLoaded);
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("ended", onEnded);
+    };
+  }, [src]);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (playing) { audio.pause(); } else { audio.play().catch(() => {}); }
+    setPlaying(!playing);
+  };
+
+  const progress = duration > 0 ? currentTime / duration : 0;
+  const formatTime = (t: number) => {
+    if (!t || !isFinite(t)) return "0:00";
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    audio.currentTime = pct * duration;
+    setCurrentTime(pct * duration);
+  };
+
+  return (
+    <div className={`mb-1 flex items-center gap-2 rounded-xl px-3 py-2 min-w-[220px] max-w-[280px] ${
+      isOutbound ? "bg-primary-foreground/10" : "bg-primary/10"
+    }`}>
+      <audio ref={audioRef} src={src} preload="metadata" />
+      <button
+        onClick={togglePlay}
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+          isOutbound
+            ? "bg-primary-foreground/20 hover:bg-primary-foreground/30 text-primary-foreground"
+            : "bg-primary/20 hover:bg-primary/30 text-primary"
+        }`}
+      >
+        {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
+      </button>
+      <div className="flex flex-1 flex-col gap-1">
+        {/* Waveform */}
+        <div className="flex items-end gap-[2px] h-5 cursor-pointer" onClick={handleSeek}>
+          {waveform.map((h, i) => {
+            const barProgress = i / waveform.length;
+            const isActive = barProgress <= progress;
+            return (
+              <div
+                key={i}
+                className={`w-[3px] rounded-full transition-colors ${
+                  isActive
+                    ? isOutbound ? "bg-primary-foreground/80" : "bg-primary/80"
+                    : isOutbound ? "bg-primary-foreground/25" : "bg-primary/25"
+                }`}
+                style={{ height: `${h * 100}%` }}
+              />
+            );
+          })}
+        </div>
+        {/* Time */}
+        <span className={`text-[10px] ${
+          isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"
+        }`}>
+          {playing || currentTime > 0 ? formatTime(currentTime) : formatTime(duration)}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function MediaMessage({ messageId, mediaUrl, mediaType, content, instanceName, remoteJid, isOutbound }: MediaMessageProps) {
@@ -29,27 +121,28 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   const fetchedRef = useRef(false);
 
   useEffect(() => {
-    // If media_url is a base64 or a non-expirable URL, use directly
-    if (mediaUrl && !isExpirableUrl(mediaUrl)) {
-      setResolvedUrl(mediaUrl);
-      return;
-    }
+    // Reset state on prop change
+    fetchedRef.current = false;
+    setError(false);
+    setResolvedUrl(null);
 
-    // If it's base64 data, use directly
     if (mediaUrl && mediaUrl.startsWith("data:")) {
       setResolvedUrl(mediaUrl);
       return;
     }
 
-    // Check cache
+    if (mediaUrl && !isExpirableUrl(mediaUrl)) {
+      setResolvedUrl(mediaUrl);
+      return;
+    }
+
     const cacheKey = messageId || mediaUrl || "";
     if (mediaCache.has(cacheKey)) {
       setResolvedUrl(mediaCache.get(cacheKey)!);
       return;
     }
 
-    // Need to fetch via Evolution API
-    if (!messageId || !instanceName || fetchedRef.current) return;
+    if (!messageId || !instanceName) return;
     fetchedRef.current = true;
 
     const fetchMedia = async () => {
@@ -57,17 +150,14 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
       try {
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData?.session?.access_token;
-        if (!token) return;
+        if (!token) { setError(true); return; }
 
         const { data, error: fnError } = await supabase.functions.invoke("evolution-api", {
           body: { action: "get_media", instanceName, messageId, remoteJid },
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (fnError || data?.error) {
-          setError(true);
-          return;
-        }
+        if (fnError || data?.error) { setError(true); return; }
 
         const url = data?.mediaData || data?.mediaUrl || null;
         if (url) {
@@ -85,6 +175,11 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
 
     fetchMedia();
   }, [messageId, mediaUrl, instanceName, remoteJid]);
+
+  const handleImageError = () => {
+    setResolvedUrl(null);
+    setError(true);
+  };
 
   if (loading) {
     return (
@@ -130,7 +225,7 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
           alt="Imagem"
           className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
           loading="lazy"
-          onError={() => setError(true)}
+          onError={handleImageError}
         />
       </a>
     );
@@ -143,7 +238,7 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
         alt="Sticker"
         className="mb-1 max-h-36 max-w-full rounded-lg"
         loading="lazy"
-        onError={() => setError(true)}
+        onError={handleImageError}
       />
     );
   }
@@ -157,11 +252,7 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   }
 
   if (mediaType === "audio") {
-    return (
-      <audio controls className="mb-1 w-full min-w-[200px]" preload="metadata">
-        <source src={resolvedUrl} />
-      </audio>
-    );
+    return <AudioPlayer src={resolvedUrl} isOutbound={isOutbound} />;
   }
 
   if (mediaType === "document") {
