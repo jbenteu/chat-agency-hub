@@ -405,33 +405,49 @@ const WhatsAppInbox = () => {
     };
   }, [selectedConv?.id]);
 
-  // ── Auto-fetch group info (throttled: only one top conversation per cycle) ──
+  // ── Auto-fetch group info (small parallel batch) ──
   useEffect(() => {
     if (!selectedInstanceId || conversations.length === 0) return;
     const inst = instances.find((i) => i.id === selectedInstanceId);
     if (!inst) return;
 
-    const candidate = conversations.slice(0, 20).find((c) => {
-      if (!c.remote_jid.endsWith("@g.us")) return false;
-      if (groupInfoFetchedRef.current.has(c.remote_jid)) return false;
-      const name = c.contact_name || "";
-      return !name || name.startsWith("Grupo ") || /^\d+$/.test(name);
-    });
+    const candidates = conversations
+      .slice(0, 18)
+      .filter((c) => {
+        if (!c.remote_jid.endsWith("@g.us")) return false;
+        if (groupInfoFetchedRef.current.has(c.remote_jid)) return false;
+        const name = c.contact_name || "";
+        return !name || name.startsWith("Grupo ") || /^\d+$/.test(name);
+      })
+      .slice(0, 3);
 
-    if (!candidate) return;
+    if (candidates.length === 0) return;
 
     let cancelled = false;
-    groupInfoFetchedRef.current.add(candidate.remote_jid);
+    candidates.forEach((c) => groupInfoFetchedRef.current.add(c.remote_jid));
 
-    const fetchInfo = async () => {
-      try {
-        const info = await fetchGroupInfo(inst.instance_name, candidate.remote_jid);
-        if (cancelled || !info?.subject) return;
+    const fetchBatch = async () => {
+      const results = await Promise.allSettled(
+        candidates.map(async (conversation) => {
+          const info = await fetchGroupInfo(inst.instance_name, conversation.remote_jid);
+          return { conversation, info };
+        })
+      );
 
-        setConversations((prev) => prev.map((c) => c.id === candidate.id ? { ...c, contact_name: info.subject } : c));
-        setSelectedConv((prev) => prev?.id === candidate.id ? { ...prev, contact_name: info.subject } : prev);
+      if (cancelled) return;
 
-        const gi: GroupInfo = {
+      const renamedConversationIds = new Map<string, string>();
+      const pictureUpdates: Record<string, string> = {};
+
+      results.forEach((result) => {
+        if (result.status !== "fulfilled") return;
+
+        const { conversation, info } = result.value;
+        if (!info?.subject) return;
+
+        renamedConversationIds.set(conversation.id, info.subject);
+
+        const groupInfo: GroupInfo = {
           subject: info.subject,
           description: info.description,
           size: info.size,
@@ -439,68 +455,119 @@ const WhatsAppInbox = () => {
           participants: info.participants || [],
         };
 
-        setGroupInfoCache((prev) => ({ ...prev, [candidate.remote_jid]: gi }));
-        setCachedGroupInfo(candidate.remote_jid, gi);
+        setGroupInfoCache((prev) => ({ ...prev, [conversation.remote_jid]: groupInfo }));
+        setCachedGroupInfo(conversation.remote_jid, groupInfo);
 
         if (info.pictureUrl) {
-          setProfilePics((prev) => ({ ...prev, [candidate.remote_jid]: info.pictureUrl }));
-          setCachedProfilePic(candidate.remote_jid, info.pictureUrl);
+          pictureUpdates[conversation.remote_jid] = info.pictureUrl;
+          setCachedProfilePic(conversation.remote_jid, info.pictureUrl);
+          profilePicsResolvedRef.current.add(conversation.remote_jid);
         }
-      } catch { /* silently ignore */ }
+      });
+
+      if (renamedConversationIds.size > 0) {
+        setConversations((prev) =>
+          prev.map((conversation) => {
+            const subject = renamedConversationIds.get(conversation.id);
+            return subject ? { ...conversation, contact_name: subject } : conversation;
+          })
+        );
+
+        setSelectedConv((prev) => {
+          if (!prev) return prev;
+          const subject = renamedConversationIds.get(prev.id);
+          return subject ? { ...prev, contact_name: subject } : prev;
+        });
+      }
+
+      if (Object.keys(pictureUpdates).length > 0) {
+        setProfilePics((prev) => ({ ...prev, ...pictureUpdates }));
+      }
     };
 
-    const timer = setTimeout(fetchInfo, 350);
-    return () => { cancelled = true; clearTimeout(timer); };
+    const timer = setTimeout(fetchBatch, 160);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [selectedInstanceId, conversations, instances, fetchGroupInfo]);
 
-  // ── Fetch profile pictures (throttled: selected + top 2 conversations) ──
-  const profilePicsFetchedRef = useRef<Set<string>>(new Set());
+  // ── Fetch profile pictures (prioritized, batched, non-blocking) ──
   useEffect(() => {
     if (!profilePictureSupported || !selectedInstanceId || conversations.length === 0) return;
     const inst = instances.find((i) => i.id === selectedInstanceId);
     if (!inst) return;
 
-    const priorityIds = new Set(conversations.slice(0, 2).map((c) => c.id));
-    if (selectedConv?.id) priorityIds.add(selectedConv.id);
+    const prioritized = [
+      ...(selectedConv ? [selectedConv] : []),
+      ...conversations.slice(0, 24).filter((conversation) => conversation.id !== selectedConv?.id),
+    ];
 
-    const queue = conversations
-      .filter((c) => priorityIds.has(c.id) && !profilePics[c.remote_jid] && !profilePicsFetchedRef.current.has(c.remote_jid))
-      .slice(0, 3);
+    const queue = prioritized
+      .filter(
+        (conversation) =>
+          !profilePics[conversation.remote_jid] &&
+          !pendingProfileFetchesRef.current.has(conversation.remote_jid) &&
+          !profilePicsResolvedRef.current.has(conversation.remote_jid)
+      )
+      .slice(0, 12);
 
     if (queue.length === 0) return;
 
     let cancelled = false;
-    queue.forEach((c) => profilePicsFetchedRef.current.add(c.remote_jid));
+    queue.forEach((conversation) => pendingProfileFetchesRef.current.add(conversation.remote_jid));
 
-    const fetchPics = async () => {
-      const results = await Promise.allSettled(
-        queue.map((c) =>
-          getProfilePicture(inst.instance_name, c.remote_jid).then((data) => ({ jid: c.remote_jid, url: data?.profilePictureUrl }))
-        )
-      );
+    const fetchBatch = async () => {
+      const chunkSize = 4;
 
-      if (cancelled) return;
+      for (let i = 0; i < queue.length; i += chunkSize) {
+        if (cancelled) return;
 
-      for (const result of results) {
-        if (result.status !== "fulfilled") {
-          const err = result.status === "rejected" ? result.reason : null;
-          if (String(err?.message || "").includes("Unknown action: get_profile_picture")) {
-            setProfilePictureSupported(false);
-            return;
+        const chunk = queue.slice(i, i + chunkSize);
+        const results = await Promise.allSettled(
+          chunk.map((conversation) =>
+            getProfilePicture(inst.instance_name, conversation.remote_jid).then((data) => ({
+              jid: conversation.remote_jid,
+              url: data?.profilePictureUrl,
+            }))
+          )
+        );
+
+        if (cancelled) return;
+
+        const updates: Record<string, string> = {};
+
+        for (const result of results) {
+          if (result.status !== "fulfilled") {
+            const err = result.reason;
+            if (String(err?.message || "").includes("Unknown action: get_profile_picture")) {
+              setProfilePictureSupported(false);
+              return;
+            }
+            continue;
           }
-          continue;
+
+          const { jid, url } = result.value;
+          pendingProfileFetchesRef.current.delete(jid);
+          profilePicsResolvedRef.current.add(jid);
+
+          if (url) {
+            updates[jid] = url;
+            setCachedProfilePic(jid, url);
+          }
         }
 
-        const { jid, url } = result.value;
-        if (url) {
-          setProfilePics((prev) => ({ ...prev, [jid]: url }));
-          setCachedProfilePic(jid, url);
+        if (Object.keys(updates).length > 0) {
+          setProfilePics((prev) => ({ ...prev, ...updates }));
         }
       }
     };
 
-    const timer = setTimeout(fetchPics, 250);
-    return () => { cancelled = true; clearTimeout(timer); };
+    const timer = setTimeout(fetchBatch, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [profilePictureSupported, selectedInstanceId, conversations, instances, profilePics, selectedConv?.id, getProfilePicture]);
 
   // ── Fetch group info when selecting a group conversation ──
