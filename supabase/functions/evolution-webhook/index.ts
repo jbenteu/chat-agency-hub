@@ -169,12 +169,74 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL");
+  const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY");
 
   if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse({ ok: false, error: "Supabase env not configured" }, 500);
   }
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+
+  // Evolution API helper (best-effort, never blocks webhook processing)
+  const evoBaseUrl = EVOLUTION_API_URL
+    ? EVOLUTION_API_URL.trim().replace(/\/$/, "").replace(/\/manager$/, "")
+    : null;
+  const evoHeaders: Record<string, string> = EVOLUTION_API_KEY
+    ? { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY }
+    : { "Content-Type": "application/json" };
+
+  const fetchGroupSubjectFromApi = async (instName: string, groupJid: string): Promise<string | null> => {
+    if (!evoBaseUrl) return null;
+    const attempts = [
+      { path: `/group/findGroupInfos/${instName}`, method: "POST", body: JSON.stringify({ groupJid }) },
+      { path: `/chat/findGroupInfos/${instName}`, method: "POST", body: JSON.stringify({ groupJid }) },
+      { path: `/group/fetchAllGroups/${instName}`, method: "GET" },
+    ];
+    for (const attempt of attempts) {
+      try {
+        const init: RequestInit = { method: attempt.method, headers: evoHeaders };
+        if (attempt.body) init.body = attempt.body;
+        const res = await fetch(`${evoBaseUrl}${attempt.path}`, init);
+        if (!res.ok) continue;
+        const json = await res.json();
+        let groupData = json;
+        if (Array.isArray(json)) {
+          groupData = json.find((g: any) => g.id === groupJid || g.jid === groupJid) || null;
+          if (!groupData) continue;
+        }
+        const subject = groupData?.subject || groupData?.name || groupData?.groupName || groupData?.groupSubject || null;
+        if (subject) return subject;
+      } catch { /* ignore, best-effort */ }
+    }
+    return null;
+  };
+
+  const fetchContactNameFromApi = async (instName: string, phoneJid: string): Promise<string | null> => {
+    if (!evoBaseUrl) return null;
+    const paths = [
+      `/chat/findContacts/${instName}`,
+      `/contact/find/${instName}`,
+    ];
+    for (const path of paths) {
+      try {
+        const res = await fetch(`${evoBaseUrl}${path}`, {
+          method: "POST",
+          headers: evoHeaders,
+          body: JSON.stringify({ where: { id: phoneJid } }),
+        });
+        if (!res.ok) continue;
+        const json = await res.json();
+        const contacts = Array.isArray(json) ? json : json?.contacts || json?.data || [];
+        if (Array.isArray(contacts) && contacts.length > 0) {
+          const contact = contacts[0];
+          const name = contact?.name || contact?.pushName || contact?.notify || contact?.verifiedName || null;
+          if (name && !/^\d+$/.test(name)) return name;
+        }
+      } catch { /* ignore */ }
+    }
+    return null;
+  };
 
   try {
     const body = await req.json();
