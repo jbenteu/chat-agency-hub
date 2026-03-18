@@ -152,6 +152,16 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
 
   const primaryType = Object.keys(contentNode)[0] || "unknown";
 
+  // Prefer MinIO/Evolution-stored media URL over WhatsApp CDN URL (which expires)
+  const minioMediaUrl =
+    entry?.mediaUrl || entry?.media_url ||
+    data?.mediaUrl || data?.media_url ||
+    entry?.message?.mediaUrl || null;
+
+  if (minioMediaUrl && mediaType) {
+    mediaUrl = minioMediaUrl;
+  }
+
   return {
     skip: false,
     content,
