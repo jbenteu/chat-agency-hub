@@ -134,25 +134,20 @@ const WhatsAppInbox = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Realtime subscription for new messages
+  // Realtime: conversation list updates (for any instance)
   useEffect(() => {
-    const channel = supabase
-      .channel("whatsapp-messages-realtime")
+    if (!selectedInstanceId) return;
+
+    const convChannel = supabase
+      .channel("whatsapp-conv-updates")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "whatsapp_messages" },
-        (payload) => {
-          const newMsg = payload.new as WhatsAppMessage;
-          if (selectedConv && newMsg.conversation_id === selectedConv.id) {
-            setMessages((prev) => [...prev, newMsg]);
-          }
-          // Refresh conversation list
-          fetchConversations();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "whatsapp_conversations" },
+        {
+          event: "*",
+          schema: "public",
+          table: "whatsapp_conversations",
+          filter: `instance_id=eq.${selectedInstanceId}`,
+        },
         () => {
           fetchConversations();
         }
@@ -160,9 +155,39 @@ const WhatsAppInbox = () => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(convChannel);
     };
-  }, [selectedConv?.id, fetchConversations]);
+  }, [selectedInstanceId, fetchConversations]);
+
+  // Realtime: messages for the selected conversation only
+  useEffect(() => {
+    if (!selectedConv) return;
+
+    const msgChannel = supabase
+      .channel(`conversation:${selectedConv.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "whatsapp_messages",
+          filter: `conversation_id=eq.${selectedConv.id}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as WhatsAppMessage;
+          setMessages((prev) => {
+            // Avoid duplicates
+            if (prev.some((m) => m.id === newMsg.id)) return prev;
+            return [...prev, newMsg];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(msgChannel);
+    };
+  }, [selectedConv?.id]);
 
   const handleSendText = async () => {
     if (!messageText.trim() || !selectedConv) return;
