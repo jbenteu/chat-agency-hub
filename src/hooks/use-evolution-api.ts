@@ -33,6 +33,7 @@ interface Conversation {
   unread_count: number;
   status: string;
   assigned_to: string | null;
+  profile_picture_url: string | null;
   created_at: string;
   updated_at: string;
 }
