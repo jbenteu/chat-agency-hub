@@ -23,30 +23,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const initialLoadDone = useRef(false);
 
-  const markReady = (s: Session | null) => {
-    setSession(s);
-    if (!initialLoadDone.current) {
-      initialLoadDone.current = true;
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    // 1. Set up listener FIRST so we never miss events
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const markReady = (s: Session | null) => {
+      console.log("[Auth] markReady called, session:", !!s, "initialLoadDone:", initialLoadDone.current);
+      setSession(s);
+      if (!initialLoadDone.current) {
+        initialLoadDone.current = true;
+        setLoading(false);
+      }
+    };
+
+    // 1. Set up listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("[Auth] onAuthStateChange event:", event);
       markReady(session);
     });
 
-    // 2. Then get the current session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // 2. Then get current session
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      console.log("[Auth] getSession result, session:", !!session, "error:", error);
       markReady(session);
+    }).catch((err) => {
+      console.error("[Auth] getSession failed:", err);
+      markReady(null);
     });
 
-    return () => subscription.unsubscribe();
+    // 3. Safety timeout - force loading=false after 5 seconds
+    const timeout = setTimeout(() => {
+      if (!initialLoadDone.current) {
+        console.warn("[Auth] Safety timeout triggered - forcing loading=false");
+        initialLoadDone.current = true;
+        setLoading(false);
+      }
+    }, 5000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setSession(null);
   };
 
   return (
