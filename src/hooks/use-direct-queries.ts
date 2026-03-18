@@ -124,7 +124,7 @@ export async function queryMessagesSince(
     .from("whatsapp_messages")
     .select("*")
     .eq("conversation_id", conversationId)
-    .gt("created_at", since)
+    .gte("created_at", since)
     .order("created_at", { ascending: true })
     .limit(Math.min(limit, 300));
 
