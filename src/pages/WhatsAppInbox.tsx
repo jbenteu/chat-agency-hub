@@ -383,6 +383,21 @@ const WhatsAppInbox = () => {
     loadContact();
   }, [showContactPanel, selectedConv?.contact_id, getContact]);
 
+  const isTransientEvolutionError = (err: unknown) => {
+    const msg = String((err as { message?: string })?.message || err || "");
+    return /WORKER_LIMIT|BOOT_ERROR|503|Failed to send a Request to the Edge Function/i.test(msg);
+  };
+
+  const withSingleRetry = async <T,>(operation: () => Promise<T>): Promise<T> => {
+    try {
+      return await operation();
+    } catch (err) {
+      if (!isTransientEvolutionError(err)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      return operation();
+    }
+  };
+
   // ── Send text ──
   const handleSendText = async () => {
     if (!selectedConv || !messageText.trim()) return;
@@ -404,8 +419,14 @@ const WhatsAppInbox = () => {
     setMessageText("");
     setReplyTarget(null);
     setSendingCount((c) => c + 1);
-    try { await sendText(inst.instance_name, selectedConv.remote_jid, payloadText, currentReply?.messageId); }
-    catch (err: any) { removeOptimisticMessage(tempId); setMessageText(payloadText); toast({ title: "Erro ao enviar", description: err?.message || "Falha no envio", variant: "destructive" }); }
+    try {
+      await withSingleRetry(() => sendText(inst.instance_name, selectedConv.remote_jid, payloadText, currentReply?.messageId));
+    }
+    catch (err: any) {
+      removeOptimisticMessage(tempId);
+      setMessageText(payloadText);
+      toast({ title: "Erro ao enviar", description: err?.message || "Falha no envio", variant: "destructive" });
+    }
     finally { setSendingCount((c) => Math.max(0, c - 1)); }
   };
 
@@ -468,7 +489,7 @@ const WhatsAppInbox = () => {
       setSendingCount((c) => c + 1);
 
       try {
-        await sendMedia(inst.instance_name, selectedConv.remote_jid, mediatype, mediaPayload, undefined, file.name);
+        await withSingleRetry(() => sendMedia(inst.instance_name, selectedConv.remote_jid, mediatype, mediaPayload, undefined, file.name));
       } catch (err: any) {
         removeOptimisticMessage(tempId);
         toast({ title: "Erro ao enviar mídia", description: err?.message || "Falha no envio", variant: "destructive" });
