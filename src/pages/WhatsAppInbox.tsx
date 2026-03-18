@@ -37,6 +37,7 @@ const WhatsAppInbox = () => {
     sendText,
     sendMedia,
     getProfilePicture,
+    fetchGroupInfo,
   } = useEvolutionApi();
 
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
@@ -217,6 +218,43 @@ const WhatsAppInbox = () => {
     };
   }, [selectedConv?.id]);
 
+  // Auto-fetch group info for groups with fallback names
+  useEffect(() => {
+    if (!selectedInstanceId || conversations.length === 0) return;
+
+    const selectedInstance = instances.find((inst) => inst.id === selectedInstanceId);
+    if (!selectedInstance) return;
+
+    const groupsNeedingInfo = conversations.filter(
+      (c) => c.remote_jid.endsWith("@g.us") && c.contact_name?.startsWith("Grupo "),
+    );
+
+    if (groupsNeedingInfo.length === 0) return;
+
+    const fetchGroupInfos = async () => {
+      for (const conv of groupsNeedingInfo.slice(0, 5)) {
+        try {
+          const info = await fetchGroupInfo(selectedInstance.instance_name, conv.remote_jid);
+          if (info?.subject) {
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === conv.id ? { ...c, contact_name: info.subject } : c,
+              ),
+            );
+            if (info.pictureUrl) {
+              setProfilePics((prev) => ({ ...prev, [conv.remote_jid]: info.pictureUrl }));
+            }
+          }
+        } catch {
+          // silently ignore
+        }
+      }
+    };
+
+    fetchGroupInfos();
+  }, [selectedInstanceId, conversations.length, instances, fetchGroupInfo]);
+
+  // Fetch profile pictures for individual contacts
   useEffect(() => {
     if (!profilePictureSupported) return;
     if (!selectedInstanceId || conversations.length === 0) return;
