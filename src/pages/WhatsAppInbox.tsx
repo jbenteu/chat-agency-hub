@@ -242,12 +242,14 @@ const WhatsAppInbox = () => {
           <div className="flex items-center justify-between gap-2 border-b border-border p-3">
             <h2 className="text-sm font-semibold">Conversas</h2>
             <div className="flex items-center gap-1">
-              <Select value={selectedInstanceId} onValueChange={setSelectedInstanceId}>
+              <Select value={selectedInstanceId} onValueChange={(v) => {
+                setSelectedInstanceId(v);
+                setSelectedConv(null);
+              }}>
                 <SelectTrigger className="h-8 w-[140px] text-xs">
-                  <SelectValue placeholder="Instância" />
+                  <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
                   {instances.map((inst) => (
                     <SelectItem key={inst.id} value={inst.id}>
                       {inst.display_name || inst.phone_number || "Instância"}
