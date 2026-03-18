@@ -318,15 +318,43 @@ const WhatsAppInbox = () => {
 
       setMessages((prev) => {
         const map = new Map<string, WhatsAppMessage>();
+        // Index by message_id or id
         for (const msg of prev) {
           map.set(msg.message_id || msg.id, msg);
         }
+
+        // Build a list of optimistic messages for matching
+        const optimisticMsgs = prev.filter(
+          (m) => m.id.startsWith("temp-") && m.direction === "outbound"
+        );
 
         for (const msg of incoming) {
           const key = msg.message_id || msg.id;
           const existing = map.get(key);
 
           if (!existing) {
+            // Check if this incoming outbound message matches an optimistic one
+            // by content + direction + close timestamp (within 30s)
+            if (msg.direction === "outbound" && msg.message_id) {
+              const matchIdx = optimisticMsgs.findIndex((opt) => {
+                if (map.get(opt.id) === undefined) return false; // already removed
+                if (opt.content !== msg.content) return false;
+                const timeDiff = Math.abs(
+                  new Date(msg.created_at).getTime() - new Date(opt.created_at).getTime()
+                );
+                return timeDiff < 30000;
+              });
+
+              if (matchIdx >= 0) {
+                const matched = optimisticMsgs[matchIdx];
+                map.delete(matched.id); // remove optimistic
+                optimisticMsgs.splice(matchIdx, 1);
+                map.set(key, msg); // add real
+                changed = true;
+                continue;
+              }
+            }
+
             map.set(key, msg);
             changed = true;
             continue;
