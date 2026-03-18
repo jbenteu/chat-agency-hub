@@ -659,7 +659,8 @@ const WhatsAppInbox = () => {
     const optimisticMessage: WhatsAppMessage = {
       id: tempId, tenant_id: selectedConv.tenant_id, conversation_id: selectedConv.id,
       message_id: null, direction: "outbound", content: payloadText, media_url: null,
-      media_type: null, status: "pending",
+      media_type: null, media_mime_type: null, media_thumbnail: null, media_width: null, media_height: null,
+      status: "pending",
       metadata: { optimistic: true, quotedMessageId: currentReply?.messageId || null, quotedContent: currentReply?.content || null },
       created_at: now,
     };
