@@ -9,6 +9,7 @@ import {
   setCachedGroupInfo, getCachedGroupInfoMap, isCacheFresh,
   type GroupInfo,
 } from "@/hooks/use-inbox-cache";
+import { queryInstances, queryConversations, queryMessages } from "@/hooks/use-direct-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -71,7 +72,7 @@ const WhatsAppInbox = () => {
   const location = useLocation();
   const { user, signOut } = useAuth();
   const {
-    listInstances, listConversations, listMessages, sendText, sendMedia,
+    sendText, sendMedia,
     getProfilePicture, fetchGroupInfo, getContact, updateContact,
     getGroupInviteLink, removeGroupParticipant, promoteGroupParticipant,
     demoteGroupParticipant,
@@ -119,29 +120,28 @@ const WhatsAppInbox = () => {
   const addOptimisticMessage = useCallback((message: WhatsAppMessage) => { setMessages((prev) => [...prev, message]); }, []);
   const removeOptimisticMessage = useCallback((tempId: string) => { setMessages((prev) => prev.filter((msg) => msg.id !== tempId)); }, []);
 
-  // ── Load instances ──
+  // ── Load instances (direct DB query) ──
   const loadInstances = useCallback(async () => {
     try {
-      const data = await listInstances();
-      const connected = (data.instances || []).filter((i: EvolutionInstance) => i.status === "connected");
+      const allInstances = await queryInstances();
+      const connected = allInstances.filter((i) => i.status === "connected");
       setInstances(connected);
       setCachedInstances(connected);
       if (connected.length === 0) { setSelectedInstanceId(""); setCachedSelectedInstance(""); setConversations([]); setSelectedConv(null); return; }
       setSelectedInstanceId((prev) => {
-        if (prev && connected.some((i: EvolutionInstance) => i.id === prev)) return prev;
+        if (prev && connected.some((i) => i.id === prev)) return prev;
         const newId = connected[0].id;
         setCachedSelectedInstance(newId);
         return newId;
       });
     } catch { /* UI handles */ }
-  }, [listInstances]);
+  }, []);
 
   useEffect(() => { loadInstances(); }, [loadInstances]);
 
-  // ── Fetch conversations (uses cache on mount, silent refresh) ──
+  // ── Fetch conversations (direct DB query, uses cache on mount) ──
   const fetchConversations = useCallback(async (silent = false) => {
     if (!selectedInstanceId) { setConversations([]); setLoadingConvs(false); return; }
-    // If we have fresh cache, skip loading indicator
     const cached = getCachedConversations(selectedInstanceId);
     if (cached && cached.length > 0 && !silent) {
       setConversations(cached);
@@ -150,13 +150,12 @@ const WhatsAppInbox = () => {
     }
     if (!silent && !cached?.length) setLoadingConvs(true);
     try {
-      const data = await listConversations(selectedInstanceId);
-      const convs = data.conversations || [];
+      const convs = await queryConversations(selectedInstanceId);
       setConversations(convs);
       setCachedConversations(selectedInstanceId, convs);
     } catch { /* UI handles */ }
     finally { setLoadingConvs(false); initialLoadDoneRef.current = true; }
-  }, [listConversations, selectedInstanceId]);
+  }, [selectedInstanceId]);
 
   useEffect(() => {
     const cached = getCachedConversations(selectedInstanceId);
@@ -167,7 +166,7 @@ const WhatsAppInbox = () => {
     fetchConversations(false);
   }, [fetchConversations]);
 
-  // ── Load messages (use cache for instant render) ──
+  // ── Load messages (direct DB query, use cache for instant render) ──
   useEffect(() => {
     if (!selectedConv) return;
     const cached = getCachedMessages(selectedConv.id);
@@ -178,15 +177,14 @@ const WhatsAppInbox = () => {
     const load = async () => {
       if (!cached?.length) setLoadingMsgs(true);
       try {
-        const data = await listMessages(selectedConv.id, 100);
-        const msgs = data.messages || [];
+        const msgs = await queryMessages(selectedConv.id, 100);
         setMessages(msgs);
         setCachedMessages(selectedConv.id, msgs);
       } catch { /* UI handles */ }
       finally { setLoadingMsgs(false); }
     };
     load();
-  }, [selectedConv?.id, listMessages]);
+  }, [selectedConv?.id]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -224,19 +222,17 @@ const WhatsAppInbox = () => {
         (payload) => { mergeNewMessages([payload.new as WhatsAppMessage]); })
       .subscribe();
 
-    // Polling fallback every 5s to catch missed realtime events
+    // Polling fallback every 10s (increased from 5s, realtime handles most updates)
     const poll = setInterval(async () => {
       try {
-        const data = await listMessages(convId, 100);
-        if (data?.messages) {
-          mergeNewMessages(data.messages);
-          setCachedMessages(convId, data.messages);
-        }
+        const msgs = await queryMessages(convId, 100);
+        mergeNewMessages(msgs);
+        setCachedMessages(convId, msgs);
       } catch { /* silent */ }
-    }, 5000);
+    }, 10000);
 
     return () => { supabase.removeChannel(ch); clearInterval(poll); };
-  }, [selectedConv?.id, listMessages]);
+  }, [selectedConv?.id]);
 
   // ── Auto-fetch group info ──
   useEffect(() => {
@@ -252,51 +248,56 @@ const WhatsAppInbox = () => {
     if (needsInfo.length === 0) return;
     let cancelled = false;
     const fetchInfos = async () => {
-      for (const conv of needsInfo.slice(0, 5)) {
-        if (cancelled) break;
-        groupInfoFetchedRef.current.add(conv.remote_jid);
-        try {
-          const info = await fetchGroupInfo(inst.instance_name, conv.remote_jid);
-          if (info?.subject) {
-            setConversations((prev) => prev.map((c) => c.id === conv.id ? { ...c, contact_name: info.subject } : c));
-            setSelectedConv((prev) => prev?.id === conv.id ? { ...prev, contact_name: info.subject } : prev);
-            const gi: GroupInfo = { subject: info.subject, description: info.description, size: info.size, pictureUrl: info.pictureUrl, participants: info.participants || [] };
-            setGroupInfoCache((prev) => ({ ...prev, [conv.remote_jid]: gi }));
-            setCachedGroupInfo(conv.remote_jid, gi);
-            if (info.pictureUrl) { setProfilePics((prev) => ({ ...prev, [conv.remote_jid]: info.pictureUrl })); setCachedProfilePic(conv.remote_jid, info.pictureUrl); }
-          }
-        } catch { /* silently ignore */ }
+      // Fetch in parallel (up to 5 at a time)
+      const batch = needsInfo.slice(0, 5);
+      batch.forEach((c) => groupInfoFetchedRef.current.add(c.remote_jid));
+      const results = await Promise.allSettled(
+        batch.map((conv) => fetchGroupInfo(inst.instance_name, conv.remote_jid).then((info) => ({ conv, info })))
+      );
+      if (cancelled) return;
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        const { conv, info } = result.value;
+        if (info?.subject) {
+          setConversations((prev) => prev.map((c) => c.id === conv.id ? { ...c, contact_name: info.subject } : c));
+          setSelectedConv((prev) => prev?.id === conv.id ? { ...prev, contact_name: info.subject } : prev);
+          const gi: GroupInfo = { subject: info.subject, description: info.description, size: info.size, pictureUrl: info.pictureUrl, participants: info.participants || [] };
+          setGroupInfoCache((prev) => ({ ...prev, [conv.remote_jid]: gi }));
+          setCachedGroupInfo(conv.remote_jid, gi);
+          if (info.pictureUrl) { setProfilePics((prev) => ({ ...prev, [conv.remote_jid]: info.pictureUrl })); setCachedProfilePic(conv.remote_jid, info.pictureUrl); }
+        }
       }
     };
     fetchInfos();
     return () => { cancelled = true; };
   }, [selectedInstanceId, conversations, instances, fetchGroupInfo]);
 
-  // ── Fetch profile pictures (throttled, record nulls to avoid re-fetch) ──
+  // ── Fetch profile pictures (parallel batch) ──
   const profilePicsFetchedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!profilePictureSupported || !selectedInstanceId || conversations.length === 0) return;
     const inst = instances.find((i) => i.id === selectedInstanceId);
     if (!inst) return;
-    const queue = conversations.filter((c) => !profilePics[c.remote_jid] && !profilePicsFetchedRef.current.has(c.remote_jid)).slice(0, 5);
+    const queue = conversations.filter((c) => !profilePics[c.remote_jid] && !profilePicsFetchedRef.current.has(c.remote_jid)).slice(0, 8);
     if (queue.length === 0) return;
     let cancelled = false;
-    const fetchPicsSequential = async () => {
-      for (const c of queue) {
-        if (cancelled) break;
-        const key = `${inst.id}:${c.remote_jid}`;
-        if (pendingProfileFetchesRef.current.has(key)) continue;
-        pendingProfileFetchesRef.current.add(key);
-        profilePicsFetchedRef.current.add(c.remote_jid);
-        try {
-          const data = await getProfilePicture(inst.instance_name, c.remote_jid);
-          if (data?.profilePictureUrl) { setProfilePics((prev) => ({ ...prev, [c.remote_jid]: data.profilePictureUrl })); setCachedProfilePic(c.remote_jid, data.profilePictureUrl); }
-        } catch (err: any) {
-          if (String(err?.message || "").includes("Unknown action: get_profile_picture")) setProfilePictureSupported(false);
-        } finally { pendingProfileFetchesRef.current.delete(key); }
+    queue.forEach((c) => profilePicsFetchedRef.current.add(c.remote_jid));
+    const fetchPics = async () => {
+      const results = await Promise.allSettled(
+        queue.map((c) => getProfilePicture(inst.instance_name, c.remote_jid).then((data) => ({ jid: c.remote_jid, url: data?.profilePictureUrl })))
+      );
+      if (cancelled) return;
+      for (const result of results) {
+        if (result.status !== "fulfilled") {
+          const err = result.status === "rejected" ? result.reason : null;
+          if (String(err?.message || "").includes("Unknown action: get_profile_picture")) { setProfilePictureSupported(false); return; }
+          continue;
+        }
+        const { jid, url } = result.value;
+        if (url) { setProfilePics((prev) => ({ ...prev, [jid]: url })); setCachedProfilePic(jid, url); }
       }
     };
-    fetchPicsSequential();
+    fetchPics();
     return () => { cancelled = true; };
   }, [profilePictureSupported, selectedInstanceId, conversations, instances, profilePics, getProfilePicture]);
 
