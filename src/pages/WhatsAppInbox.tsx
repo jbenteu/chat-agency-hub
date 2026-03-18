@@ -261,62 +261,148 @@ const WhatsAppInbox = () => {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  // ── Realtime: conversations (silent refresh) ──
+  const scheduleSilentConversationsRefresh = useCallback(() => {
+    if (conversationsRefreshTimerRef.current) return;
+
+    conversationsRefreshTimerRef.current = setTimeout(async () => {
+      conversationsRefreshTimerRef.current = null;
+      if (conversationsRefreshInFlightRef.current) return;
+
+      conversationsRefreshInFlightRef.current = true;
+      try {
+        await fetchConversations(true);
+      } finally {
+        conversationsRefreshInFlightRef.current = false;
+      }
+    }, 700);
+  }, [fetchConversations]);
+
+  // ── Realtime: conversations (silent refresh, debounced) ──
   useEffect(() => {
     if (!selectedInstanceId) return;
+
     const ch = supabase
       .channel(`whatsapp-conversations:${selectedInstanceId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "whatsapp_conversations", filter: `instance_id=eq.${selectedInstanceId}` },
-        () => { fetchConversations(true); })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "whatsapp_conversations", filter: `instance_id=eq.${selectedInstanceId}` },
+        () => {
+          scheduleSilentConversationsRefresh();
+        }
+      )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [selectedInstanceId, fetchConversations]);
 
-  // ── Realtime: messages + polling fallback ──
+    return () => {
+      if (conversationsRefreshTimerRef.current) {
+        clearTimeout(conversationsRefreshTimerRef.current);
+        conversationsRefreshTimerRef.current = null;
+      }
+      supabase.removeChannel(ch);
+    };
+  }, [selectedInstanceId, scheduleSilentConversationsRefresh]);
+
+  // ── Realtime: messages + lightweight polling fallback ──
   useEffect(() => {
     if (!selectedConv?.id) return;
+
     const convId = selectedConv.id;
+    let cancelled = false;
+    let pollDelay = 2500;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const mergeNewMessages = (newMsgs: WhatsAppMessage[]) => {
+    const mergeNewMessages = (incoming: WhatsAppMessage[]) => {
+      if (!incoming.length) return false;
+
+      let changed = false;
+      let mergedCache: WhatsAppMessage[] | null = null;
+
       setMessages((prev) => {
-        const updated = [...prev];
-        let changed = false;
+        const map = new Map<string, WhatsAppMessage>();
+        for (const msg of prev) {
+          map.set(msg.message_id || msg.id, msg);
+        }
 
-        for (const newMsg of newMsgs) {
-          if (updated.some((m) => m.id === newMsg.id)) continue;
-          const optIdx = updated.findIndex(
-            (m) => m.id.startsWith("temp-") && m.direction === newMsg.direction && m.content === newMsg.content
-          );
-          if (optIdx >= 0) {
-            updated[optIdx] = newMsg;
+        for (const msg of incoming) {
+          const key = msg.message_id || msg.id;
+          const existing = map.get(key);
+
+          if (!existing) {
+            map.set(key, msg);
             changed = true;
-          } else {
-            updated.push(newMsg);
+            continue;
+          }
+
+          const shouldReplace =
+            existing.id.startsWith("temp-") ||
+            existing.status !== msg.status ||
+            existing.media_url !== msg.media_url ||
+            existing.content !== msg.content ||
+            existing.created_at !== msg.created_at;
+
+          if (shouldReplace) {
+            map.set(key, { ...existing, ...msg });
             changed = true;
           }
         }
 
         if (!changed) return prev;
-        return updated.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+        const next = Array.from(map.values()).sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        mergedCache = next;
+        return next;
       });
+
+      if (changed && mergedCache) {
+        setCachedMessages(convId, mergedCache);
+      }
+
+      const newest = incoming[incoming.length - 1];
+      if (newest?.created_at) {
+        lastMessageAtRef.current = newest.created_at;
+      }
+
+      return changed;
+    };
+
+    const pollForMissedMessages = async () => {
+      try {
+        const since = lastMessageAtRef.current;
+        const delta = since
+          ? await queryMessagesSince(convId, since, 150)
+          : await queryMessages(convId, 100);
+
+        const hasChanges = mergeNewMessages(delta);
+        pollDelay = hasChanges ? 1800 : Math.min(pollDelay + 1200, 12000);
+      } catch {
+        pollDelay = Math.min(pollDelay + 1500, 12000);
+      } finally {
+        if (!cancelled) {
+          pollTimer = setTimeout(pollForMissedMessages, pollDelay);
+        }
+      }
     };
 
     const ch = supabase
       .channel(`conversation:${convId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${convId}` },
-        (payload) => { mergeNewMessages([payload.new as WhatsAppMessage]); })
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${convId}` },
+        (payload) => {
+          mergeNewMessages([payload.new as WhatsAppMessage]);
+          pollDelay = 1800;
+        }
+      )
       .subscribe();
 
-    // Polling fallback mais rápido para evitar perda de mensagens
-    const poll = setInterval(async () => {
-      try {
-        const msgs = await queryMessages(convId, 100);
-        mergeNewMessages(msgs);
-        setCachedMessages(convId, msgs);
-      } catch { /* silent */ }
-    }, 4000);
+    pollTimer = setTimeout(pollForMissedMessages, pollDelay);
 
-    return () => { supabase.removeChannel(ch); clearInterval(poll); };
+    return () => {
+      cancelled = true;
+      if (pollTimer) clearTimeout(pollTimer);
+      supabase.removeChannel(ch);
+    };
   }, [selectedConv?.id]);
 
   // ── Auto-fetch group info (throttled: only one top conversation per cycle) ──
