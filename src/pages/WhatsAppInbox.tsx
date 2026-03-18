@@ -418,7 +418,15 @@ const WhatsAppInbox = () => {
   
   const isMediaPlaceholder = (content: string | null) => {
     if (!content) return false;
-    return ["[Imagem]", "[Áudio]", "[Vídeo]", "[Sticker]", "[Documento]"].includes(content);
+    const placeholders = ["[Imagem]", "[Áudio]", "[Vídeo]", "[Sticker]", "[Documento]", "[Mídia]"];
+    // Exact match or sender-prefixed match (e.g. "Abel Sando: [Áudio]")
+    if (placeholders.includes(content)) return true;
+    const colonIdx = content.lastIndexOf(": ");
+    if (colonIdx > 0) {
+      const afterColon = content.substring(colonIdx + 2);
+      if (placeholders.includes(afterColon)) return true;
+    }
+    return false;
   };
   
   // Phone editing state
