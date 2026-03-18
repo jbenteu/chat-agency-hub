@@ -79,6 +79,24 @@ const parseMessagePayload = (message: Record<string, any>) => {
   let content = "";
   let mediaUrl: string | null = null;
   let mediaType: string | null = null;
+  let quotedMessageId: string | null = null;
+  let quotedContent: string | null = null;
+
+  // Extract quoted message info
+  const contextInfo = contentNode.extendedTextMessage?.contextInfo ||
+    contentNode.imageMessage?.contextInfo ||
+    contentNode.videoMessage?.contextInfo ||
+    contentNode.audioMessage?.contextInfo ||
+    contentNode.documentMessage?.contextInfo ||
+    contentNode.stickerMessage?.contextInfo || null;
+
+  if (contextInfo?.stanzaId) {
+    quotedMessageId = contextInfo.stanzaId;
+    quotedContent = contextInfo.quotedMessage?.conversation ||
+      contextInfo.quotedMessage?.extendedTextMessage?.text ||
+      contextInfo.quotedMessage?.imageMessage?.caption ||
+      "[Mensagem]";
+  }
 
   if (contentNode.conversation) {
     content = contentNode.conversation;
@@ -131,6 +149,8 @@ const parseMessagePayload = (message: Record<string, any>) => {
     mediaType,
     mediaUrl,
     primaryType,
+    quotedMessageId,
+    quotedContent,
   };
 };
 
@@ -188,7 +208,6 @@ Deno.serve(async (req) => {
 
         const isGroup = String(remoteJid).endsWith("@g.us");
 
-        // Skip self-conversations: when fromMe and remoteJid matches our own number
         if (fromMe && !isGroup) {
           const remotePhone = normalizePhone(remoteJid);
           if (remotePhone && instancePhone && remotePhone === instancePhone) {
@@ -200,8 +219,9 @@ Deno.serve(async (req) => {
         if (parsed.skip) continue;
 
         const participantJid = key?.participant || entry?.participant || data?.participant || null;
+        const participantAlt = key?.participantAlt || null;
         const conversationPhone = normalizePhone(remoteJid) || remoteJid.replace(/@.*$/, "");
-        const participantPhone = normalizePhone(participantJid);
+        const participantPhone = normalizePhone(participantJid) || normalizePhone(participantAlt);
 
         const pushName =
           entry?.pushName ||
@@ -287,27 +307,24 @@ Deno.serve(async (req) => {
             resolvedContactName = conversation.contact_name;
           }
         } else {
-          // For groups: prefer existing name, then groupSubject from webhook, then fallback
-          if (conversation?.contact_name && !conversation.contact_name.startsWith("Grupo ")) {
-            // Already has a real group name, keep it
+          if (conversation?.contact_name && !conversation.contact_name.startsWith("Grupo ") && !/^\d+$/.test(conversation.contact_name)) {
             resolvedContactName = conversation.contact_name;
           } else if (groupSubject) {
-            // Webhook provided group subject
             resolvedContactName = groupSubject;
           } else if (conversation?.contact_name) {
-            // Keep existing fallback name
             resolvedContactName = conversation.contact_name;
           } else {
             resolvedContactName = `Grupo ${conversationPhone || remoteJid}`;
           }
         }
 
-        const senderLabel = isGroup && participantPhone
-          ? (entry?.pushName || data?.pushName || participantPhone)
-          : pushName;
-
-        const conversationMessage =
-          isGroup && !fromMe ? `${senderLabel}: ${parsed.content}` : parsed.content;
+        // For conversation preview, prefix sender name in groups
+        const senderLabel = isGroup && !fromMe
+          ? (entry?.pushName || data?.pushName || participantPhone || "")
+          : "";
+        const conversationPreview = isGroup && senderLabel
+          ? `${senderLabel}: ${parsed.content}`
+          : parsed.content;
 
         if (!conversation) {
           const { data: newConversation } = await supabaseAdmin
@@ -319,7 +336,7 @@ Deno.serve(async (req) => {
               remote_jid: remoteJid,
               contact_name: resolvedContactName,
               contact_phone: conversationPhone,
-              last_message: conversationMessage,
+              last_message: conversationPreview,
               last_message_at: new Date().toISOString(),
               unread_count: fromMe ? 0 : 1,
               status: "open",
@@ -330,17 +347,15 @@ Deno.serve(async (req) => {
           conversation = newConversation || null;
         } else {
           const updatePayload: Record<string, unknown> = {
-            last_message: conversationMessage,
+            last_message: conversationPreview,
             last_message_at: new Date().toISOString(),
             unread_count: fromMe ? conversation.unread_count || 0 : (conversation.unread_count || 0) + 1,
           };
 
-          // Update contact_name if we got a better one (e.g. groupSubject arrived)
           if (!isGroup) {
             updatePayload.contact_id = contactId;
             updatePayload.contact_name = resolvedContactName;
-          } else if (groupSubject && conversation.contact_name?.startsWith("Grupo ")) {
-            // Update group name only if we have a real subject and current name is fallback
+          } else if (groupSubject && (conversation.contact_name?.startsWith("Grupo ") || /^\d+$/.test(conversation.contact_name || ""))) {
             updatePayload.contact_name = groupSubject;
           }
 
@@ -369,21 +384,25 @@ Deno.serve(async (req) => {
           }
         }
 
+        // Store RAW content (no sender prefix) - sender info goes in metadata
         await supabaseAdmin.from("whatsapp_messages").insert({
           tenant_id: tenantId,
           conversation_id: conversation.id,
           message_id: messageId,
           direction: fromMe ? "outbound" : "inbound",
-          content: conversationMessage,
+          content: parsed.content,
           media_url: parsed.mediaUrl,
           media_type: parsed.mediaType,
           status: fromMe ? "sent" : "received",
           metadata: {
-            pushName: senderLabel,
+            pushName: entry?.pushName || data?.pushName || null,
+            senderPhone: participantPhone || (fromMe ? instancePhone : conversationPhone) || null,
             key,
             participant: participantJid,
             isGroup,
             messageType: parsed.primaryType,
+            quotedMessageId: parsed.quotedMessageId || null,
+            quotedContent: parsed.quotedContent || null,
           },
         });
 
