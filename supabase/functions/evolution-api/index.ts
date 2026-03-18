@@ -372,6 +372,45 @@ Deno.serve(async (req) => {
         "send_text",
       );
 
+      // Save outbound message to DB
+      const { data: instData } = await supabaseAdmin
+        .from("whatsapp_instances")
+        .select("id")
+        .eq("instance_name", instanceName)
+        .eq("tenant_id", tenantId)
+        .limit(1)
+        .single();
+
+      if (instData) {
+        const { data: convData } = await supabaseAdmin
+          .from("whatsapp_conversations")
+          .select("id")
+          .eq("instance_id", instData.id)
+          .eq("remote_jid", remoteJid)
+          .limit(1)
+          .single();
+
+        if (convData) {
+          await supabaseAdmin.from("whatsapp_messages").insert({
+            tenant_id: tenantId,
+            conversation_id: convData.id,
+            message_id: evoData?.key?.id || null,
+            direction: "outbound",
+            content: text,
+            status: "sent",
+            metadata: { key: evoData?.key },
+          });
+
+          await supabaseAdmin
+            .from("whatsapp_conversations")
+            .update({
+              last_message: text,
+              last_message_at: new Date().toISOString(),
+            })
+            .eq("id", convData.id);
+        }
+      }
+
       return new Response(
         JSON.stringify({ success: true, data: evoData }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
