@@ -262,27 +262,146 @@ Deno.serve(async (req) => {
 
     // ── send_media ──
     if (action === "send_media") {
-      const { remoteJid, mediatype, media, caption, fileName } = body as { remoteJid?: string; mediatype?: string; media?: string; caption?: string; fileName?: string };
-      if (!instanceName || !remoteJid || !mediatype || !media) return jsonResponse({ error: "instanceName, remoteJid, mediatype, and media are required" }, 400);
-      const sendBody: Record<string, unknown> = { number: remoteJid, mediatype, media };
+      const { remoteJid, mediatype, media, caption, fileName } = body as {
+        remoteJid?: string;
+        mediatype?: string;
+        media?: string;
+        caption?: string;
+        fileName?: string;
+      };
+
+      const rawMedia = typeof media === "string" ? media.trim() : "";
+      if (!instanceName || !remoteJid || !mediatype || !rawMedia) {
+        return jsonResponse({ error: "instanceName, remoteJid, mediatype, and media are required" }, 400);
+      }
+
+      const isHttpUrl = /^https?:\/\//i.test(rawMedia);
+      const mediaPayload = isHttpUrl
+        ? rawMedia
+        : (rawMedia.startsWith("data:") ? rawMedia.split(",").slice(1).join(",") : rawMedia).replace(/\s/g, "");
+
+      if (!mediaPayload) {
+        return jsonResponse({ error: "media must be a valid url or base64 string" }, 400);
+      }
+
+      const sendBody: Record<string, unknown> = { number: remoteJid, mediatype, media: mediaPayload };
       if (caption) sendBody.caption = caption;
       if (fileName) sendBody.fileName = fileName;
-      const evoData = await requestEvolution(`/message/sendMedia/${instanceName}`, { method: "POST", body: JSON.stringify(sendBody) }, "send_media");
+
+      const evoData = await requestEvolution(
+        `/message/sendMedia/${instanceName}`,
+        { method: "POST", body: JSON.stringify(sendBody) },
+        "send_media"
+      );
+
       const outboundMessageId = evoData?.key?.id || evoData?.data?.key?.id || evoData?.message?.key?.id || null;
-      const mediaLabelByType: Record<string, string> = { image: "[Imagem]", audio: "[Áudio]", video: "[Vídeo]", document: fileName || "[Documento]", sticker: "[Sticker]" };
-      const safeMediaUrl = typeof media === "string" && media.startsWith("http") ? media : evoData?.mediaUrl || evoData?.data?.mediaUrl || null;
-      await persistOutboundMessage({ instanceName, remoteJid, messageId: outboundMessageId, content: caption?.trim() || mediaLabelByType[mediatype] || "[Mídia]", mediaType: mediatype, mediaUrl: safeMediaUrl, metadata: { key: evoData?.key || evoData?.data?.key || null, mediatype, fileName: fileName || null, source: "send_media" } });
+      const mediaLabelByType: Record<string, string> = {
+        image: "[Imagem]",
+        audio: "[Áudio]",
+        video: "[Vídeo]",
+        document: fileName || "[Documento]",
+        sticker: "[Sticker]",
+      };
+
+      const safeMediaUrl = /^https?:\/\//i.test(mediaPayload)
+        ? mediaPayload
+        : evoData?.mediaUrl || evoData?.data?.mediaUrl || null;
+
+      await persistOutboundMessage({
+        instanceName,
+        remoteJid,
+        messageId: outboundMessageId,
+        content: caption?.trim() || mediaLabelByType[mediatype] || "[Mídia]",
+        mediaType: mediatype,
+        mediaUrl: safeMediaUrl,
+        metadata: {
+          key: evoData?.key || evoData?.data?.key || null,
+          mediatype,
+          fileName: fileName || null,
+          source: "send_media",
+          isBase64Upload: !/^https?:\/\//i.test(mediaPayload),
+        },
+      });
+
       return jsonResponse({ success: true, data: evoData });
     }
 
     // ── list_conversations ──
     if (action === "list_conversations") {
       const { instanceId: filterInstanceId } = body as { instanceId?: string };
-      let query = supabaseAdmin.from("whatsapp_conversations").select("*").eq("tenant_id", tenantId).order("last_message_at", { ascending: false });
+      let query = supabaseAdmin
+        .from("whatsapp_conversations")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("last_message_at", { ascending: false });
+
       if (filterInstanceId) query = query.eq("instance_id", filterInstanceId);
+
       const { data: conversations, error } = await query;
       if (error) throw new Error(`DB error: ${error.message}`);
-      return jsonResponse({ success: true, conversations: conversations || [] });
+
+      const placeholderMap: Record<string, string> = {
+        "[Imagem]": "Imagem",
+        "[Áudio]": "Áudio",
+        "[Vídeo]": "Vídeo",
+        "[Sticker]": "Sticker",
+        "[Documento]": "Documento",
+        "[Mídia]": "Mídia",
+      };
+
+      const normalizePreview = (value: string | null) => {
+        if (!value) return value;
+        const trimmed = value.trim();
+        if (placeholderMap[trimmed]) return placeholderMap[trimmed];
+        const colonIndex = trimmed.lastIndexOf(": ");
+        if (colonIndex > 0) {
+          const sender = trimmed.slice(0, colonIndex);
+          const suffix = trimmed.slice(colonIndex + 2).trim();
+          if (placeholderMap[suffix]) return `${sender}: ${placeholderMap[suffix]}`;
+        }
+        return value;
+      };
+
+      const dedupedMap = new Map<string, Record<string, any>>();
+      for (const conversation of conversations || []) {
+        const key = `${conversation.instance_id}:${conversation.remote_jid}`;
+        const normalized = {
+          ...conversation,
+          last_message: normalizePreview(conversation.last_message),
+        };
+
+        const existing = dedupedMap.get(key);
+        if (!existing) {
+          dedupedMap.set(key, normalized);
+          continue;
+        }
+
+        const existingTs = existing.last_message_at ? new Date(existing.last_message_at).getTime() : 0;
+        const currentTs = normalized.last_message_at ? new Date(normalized.last_message_at).getTime() : 0;
+        const existingUpdatedTs = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+        const currentUpdatedTs = normalized.updated_at ? new Date(normalized.updated_at).getTime() : 0;
+
+        const keepCurrent = currentTs > existingTs || (currentTs === existingTs && currentUpdatedTs >= existingUpdatedTs);
+        const winner = keepCurrent ? normalized : existing;
+        const loser = keepCurrent ? existing : normalized;
+
+        dedupedMap.set(key, {
+          ...winner,
+          contact_name: winner.contact_name || loser.contact_name,
+          contact_phone: winner.contact_phone || loser.contact_phone,
+          last_message: winner.last_message || loser.last_message,
+          last_message_at: winner.last_message_at || loser.last_message_at,
+          unread_count: Math.max(Number(existing.unread_count || 0), Number(normalized.unread_count || 0)),
+        });
+      }
+
+      const deduped = Array.from(dedupedMap.values()).sort((a, b) => {
+        const aTs = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+        const bTs = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+        return bTs - aTs;
+      });
+
+      return jsonResponse({ success: true, conversations: deduped });
     }
 
     // ── list_messages (with optional limit) ──
@@ -290,9 +409,13 @@ Deno.serve(async (req) => {
       const { conversationId, limit: msgLimit } = body as { conversationId?: string; limit?: number };
       if (!conversationId) return jsonResponse({ error: "conversationId is required" }, 400);
       const effectiveLimit = Math.min(msgLimit || 100, 500);
-      const { data: messages, error } = await supabaseAdmin.from("whatsapp_messages").select("*")
-        .eq("tenant_id", tenantId).eq("conversation_id", conversationId)
-        .order("created_at", { ascending: false }).limit(effectiveLimit);
+      const { data: messages, error } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(effectiveLimit);
       if (error) throw new Error(`DB error: ${error.message}`);
       await supabaseAdmin.from("whatsapp_conversations").update({ unread_count: 0 }).eq("tenant_id", tenantId).eq("id", conversationId);
       return jsonResponse({ success: true, messages: (messages || []).reverse() });
@@ -301,7 +424,11 @@ Deno.serve(async (req) => {
     // ── update_display_name ──
     if (action === "update_display_name") {
       if (!instanceName || !displayName) return jsonResponse({ error: "instanceName and displayName are required" }, 400);
-      const { error } = await supabaseAdmin.from("whatsapp_instances").update({ display_name: displayName }).eq("tenant_id", tenantId).eq("instance_name", instanceName);
+      const { error } = await supabaseAdmin
+        .from("whatsapp_instances")
+        .update({ display_name: displayName })
+        .eq("tenant_id", tenantId)
+        .eq("instance_name", instanceName);
       if (error) throw new Error(`DB update error: ${error.message}`);
       return jsonResponse({ success: true });
     }
@@ -343,8 +470,12 @@ Deno.serve(async (req) => {
           if (subject) {
             const inst = await getInstanceRow(instanceName);
             if (inst?.id) {
-              await supabaseAdmin.from("whatsapp_conversations").update({ contact_name: subject })
-                .eq("tenant_id", tenantId).eq("instance_id", inst.id).eq("remote_jid", remoteJid);
+              await supabaseAdmin
+                .from("whatsapp_conversations")
+                .update({ contact_name: subject })
+                .eq("tenant_id", tenantId)
+                .eq("instance_id", inst.id)
+                .eq("remote_jid", remoteJid);
             }
 
             const participants = rawParticipants.slice(0, 256).map((p: any) => ({
@@ -376,7 +507,9 @@ Deno.serve(async (req) => {
             const evoData = await requestEvolution(path, { method: "POST", body: JSON.stringify(payload) }, "get_profile_picture");
             const url = evoData?.profilePictureUrl || evoData?.picture || evoData?.url || evoData?.data?.profilePictureUrl || null;
             if (url) return jsonResponse({ success: true, profilePictureUrl: url });
-          } catch (error) { if (!(error instanceof Error && error.message.includes("[404]"))) console.warn("Profile picture fetch warning:", error); }
+          } catch (error) {
+            if (!(error instanceof Error && error.message.includes("[404]"))) console.warn("Profile picture fetch warning:", error);
+          }
         }
       }
       return jsonResponse({ success: true, profilePictureUrl: null });
@@ -386,6 +519,27 @@ Deno.serve(async (req) => {
     if (action === "get_media") {
       const { messageId, remoteJid: mediaJid } = body as { messageId?: string; remoteJid?: string };
       if (!instanceName || !messageId) return jsonResponse({ error: "instanceName and messageId are required" }, 400);
+
+      const isExpirableUrl = (url: string) =>
+        url.includes("mmg.whatsapp.net") || url.includes("media.whatsapp") || url.includes("enc.");
+
+      const { data: persistedMessage } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .select("media_url, metadata, media_type, created_at")
+        .eq("tenant_id", tenantId)
+        .eq("message_id", messageId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const persistedMeta = (persistedMessage?.metadata || {}) as Record<string, unknown>;
+      const persistedUrls = [
+        persistedMessage?.media_url,
+        typeof persistedMeta.mediaUrl === "string" ? persistedMeta.mediaUrl : null,
+        typeof persistedMeta.url === "string" ? persistedMeta.url : null,
+      ].filter((item): item is string => Boolean(item));
+
+      const preferredPersistedUrl = persistedUrls.find((url) => !isExpirableUrl(url)) || persistedUrls[0] || null;
 
       // Try getBase64FromMediaMessage endpoint
       const mediaPayload = { message: { key: { id: messageId, remoteJid: mediaJid || "" } } };
@@ -398,20 +552,30 @@ Deno.serve(async (req) => {
         try {
           const evoData = await requestEvolution(path, { method: "POST", body: JSON.stringify(mediaPayload) }, "get_media");
           const base64 = evoData?.base64 || evoData?.data?.base64 || null;
-          const mediaUrl = evoData?.mediaUrl || evoData?.data?.mediaUrl || evoData?.url || null;
+          const evoMediaUrl = evoData?.mediaUrl || evoData?.data?.mediaUrl || evoData?.url || null;
           const mimeType = evoData?.mimetype || evoData?.data?.mimetype || evoData?.mimeType || null;
 
           if (base64) {
             const prefix = mimeType ? `data:${mimeType};base64,` : "data:application/octet-stream;base64,";
-            return jsonResponse({ success: true, mediaData: `${prefix}${base64}`, mediaUrl, mimeType });
+            return jsonResponse({ success: true, mediaData: `${prefix}${base64}`, mediaUrl: evoMediaUrl || preferredPersistedUrl, mimeType });
           }
-          if (mediaUrl) {
-            return jsonResponse({ success: true, mediaData: null, mediaUrl, mimeType });
+
+          const bestUrl = (!evoMediaUrl || isExpirableUrl(evoMediaUrl))
+            ? preferredPersistedUrl || evoMediaUrl
+            : evoMediaUrl;
+
+          if (bestUrl) {
+            return jsonResponse({ success: true, mediaData: null, mediaUrl: bestUrl, mimeType: mimeType || persistedMessage?.media_type || null });
           }
         } catch (error) {
           console.warn("Media download warning:", error);
         }
       }
+
+      if (preferredPersistedUrl) {
+        return jsonResponse({ success: true, mediaData: null, mediaUrl: preferredPersistedUrl, mimeType: persistedMessage?.media_type || null });
+      }
+
       return jsonResponse({ success: true, mediaData: null, mediaUrl: null });
     }
 

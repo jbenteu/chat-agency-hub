@@ -118,6 +118,7 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [triedDirectUrlFallback, setTriedDirectUrlFallback] = useState(false);
   const fetchedRef = useRef(false);
 
   useEffect(() => {
@@ -125,6 +126,14 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
     fetchedRef.current = false;
     setError(false);
     setResolvedUrl(null);
+    setTriedDirectUrlFallback(false);
+
+    const fallbackToDirectUrl = () => {
+      if (!mediaUrl) return false;
+      setResolvedUrl(mediaUrl);
+      setTriedDirectUrlFallback(true);
+      return true;
+    };
 
     if (mediaUrl && mediaUrl.startsWith("data:")) {
       setResolvedUrl(mediaUrl);
@@ -142,7 +151,11 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
       return;
     }
 
-    if (!messageId || !instanceName) return;
+    if (!messageId || !instanceName) {
+      fallbackToDirectUrl();
+      return;
+    }
+
     fetchedRef.current = true;
 
     const fetchMedia = async () => {
@@ -150,24 +163,30 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
       try {
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData?.session?.access_token;
-        if (!token) { setError(true); return; }
+        if (!token) {
+          if (!fallbackToDirectUrl()) setError(true);
+          return;
+        }
 
         const { data, error: fnError } = await supabase.functions.invoke("evolution-api", {
           body: { action: "get_media", instanceName, messageId, remoteJid },
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (fnError || data?.error) { setError(true); return; }
+        if (fnError || data?.error) {
+          if (!fallbackToDirectUrl()) setError(true);
+          return;
+        }
 
         const url = data?.mediaData || data?.mediaUrl || null;
         if (url) {
           mediaCache.set(cacheKey, url);
           setResolvedUrl(url);
-        } else {
+        } else if (!fallbackToDirectUrl()) {
           setError(true);
         }
       } catch {
-        setError(true);
+        if (!fallbackToDirectUrl()) setError(true);
       } finally {
         setLoading(false);
       }
@@ -177,6 +196,11 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   }, [messageId, mediaUrl, instanceName, remoteJid]);
 
   const handleImageError = () => {
+    if (mediaUrl && resolvedUrl !== mediaUrl && !triedDirectUrlFallback) {
+      setResolvedUrl(mediaUrl);
+      setTriedDirectUrlFallback(true);
+      return;
+    }
     setResolvedUrl(null);
     setError(true);
   };
