@@ -139,10 +139,9 @@ const WhatsAppInbox = () => {
 
   useEffect(() => { loadInstances(); }, [loadInstances]);
 
-  // ── Fetch conversations (uses cache on mount, silent refresh) ──
+  // ── Fetch conversations (direct DB query, uses cache on mount) ──
   const fetchConversations = useCallback(async (silent = false) => {
     if (!selectedInstanceId) { setConversations([]); setLoadingConvs(false); return; }
-    // If we have fresh cache, skip loading indicator
     const cached = getCachedConversations(selectedInstanceId);
     if (cached && cached.length > 0 && !silent) {
       setConversations(cached);
@@ -151,13 +150,12 @@ const WhatsAppInbox = () => {
     }
     if (!silent && !cached?.length) setLoadingConvs(true);
     try {
-      const data = await listConversations(selectedInstanceId);
-      const convs = data.conversations || [];
+      const convs = await queryConversations(selectedInstanceId);
       setConversations(convs);
       setCachedConversations(selectedInstanceId, convs);
     } catch { /* UI handles */ }
     finally { setLoadingConvs(false); initialLoadDoneRef.current = true; }
-  }, [listConversations, selectedInstanceId]);
+  }, [selectedInstanceId]);
 
   useEffect(() => {
     const cached = getCachedConversations(selectedInstanceId);
@@ -168,7 +166,7 @@ const WhatsAppInbox = () => {
     fetchConversations(false);
   }, [fetchConversations]);
 
-  // ── Load messages (use cache for instant render) ──
+  // ── Load messages (direct DB query, use cache for instant render) ──
   useEffect(() => {
     if (!selectedConv) return;
     const cached = getCachedMessages(selectedConv.id);
@@ -179,15 +177,14 @@ const WhatsAppInbox = () => {
     const load = async () => {
       if (!cached?.length) setLoadingMsgs(true);
       try {
-        const data = await listMessages(selectedConv.id, 100);
-        const msgs = data.messages || [];
+        const msgs = await queryMessages(selectedConv.id, 100);
         setMessages(msgs);
         setCachedMessages(selectedConv.id, msgs);
       } catch { /* UI handles */ }
       finally { setLoadingMsgs(false); }
     };
     load();
-  }, [selectedConv?.id, listMessages]);
+  }, [selectedConv?.id]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -225,19 +222,17 @@ const WhatsAppInbox = () => {
         (payload) => { mergeNewMessages([payload.new as WhatsAppMessage]); })
       .subscribe();
 
-    // Polling fallback every 5s to catch missed realtime events
+    // Polling fallback every 10s (increased from 5s, realtime handles most updates)
     const poll = setInterval(async () => {
       try {
-        const data = await listMessages(convId, 100);
-        if (data?.messages) {
-          mergeNewMessages(data.messages);
-          setCachedMessages(convId, data.messages);
-        }
+        const msgs = await queryMessages(convId, 100);
+        mergeNewMessages(msgs);
+        setCachedMessages(convId, msgs);
       } catch { /* silent */ }
-    }, 5000);
+    }, 10000);
 
     return () => { supabase.removeChannel(ch); clearInterval(poll); };
-  }, [selectedConv?.id, listMessages]);
+  }, [selectedConv?.id]);
 
   // ── Auto-fetch group info ──
   useEffect(() => {
