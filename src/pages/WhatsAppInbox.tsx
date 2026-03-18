@@ -96,6 +96,24 @@ const WhatsAppInbox = () => {
     fetchConversations();
   }, [selectedInstanceId]);
 
+  // Fetch profile pictures for conversations
+  useEffect(() => {
+    if (conversations.length === 0 || instances.length === 0) return;
+    const inst = instances.find((i) => i.id === selectedInstanceId);
+    if (!inst) return;
+
+    conversations.forEach((conv) => {
+      if (profilePics[conv.remote_jid] || conv.remote_jid.includes("@g.us")) return;
+      getProfilePicture(inst.instance_name, conv.remote_jid)
+        .then((data) => {
+          if (data?.profilePictureUrl) {
+            setProfilePics((prev) => ({ ...prev, [conv.remote_jid]: data.profilePictureUrl }));
+          }
+        })
+        .catch(() => {});
+    });
+  }, [conversations, instances, selectedInstanceId]);
+
   // Load messages when conversation selected
   useEffect(() => {
     if (!selectedConv) return;
