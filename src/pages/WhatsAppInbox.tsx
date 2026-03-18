@@ -459,14 +459,16 @@ const WhatsAppInbox = () => {
   // ── Contact editing ──
   const startEditingContact = () => {
     if (!contactDetails) return;
+    setPhoneCountryCode(detectCountryCode(contactDetails.phone));
     setContactForm({
       name: contactDetails.name || "",
       email: contactDetails.email || "",
-      phone: contactDetails.phone || "",
+      phone: formatPhoneEdit(contactDetails.phone),
       company: contactDetails.company || "",
       city: contactDetails.custom_fields?.city || "",
       state: contactDetails.custom_fields?.state || "",
       address: contactDetails.custom_fields?.address || "",
+      tags: (contactDetails.tags || []).join(","),
     });
     setEditingContact(true);
   };
@@ -475,11 +477,18 @@ const WhatsAppInbox = () => {
     if (!contactDetails) return;
     setSavingContact(true);
     try {
+      // Build full phone with country code
+      const phoneDigits = contactForm.phone.replace(/\D/g, "");
+      const countryDigits = phoneCountryCode.replace(/\D/g, "");
+      const fullPhone = phoneDigits ? `${countryDigits}${phoneDigits}` : null;
+      const tags = contactForm.tags ? contactForm.tags.split(",").filter(Boolean) : contactDetails.tags;
+      
       await updateContact(contactDetails.id, {
         name: contactForm.name || contactDetails.name,
         email: contactForm.email || null,
-        phone: contactForm.phone || null,
+        phone: fullPhone,
         company: contactForm.company || null,
+        tags,
         custom_fields: {
           ...contactDetails.custom_fields,
           city: contactForm.city || "",
@@ -487,7 +496,7 @@ const WhatsAppInbox = () => {
           address: contactForm.address || "",
         },
       });
-      setContactDetails({ ...contactDetails, name: contactForm.name || contactDetails.name, email: contactForm.email || null, phone: contactForm.phone || null, company: contactForm.company || null, custom_fields: { ...contactDetails.custom_fields, city: contactForm.city || "", state: contactForm.state || "", address: contactForm.address || "" } });
+      setContactDetails({ ...contactDetails, name: contactForm.name || contactDetails.name, email: contactForm.email || null, phone: fullPhone, company: contactForm.company || null, tags, custom_fields: { ...contactDetails.custom_fields, city: contactForm.city || "", state: contactForm.state || "", address: contactForm.address || "" } });
       setEditingContact(false);
       toast({ title: "Contato atualizado" });
     } catch (err: any) { toast({ title: "Erro", description: err?.message, variant: "destructive" }); }
