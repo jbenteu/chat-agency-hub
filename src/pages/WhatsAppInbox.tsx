@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
 import { MediaMessage } from "@/components/whatsapp/MediaMessage";
+import { TagSelector } from "@/components/whatsapp/TagSelector";
 import {
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
@@ -23,14 +24,18 @@ import {
   SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
   SidebarProvider, SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   MessageCircle, Send, Image, Paperclip, Search, Phone, User, Tag, X, Loader2,
   ChevronRight, LayoutDashboard, Users, Settings, Shield, LogOut, Reply, Crown,
-  ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, UserPlus, ChevronUp,
-  Copy, Edit2, Check,
+  ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, ChevronUp,
+  Copy, Edit2, Check, ChevronDown,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, isToday, isYesterday } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { formatPhoneWhatsApp, formatPhoneEdit, maskPhoneInput, detectCountryCode, COUNTRY_CODES } from "@/data/country-codes";
+import { BRAZIL_STATES, BRAZIL_CITIES } from "@/data/brazil-locations";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/" },
@@ -122,12 +127,14 @@ const WhatsAppInbox = () => {
       setInstances(connected);
       setCachedInstances(connected);
       if (connected.length === 0) { setSelectedInstanceId(""); setCachedSelectedInstance(""); setConversations([]); setSelectedConv(null); return; }
-      if (!selectedInstanceId || !connected.some((i: EvolutionInstance) => i.id === selectedInstanceId)) {
-        setSelectedInstanceId(connected[0].id);
-        setCachedSelectedInstance(connected[0].id);
-      }
+      setSelectedInstanceId((prev) => {
+        if (prev && connected.some((i: EvolutionInstance) => i.id === prev)) return prev;
+        const newId = connected[0].id;
+        setCachedSelectedInstance(newId);
+        return newId;
+      });
     } catch { /* UI handles */ }
-  }, [listInstances, selectedInstanceId]);
+  }, [listInstances]);
 
   useEffect(() => { loadInstances(); }, [loadInstances]);
 
@@ -397,8 +404,39 @@ const WhatsAppInbox = () => {
 
   const getInitials = (name: string | null) => { if (!name) return "?"; return name.split(" ").map((p) => p[0]).join("").substring(0, 2).toUpperCase(); };
   const formatTime = (d: string | null) => { if (!d) return ""; try { return format(new Date(d), "HH:mm"); } catch { return ""; } };
+  const formatConvTime = (d: string | null) => {
+    if (!d) return "";
+    try {
+      const date = new Date(d);
+      if (isToday(date)) return format(date, "HH:mm");
+      if (isYesterday(date)) return "Ontem";
+      return format(date, "dd/MM/yyyy");
+    } catch { return ""; }
+  };
   const formatDate = (d: string) => { try { const date = new Date(d); const today = new Date(); if (date.toDateString() === today.toDateString()) return formatTime(d); return format(date, "dd/MM/yyyy HH:mm"); } catch { return ""; } };
   const formatFullDate = (d: string) => { try { return format(new Date(d), "dd/MM/yyyy 'às' HH:mm"); } catch { return ""; } };
+  
+  const isMediaPlaceholder = (content: string | null) => {
+    if (!content) return false;
+    return ["[Imagem]", "[Áudio]", "[Vídeo]", "[Sticker]", "[Documento]"].includes(content);
+  };
+  
+  // Phone editing state
+  const [phoneCountryCode, setPhoneCountryCode] = useState("+55");
+  const [phoneCountryOpen, setPhoneCountryOpen] = useState(false);
+  
+  // Tag create handler via edge function
+  const handleCreateTag = async (name: string, color: string) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) return;
+      await supabase.functions.invoke("evolution-api", {
+        body: { action: "create_tag", name, color },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch { /* ignore */ }
+  };
   const isGroupJid = (jid: string) => jid.endsWith("@g.us");
 
   const getSenderName = (msg: WhatsAppMessage): string | null => {
@@ -423,14 +461,16 @@ const WhatsAppInbox = () => {
   // ── Contact editing ──
   const startEditingContact = () => {
     if (!contactDetails) return;
+    setPhoneCountryCode(detectCountryCode(contactDetails.phone));
     setContactForm({
       name: contactDetails.name || "",
       email: contactDetails.email || "",
-      phone: contactDetails.phone || "",
+      phone: formatPhoneEdit(contactDetails.phone),
       company: contactDetails.company || "",
       city: contactDetails.custom_fields?.city || "",
       state: contactDetails.custom_fields?.state || "",
       address: contactDetails.custom_fields?.address || "",
+      tags: (contactDetails.tags || []).join(","),
     });
     setEditingContact(true);
   };
@@ -439,11 +479,18 @@ const WhatsAppInbox = () => {
     if (!contactDetails) return;
     setSavingContact(true);
     try {
+      // Build full phone with country code
+      const phoneDigits = contactForm.phone.replace(/\D/g, "");
+      const countryDigits = phoneCountryCode.replace(/\D/g, "");
+      const fullPhone = phoneDigits ? `${countryDigits}${phoneDigits}` : null;
+      const tags = contactForm.tags ? contactForm.tags.split(",").filter(Boolean) : contactDetails.tags;
+      
       await updateContact(contactDetails.id, {
         name: contactForm.name || contactDetails.name,
         email: contactForm.email || null,
-        phone: contactForm.phone || null,
+        phone: fullPhone,
         company: contactForm.company || null,
+        tags,
         custom_fields: {
           ...contactDetails.custom_fields,
           city: contactForm.city || "",
@@ -451,7 +498,7 @@ const WhatsAppInbox = () => {
           address: contactForm.address || "",
         },
       });
-      setContactDetails({ ...contactDetails, name: contactForm.name || contactDetails.name, email: contactForm.email || null, phone: contactForm.phone || null, company: contactForm.company || null, custom_fields: { ...contactDetails.custom_fields, city: contactForm.city || "", state: contactForm.state || "", address: contactForm.address || "" } });
+      setContactDetails({ ...contactDetails, name: contactForm.name || contactDetails.name, email: contactForm.email || null, phone: fullPhone, company: contactForm.company || null, tags, custom_fields: { ...contactDetails.custom_fields, city: contactForm.city || "", state: contactForm.state || "", address: contactForm.address || "" } });
       setEditingContact(false);
       toast({ title: "Contato atualizado" });
     } catch (err: any) { toast({ title: "Erro", description: err?.message, variant: "destructive" }); }
@@ -603,7 +650,7 @@ const WhatsAppInbox = () => {
                     <div className="flex-1 overflow-hidden">
                       <div className="flex items-center justify-between">
                         <p className="truncate text-sm font-medium">{c.contact_name || c.contact_phone || "Desconhecido"}</p>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatTime(c.last_message_at)}</span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatConvTime(c.last_message_at)}</span>
                       </div>
                       <div className="mt-0.5 flex items-center justify-between">
                         <p className="truncate text-xs text-muted-foreground">{c.last_message || "…"}</p>
@@ -632,7 +679,7 @@ const WhatsAppInbox = () => {
                     <div>
                       <p className="text-sm font-medium">{selectedConv.contact_name || selectedConv.contact_phone || "Desconhecido"}</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {isGroupJid(selectedConv.remote_jid) ? `Grupo · ${currentGroupInfo?.size || "…"} participantes` : selectedConv.contact_phone}
+                        {isGroupJid(selectedConv.remote_jid) ? `Grupo · ${currentGroupInfo?.size || "…"} participantes` : formatPhoneWhatsApp(selectedConv.contact_phone)}
                       </p>
                     </div>
                   </div>
@@ -709,7 +756,7 @@ const WhatsAppInbox = () => {
                               {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
                                 <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
                               )}
-                              {msg.content && msg.media_type !== "document" && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
+                              {msg.content && msg.media_type !== "document" && !isMediaPlaceholder(msg.content) && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
                               <p className={`mt-1 text-right text-[10px] ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{formatDate(msg.created_at)}</p>
                               <button className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-1 hover:bg-muted"
                                 onClick={() => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") })}
@@ -875,7 +922,31 @@ const WhatsAppInbox = () => {
                           </div>
                           <div>
                             <label className="text-[11px] font-medium text-muted-foreground">Telefone</label>
-                            <Input className="h-7 text-xs mt-0.5" value={contactForm.phone} onChange={(e) => setContactForm((f) => ({ ...f, phone: e.target.value }))} />
+                            <div className="flex gap-1 mt-0.5">
+                              <Popover open={phoneCountryOpen} onOpenChange={setPhoneCountryOpen}>
+                                <PopoverTrigger asChild>
+                                  <button className="flex items-center gap-0.5 h-7 px-1.5 rounded-md border border-input bg-background text-xs shrink-0 hover:bg-accent">
+                                    <span>{COUNTRY_CODES.find(c => c.dial === phoneCountryCode)?.flag || "🇧🇷"}</span>
+                                    <span className="text-[10px] text-muted-foreground">{phoneCountryCode}</span>
+                                    <ChevronDown className="h-2.5 w-2.5 text-muted-foreground" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-48 p-1" align="start">
+                                  <div className="max-h-48 overflow-y-auto">
+                                    {COUNTRY_CODES.map((c) => (
+                                      <button key={c.code} onClick={() => { setPhoneCountryCode(c.dial); setPhoneCountryOpen(false); }}
+                                        className="flex items-center gap-2 w-full rounded px-2 py-1 text-xs hover:bg-muted">
+                                        <span>{c.flag}</span>
+                                        <span className="flex-1 text-left">{c.name}</span>
+                                        <span className="text-muted-foreground">{c.dial}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                              <Input className="h-7 text-xs flex-1" placeholder="(XX) XXXXX-XXXX" value={contactForm.phone}
+                                onChange={(e) => setContactForm((f) => ({ ...f, phone: maskPhoneInput(e.target.value) }))} />
+                            </div>
                           </div>
                           <div>
                             <label className="text-[11px] font-medium text-muted-foreground">Empresa</label>
@@ -885,14 +956,36 @@ const WhatsAppInbox = () => {
                             <label className="text-[11px] font-medium text-muted-foreground">Endereço</label>
                             <Input className="h-7 text-xs mt-0.5" value={contactForm.address} onChange={(e) => setContactForm((f) => ({ ...f, address: e.target.value }))} />
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[11px] font-medium text-muted-foreground">Cidade</label>
-                              <Input className="h-7 text-xs mt-0.5" value={contactForm.city} onChange={(e) => setContactForm((f) => ({ ...f, city: e.target.value }))} />
-                            </div>
-                            <div>
-                              <label className="text-[11px] font-medium text-muted-foreground">Estado</label>
-                              <Input className="h-7 text-xs mt-0.5" value={contactForm.state} onChange={(e) => setContactForm((f) => ({ ...f, state: e.target.value }))} />
+                          <div>
+                            <label className="text-[11px] font-medium text-muted-foreground">Estado</label>
+                            <Select value={contactForm.state} onValueChange={(v) => setContactForm((f) => ({ ...f, state: v, city: "" }))}>
+                              <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue placeholder="Selecione o estado" /></SelectTrigger>
+                              <SelectContent>
+                                {BRAZIL_STATES.map((s) => (
+                                  <SelectItem key={s.uf} value={s.uf}>{s.uf} - {s.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-medium text-muted-foreground">Cidade</label>
+                            <Select value={contactForm.city} onValueChange={(v) => setContactForm((f) => ({ ...f, city: v }))} disabled={!contactForm.state}>
+                              <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue placeholder={contactForm.state ? "Selecione a cidade" : "Selecione o estado primeiro"} /></SelectTrigger>
+                              <SelectContent>
+                                {(BRAZIL_CITIES[contactForm.state] || []).map((city) => (
+                                  <SelectItem key={city} value={city}>{city}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-medium text-muted-foreground">Tags</label>
+                            <div className="mt-0.5">
+                              <TagSelector
+                                tags={contactForm.tags ? contactForm.tags.split(",").filter(Boolean) : (contactDetails?.tags || [])}
+                                onChange={(newTags) => setContactForm((f) => ({ ...f, tags: newTags.join(",") }))}
+                                onCreateTag={handleCreateTag}
+                              />
                             </div>
                           </div>
                           <div className="flex gap-2">
@@ -912,12 +1005,7 @@ const WhatsAppInbox = () => {
                           {/* Phone */}
                           <div className="flex items-center gap-2 text-xs">
                             <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span>{selectedConv.contact_phone || "—"}</span>
-                          </div>
-                          {/* WhatsApp JID */}
-                          <div className="flex items-center gap-2 text-xs">
-                            <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span className="text-muted-foreground truncate">{selectedConv.remote_jid}</span>
+                            <span>{formatPhoneWhatsApp(selectedConv.contact_phone)}</span>
                           </div>
                           {/* Email */}
                           <div className="flex items-center gap-2 text-xs">
@@ -933,17 +1021,18 @@ const WhatsAppInbox = () => {
                           {(contactDetails?.custom_fields?.city || contactDetails?.custom_fields?.state) && (
                             <div className="flex items-center gap-2 text-xs">
                               <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                              <span>{[contactDetails.custom_fields.city, contactDetails.custom_fields.state].filter(Boolean).join(", ")}</span>
+                              <span>
+                                {[
+                                  contactDetails.custom_fields.city,
+                                  BRAZIL_STATES.find(s => s.uf === contactDetails.custom_fields.state)?.name || contactDetails.custom_fields.state,
+                                ].filter(Boolean).join(", ")}
+                              </span>
                             </div>
                           )}
                           {/* Tags */}
-                          <div className="flex items-center gap-2 text-xs">
-                            <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <div className="flex flex-wrap gap-1">
-                              {(contactDetails?.tags || ["whatsapp"]).map((t, i) => (
-                                <Badge key={i} variant="secondary" className="text-[10px] h-4">{t}</Badge>
-                              ))}
-                            </div>
+                          <div className="flex items-start gap-2 text-xs">
+                            <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                            <TagSelector tags={contactDetails?.tags || []} onChange={() => {}} readOnly />
                           </div>
                         </div>
                       )}
