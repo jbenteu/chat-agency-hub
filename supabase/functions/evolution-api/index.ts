@@ -38,6 +38,20 @@ const extractPhoneNumber = (payload: Record<string, any> | null | undefined): st
   return null;
 };
 
+const decodeJwtSub = (jwt: string): string | null => {
+  try {
+    const parts = jwt.split(".");
+    if (parts.length < 2) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(padded));
+    return typeof payload?.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -62,25 +76,32 @@ Deno.serve(async (req) => {
   const authHeader = `Bearer ${token}`;
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // Validate user via service_role client (bypasses JWT algorithm issues)
-  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(
-    // First decode the JWT to get the sub claim without verification
-    (() => {
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        return payload.sub;
-      } catch {
-        return "";
-      }
-    })()
-  );
+  let userId: string | null = null;
 
-  if (userError || !userData?.user?.id) {
-    console.error("Auth validation failed:", userError?.message || "invalid token payload");
+  // Primary validation path
+  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
+  if (!authError && authData?.user?.id) {
+    userId = authData.user.id;
+  }
+
+  // Fallback: decode sub claim (base64url-safe) and validate by admin
+  if (!userId) {
+    const jwtSub = decodeJwtSub(token);
+    if (jwtSub) {
+      const { data: fallbackUserData, error: fallbackUserError } = await supabaseAdmin.auth.admin.getUserById(jwtSub);
+      if (!fallbackUserError && fallbackUserData?.user?.id) {
+        userId = fallbackUserData.user.id;
+      } else {
+        console.error("Auth fallback failed:", fallbackUserError?.message || "user not found by sub");
+      }
+    }
+  }
+
+  if (!userId) {
+    console.error("Auth validation failed:", authError?.message || "invalid token");
     return jsonResponse({ error: "Invalid token" }, 401);
   }
 
-  const userId = userData.user.id;
   const { data: roleData } = await supabaseAdmin.from("user_roles").select("tenant_id").eq("user_id", userId).limit(1).single();
   if (!roleData?.tenant_id) return jsonResponse({ error: "User has no tenant assigned" }, 403);
 
