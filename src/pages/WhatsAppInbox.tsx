@@ -327,6 +327,9 @@ const WhatsAppInbox = () => {
                   }`}
                 >
                   <Avatar className="h-10 w-10 shrink-0">
+                    {profilePics[conv.remote_jid] && (
+                      <AvatarImage src={profilePics[conv.remote_jid]} alt={conv.contact_name || ""} />
+                    )}
                     <AvatarFallback className="text-xs bg-primary/10 text-primary">
                       {getInitials(conv.contact_name)}
                     </AvatarFallback>
