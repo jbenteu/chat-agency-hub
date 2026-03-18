@@ -199,8 +199,10 @@ const WhatsAppInbox = () => {
       return !name || name.startsWith("Grupo ") || /^\d+$/.test(name);
     });
     if (needsInfo.length === 0) return;
+    let cancelled = false;
     const fetchInfos = async () => {
-      for (const conv of needsInfo.slice(0, 10)) {
+      for (const conv of needsInfo.slice(0, 5)) {
+        if (cancelled) break;
         groupInfoFetchedRef.current.add(conv.remote_jid);
         try {
           const info = await fetchGroupInfo(inst.instance_name, conv.remote_jid);
@@ -214,19 +216,22 @@ const WhatsAppInbox = () => {
       }
     };
     fetchInfos();
+    return () => { cancelled = true; };
   }, [selectedInstanceId, conversations, instances, fetchGroupInfo]);
 
-  // ── Fetch profile pictures ──
+  // ── Fetch profile pictures (throttled to avoid 503) ──
   useEffect(() => {
     if (!profilePictureSupported || !selectedInstanceId || conversations.length === 0) return;
     const inst = instances.find((i) => i.id === selectedInstanceId);
     if (!inst) return;
-    const queue = conversations.filter((c) => !profilePics[c.remote_jid]).slice(0, 8);
+    const queue = conversations.filter((c) => !profilePics[c.remote_jid]).slice(0, 5);
     if (queue.length === 0) return;
-    const fetchPics = async () => {
-      await Promise.allSettled(queue.map(async (c) => {
+    let cancelled = false;
+    const fetchPicsSequential = async () => {
+      for (const c of queue) {
+        if (cancelled) break;
         const key = `${inst.id}:${c.remote_jid}`;
-        if (pendingProfileFetchesRef.current.has(key)) return;
+        if (pendingProfileFetchesRef.current.has(key)) continue;
         pendingProfileFetchesRef.current.add(key);
         try {
           const data = await getProfilePicture(inst.instance_name, c.remote_jid);
@@ -234,9 +239,10 @@ const WhatsAppInbox = () => {
         } catch (err: any) {
           if (String(err?.message || "").includes("Unknown action: get_profile_picture")) setProfilePictureSupported(false);
         } finally { pendingProfileFetchesRef.current.delete(key); }
-      }));
+      }
     };
-    fetchPics();
+    fetchPicsSequential();
+    return () => { cancelled = true; };
   }, [profilePictureSupported, selectedInstanceId, conversations, instances, profilePics, getProfilePicture]);
 
   // ── Fetch group info when selecting a group conversation ──
