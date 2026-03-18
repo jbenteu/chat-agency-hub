@@ -120,22 +120,22 @@ const WhatsAppInbox = () => {
   const addOptimisticMessage = useCallback((message: WhatsAppMessage) => { setMessages((prev) => [...prev, message]); }, []);
   const removeOptimisticMessage = useCallback((tempId: string) => { setMessages((prev) => prev.filter((msg) => msg.id !== tempId)); }, []);
 
-  // ── Load instances ──
+  // ── Load instances (direct DB query) ──
   const loadInstances = useCallback(async () => {
     try {
-      const data = await listInstances();
-      const connected = (data.instances || []).filter((i: EvolutionInstance) => i.status === "connected");
+      const allInstances = await queryInstances();
+      const connected = allInstances.filter((i) => i.status === "connected");
       setInstances(connected);
       setCachedInstances(connected);
       if (connected.length === 0) { setSelectedInstanceId(""); setCachedSelectedInstance(""); setConversations([]); setSelectedConv(null); return; }
       setSelectedInstanceId((prev) => {
-        if (prev && connected.some((i: EvolutionInstance) => i.id === prev)) return prev;
+        if (prev && connected.some((i) => i.id === prev)) return prev;
         const newId = connected[0].id;
         setCachedSelectedInstance(newId);
         return newId;
       });
     } catch { /* UI handles */ }
-  }, [listInstances]);
+  }, []);
 
   useEffect(() => { loadInstances(); }, [loadInstances]);
 
