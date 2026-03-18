@@ -160,7 +160,7 @@ Deno.serve(async (req) => {
 
     const { data: instance, error: instanceError } = await supabaseAdmin
       .from("whatsapp_instances")
-      .select("id, tenant_id")
+      .select("id, tenant_id, phone_number")
       .eq("instance_name", instanceName)
       .limit(1)
       .single();
@@ -172,6 +172,7 @@ Deno.serve(async (req) => {
 
     const tenantId = instance.tenant_id;
     const instanceId = instance.id;
+    const instancePhone = instance.phone_number;
 
     if (event === "messages.upsert") {
       const entries = getMessageEntries(data);
@@ -185,11 +186,20 @@ Deno.serve(async (req) => {
 
         if (!remoteJid || remoteJid === "status@broadcast") continue;
 
+        const isGroup = String(remoteJid).endsWith("@g.us");
+
+        // Skip self-conversations: when fromMe and remoteJid matches our own number
+        if (fromMe && !isGroup) {
+          const remotePhone = normalizePhone(remoteJid);
+          if (remotePhone && instancePhone && remotePhone === instancePhone) {
+            continue;
+          }
+        }
+
         const parsed = parseMessagePayload(entry?.message || data?.message || {});
         if (parsed.skip) continue;
 
         const participantJid = key?.participant || entry?.participant || data?.participant || null;
-        const isGroup = String(remoteJid).endsWith("@g.us");
         const conversationPhone = normalizePhone(remoteJid) || remoteJid.replace(/@.*$/, "");
         const participantPhone = normalizePhone(participantJid);
 
@@ -277,14 +287,27 @@ Deno.serve(async (req) => {
             resolvedContactName = conversation.contact_name;
           }
         } else {
-          resolvedContactName =
-            conversation?.contact_name ||
-            groupSubject ||
-            `Grupo ${conversationPhone || remoteJid}`;
+          // For groups: prefer existing name, then groupSubject from webhook, then fallback
+          if (conversation?.contact_name && !conversation.contact_name.startsWith("Grupo ")) {
+            // Already has a real group name, keep it
+            resolvedContactName = conversation.contact_name;
+          } else if (groupSubject) {
+            // Webhook provided group subject
+            resolvedContactName = groupSubject;
+          } else if (conversation?.contact_name) {
+            // Keep existing fallback name
+            resolvedContactName = conversation.contact_name;
+          } else {
+            resolvedContactName = `Grupo ${conversationPhone || remoteJid}`;
+          }
         }
 
+        const senderLabel = isGroup && participantPhone
+          ? (entry?.pushName || data?.pushName || participantPhone)
+          : pushName;
+
         const conversationMessage =
-          isGroup && !fromMe ? `${pushName}: ${parsed.content}` : parsed.content;
+          isGroup && !fromMe ? `${senderLabel}: ${parsed.content}` : parsed.content;
 
         if (!conversation) {
           const { data: newConversation } = await supabaseAdmin
@@ -306,15 +329,24 @@ Deno.serve(async (req) => {
 
           conversation = newConversation || null;
         } else {
+          const updatePayload: Record<string, unknown> = {
+            last_message: conversationMessage,
+            last_message_at: new Date().toISOString(),
+            unread_count: fromMe ? conversation.unread_count || 0 : (conversation.unread_count || 0) + 1,
+          };
+
+          // Update contact_name if we got a better one (e.g. groupSubject arrived)
+          if (!isGroup) {
+            updatePayload.contact_id = contactId;
+            updatePayload.contact_name = resolvedContactName;
+          } else if (groupSubject && conversation.contact_name?.startsWith("Grupo ")) {
+            // Update group name only if we have a real subject and current name is fallback
+            updatePayload.contact_name = groupSubject;
+          }
+
           await supabaseAdmin
             .from("whatsapp_conversations")
-            .update({
-              contact_id: isGroup ? null : contactId,
-              contact_name: resolvedContactName,
-              last_message: conversationMessage,
-              last_message_at: new Date().toISOString(),
-              unread_count: fromMe ? conversation.unread_count || 0 : (conversation.unread_count || 0) + 1,
-            })
+            .update(updatePayload)
             .eq("tenant_id", tenantId)
             .eq("id", conversation.id);
         }
@@ -347,7 +379,7 @@ Deno.serve(async (req) => {
           media_type: parsed.mediaType,
           status: fromMe ? "sent" : "received",
           metadata: {
-            pushName,
+            pushName: senderLabel,
             key,
             participant: participantJid,
             isGroup,

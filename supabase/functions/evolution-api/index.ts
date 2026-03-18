@@ -626,6 +626,77 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true });
     }
 
+    if (action === "fetch_group_info") {
+      const { remoteJid } = body as { remoteJid?: string };
+      if (!instanceName || !remoteJid) {
+        return jsonResponse({ error: "instanceName and remoteJid are required" }, 400);
+      }
+
+      if (!remoteJid.endsWith("@g.us")) {
+        return jsonResponse({ success: true, isGroup: false });
+      }
+
+      const paths = [
+        `/group/findGroupInfos/${instanceName}`,
+        `/chat/findGroupInfos/${instanceName}`,
+        `/group/fetchAllGroups/${instanceName}`,
+      ];
+
+      for (const path of paths) {
+        try {
+          const evoData = await requestEvolution(
+            path,
+            {
+              method: "POST",
+              body: JSON.stringify({ groupJid: remoteJid }),
+            },
+            "fetch_group_info",
+          );
+
+          const subject = evoData?.subject || evoData?.name || evoData?.groupName || null;
+          const desc = evoData?.desc || evoData?.description || null;
+          const participants = evoData?.participants || evoData?.members || [];
+          const size = evoData?.size || participants.length || 0;
+          const pictureUrl = evoData?.pictureUrl || evoData?.profilePictureUrl || null;
+
+          if (subject) {
+            // Update conversation name in DB
+            if (instanceName) {
+              const inst = await getInstanceRow(instanceName);
+              if (inst?.id) {
+                await supabaseAdmin
+                  .from("whatsapp_conversations")
+                  .update({ contact_name: subject })
+                  .eq("tenant_id", tenantId)
+                  .eq("instance_id", inst.id)
+                  .eq("remote_jid", remoteJid);
+              }
+            }
+
+            return jsonResponse({
+              success: true,
+              isGroup: true,
+              subject,
+              description: desc,
+              size,
+              pictureUrl,
+              participants: participants.slice(0, 50).map((p: any) => ({
+                id: p.id || p.jid,
+                admin: p.admin || null,
+              })),
+            });
+          }
+        } catch (error) {
+          const isNotFound = error instanceof Error && error.message.includes("[404]");
+          if (!isNotFound) {
+            console.warn("Group info fetch warning:", error);
+          }
+        }
+      }
+
+      return jsonResponse({ success: true, isGroup: true, subject: null });
+    }
+
     if (action === "get_profile_picture") {
       const { remoteJid } = body as { remoteJid?: string };
       if (!instanceName || !remoteJid) {
@@ -642,12 +713,12 @@ Deno.serve(async (req) => {
         { number: numberOnly },
         { jid: remoteJid },
       ];
-      const paths = [
+      const picturePaths = [
         `/chat/fetchProfilePictureUrl/${instanceName}`,
         `/chat/fetchProfilePicture/${instanceName}`,
       ];
 
-      for (const path of paths) {
+      for (const path of picturePaths) {
         for (const payload of requestBodies) {
           try {
             const evoData = await requestEvolution(
