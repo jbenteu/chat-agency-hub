@@ -13,6 +13,9 @@ interface MediaMessageProps {
   instanceName: string;
   remoteJid: string;
   isOutbound: boolean;
+  mediaThumbnail?: string | null;
+  mediaWidth?: number | null;
+  mediaHeight?: number | null;
 }
 
 function isExpirableUrl(url: string): boolean {
