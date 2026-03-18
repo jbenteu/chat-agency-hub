@@ -540,7 +540,7 @@ const WhatsAppInbox = () => {
                 <h2 className="text-sm font-semibold">Conversas</h2>
               </div>
               <div className="flex items-center gap-1">
-                <Select value={selectedInstanceId} onValueChange={(v) => { setSelectedInstanceId(v); setSelectedConv(null); setMessages([]); }}>
+                <Select value={selectedInstanceId} onValueChange={(v) => { setSelectedInstanceId(v); setCachedSelectedInstance(v); setSelectedConv(null); setMessages([]); const cached = getCachedConversations(v); if (cached) setConversations(cached); }}>
                   <SelectTrigger className="h-7 w-[130px] text-xs"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
                     {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{i.display_name || i.phone_number || "Instância"}</SelectItem>))}
