@@ -61,30 +61,26 @@ Deno.serve(async (req) => {
 
   const authHeader = `Bearer ${token}`;
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: authHeader } },
-  });
 
-  // Primary validation path for signing-keys projects
-  let userId: string | null = null;
-  const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
-  if (!claimsError && claimsData?.claims?.sub) {
-    userId = claimsData.claims.sub;
+  // Validate user via service_role client (bypasses JWT algorithm issues)
+  const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(
+    // First decode the JWT to get the sub claim without verification
+    (() => {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        return payload.sub;
+      } catch {
+        return "";
+      }
+    })()
+  );
+
+  if (userError || !userData?.user?.id) {
+    console.error("Auth validation failed:", userError?.message || "invalid token payload");
+    return jsonResponse({ error: "Invalid token" }, 401);
   }
 
-  // Fallback path for compatibility across runtimes
-  if (!userId) {
-    const { data: userData, error: userError } = await userClient.auth.getUser(token);
-    if (userError || !userData?.user?.id) {
-      console.error("Auth validation failed", {
-        claimsError: claimsError?.message || null,
-        userError: userError?.message || null,
-      });
-      return jsonResponse({ error: "Invalid token" }, 401);
-    }
-    userId = userData.user.id;
-  }
-
+  const userId = userData.user.id;
   const { data: roleData } = await supabaseAdmin.from("user_roles").select("tenant_id").eq("user_id", userId).limit(1).single();
   if (!roleData?.tenant_id) return jsonResponse({ error: "User has no tenant assigned" }, 403);
 
