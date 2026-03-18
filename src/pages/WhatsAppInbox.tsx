@@ -272,31 +272,32 @@ const WhatsAppInbox = () => {
     return () => { cancelled = true; };
   }, [selectedInstanceId, conversations, instances, fetchGroupInfo]);
 
-  // ── Fetch profile pictures (throttled, record nulls to avoid re-fetch) ──
+  // ── Fetch profile pictures (parallel batch) ──
   const profilePicsFetchedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!profilePictureSupported || !selectedInstanceId || conversations.length === 0) return;
     const inst = instances.find((i) => i.id === selectedInstanceId);
     if (!inst) return;
-    const queue = conversations.filter((c) => !profilePics[c.remote_jid] && !profilePicsFetchedRef.current.has(c.remote_jid)).slice(0, 5);
+    const queue = conversations.filter((c) => !profilePics[c.remote_jid] && !profilePicsFetchedRef.current.has(c.remote_jid)).slice(0, 8);
     if (queue.length === 0) return;
     let cancelled = false;
-    const fetchPicsSequential = async () => {
-      for (const c of queue) {
-        if (cancelled) break;
-        const key = `${inst.id}:${c.remote_jid}`;
-        if (pendingProfileFetchesRef.current.has(key)) continue;
-        pendingProfileFetchesRef.current.add(key);
-        profilePicsFetchedRef.current.add(c.remote_jid);
-        try {
-          const data = await getProfilePicture(inst.instance_name, c.remote_jid);
-          if (data?.profilePictureUrl) { setProfilePics((prev) => ({ ...prev, [c.remote_jid]: data.profilePictureUrl })); setCachedProfilePic(c.remote_jid, data.profilePictureUrl); }
-        } catch (err: any) {
-          if (String(err?.message || "").includes("Unknown action: get_profile_picture")) setProfilePictureSupported(false);
-        } finally { pendingProfileFetchesRef.current.delete(key); }
+    queue.forEach((c) => profilePicsFetchedRef.current.add(c.remote_jid));
+    const fetchPics = async () => {
+      const results = await Promise.allSettled(
+        queue.map((c) => getProfilePicture(inst.instance_name, c.remote_jid).then((data) => ({ jid: c.remote_jid, url: data?.profilePictureUrl })))
+      );
+      if (cancelled) return;
+      for (const result of results) {
+        if (result.status !== "fulfilled") {
+          const err = result.status === "rejected" ? result.reason : null;
+          if (String(err?.message || "").includes("Unknown action: get_profile_picture")) { setProfilePictureSupported(false); return; }
+          continue;
+        }
+        const { jid, url } = result.value;
+        if (url) { setProfilePics((prev) => ({ ...prev, [jid]: url })); setCachedProfilePic(jid, url); }
       }
     };
-    fetchPicsSequential();
+    fetchPics();
     return () => { cancelled = true; };
   }, [profilePictureSupported, selectedInstanceId, conversations, instances, profilePics, getProfilePicture]);
 
