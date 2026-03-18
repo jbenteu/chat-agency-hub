@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
 import { MediaMessage } from "@/components/whatsapp/MediaMessage";
+import { TagSelector } from "@/components/whatsapp/TagSelector";
 import {
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
@@ -23,14 +24,18 @@ import {
   SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
   SidebarProvider, SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   MessageCircle, Send, Image, Paperclip, Search, Phone, User, Tag, X, Loader2,
   ChevronRight, LayoutDashboard, Users, Settings, Shield, LogOut, Reply, Crown,
-  ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, UserPlus, ChevronUp,
-  Copy, Edit2, Check,
+  ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, ChevronUp,
+  Copy, Edit2, Check, ChevronDown,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, isToday, isYesterday } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { formatPhoneWhatsApp, formatPhoneEdit, maskPhoneInput, detectCountryCode, COUNTRY_CODES } from "@/data/country-codes";
+import { BRAZIL_STATES, BRAZIL_CITIES } from "@/data/brazil-locations";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/" },
