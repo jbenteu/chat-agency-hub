@@ -745,7 +745,7 @@ const WhatsAppInbox = () => {
                               {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
                                 <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
                               )}
-                              {msg.content && msg.media_type !== "document" && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
+                              {msg.content && msg.media_type !== "document" && !isMediaPlaceholder(msg.content) && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
                               <p className={`mt-1 text-right text-[10px] ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{formatDate(msg.created_at)}</p>
                               <button className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-1 hover:bg-muted"
                                 onClick={() => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") })}
