@@ -243,6 +243,10 @@ Deno.serve(async (req) => {
           data?.groupMetadata?.subject ||
           entry?.chatName ||
           data?.chatName ||
+          entry?.subject ||
+          data?.subject ||
+          entry?.name ||
+          data?.name ||
           null;
 
         let { data: conversation } = await supabaseAdmin
