@@ -911,7 +911,31 @@ const WhatsAppInbox = () => {
                           </div>
                           <div>
                             <label className="text-[11px] font-medium text-muted-foreground">Telefone</label>
-                            <Input className="h-7 text-xs mt-0.5" value={contactForm.phone} onChange={(e) => setContactForm((f) => ({ ...f, phone: e.target.value }))} />
+                            <div className="flex gap-1 mt-0.5">
+                              <Popover open={phoneCountryOpen} onOpenChange={setPhoneCountryOpen}>
+                                <PopoverTrigger asChild>
+                                  <button className="flex items-center gap-0.5 h-7 px-1.5 rounded-md border border-input bg-background text-xs shrink-0 hover:bg-accent">
+                                    <span>{COUNTRY_CODES.find(c => c.dial === phoneCountryCode)?.flag || "🇧🇷"}</span>
+                                    <span className="text-[10px] text-muted-foreground">{phoneCountryCode}</span>
+                                    <ChevronDown className="h-2.5 w-2.5 text-muted-foreground" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-48 p-1" align="start">
+                                  <div className="max-h-48 overflow-y-auto">
+                                    {COUNTRY_CODES.map((c) => (
+                                      <button key={c.code} onClick={() => { setPhoneCountryCode(c.dial); setPhoneCountryOpen(false); }}
+                                        className="flex items-center gap-2 w-full rounded px-2 py-1 text-xs hover:bg-muted">
+                                        <span>{c.flag}</span>
+                                        <span className="flex-1 text-left">{c.name}</span>
+                                        <span className="text-muted-foreground">{c.dial}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                              <Input className="h-7 text-xs flex-1" placeholder="(XX) XXXXX-XXXX" value={contactForm.phone}
+                                onChange={(e) => setContactForm((f) => ({ ...f, phone: maskPhoneInput(e.target.value) }))} />
+                            </div>
                           </div>
                           <div>
                             <label className="text-[11px] font-medium text-muted-foreground">Empresa</label>
@@ -921,14 +945,36 @@ const WhatsAppInbox = () => {
                             <label className="text-[11px] font-medium text-muted-foreground">Endereço</label>
                             <Input className="h-7 text-xs mt-0.5" value={contactForm.address} onChange={(e) => setContactForm((f) => ({ ...f, address: e.target.value }))} />
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="text-[11px] font-medium text-muted-foreground">Cidade</label>
-                              <Input className="h-7 text-xs mt-0.5" value={contactForm.city} onChange={(e) => setContactForm((f) => ({ ...f, city: e.target.value }))} />
-                            </div>
-                            <div>
-                              <label className="text-[11px] font-medium text-muted-foreground">Estado</label>
-                              <Input className="h-7 text-xs mt-0.5" value={contactForm.state} onChange={(e) => setContactForm((f) => ({ ...f, state: e.target.value }))} />
+                          <div>
+                            <label className="text-[11px] font-medium text-muted-foreground">Estado</label>
+                            <Select value={contactForm.state} onValueChange={(v) => setContactForm((f) => ({ ...f, state: v, city: "" }))}>
+                              <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue placeholder="Selecione o estado" /></SelectTrigger>
+                              <SelectContent>
+                                {BRAZIL_STATES.map((s) => (
+                                  <SelectItem key={s.uf} value={s.uf}>{s.uf} - {s.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-medium text-muted-foreground">Cidade</label>
+                            <Select value={contactForm.city} onValueChange={(v) => setContactForm((f) => ({ ...f, city: v }))} disabled={!contactForm.state}>
+                              <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue placeholder={contactForm.state ? "Selecione a cidade" : "Selecione o estado primeiro"} /></SelectTrigger>
+                              <SelectContent>
+                                {(BRAZIL_CITIES[contactForm.state] || []).map((city) => (
+                                  <SelectItem key={city} value={city}>{city}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-medium text-muted-foreground">Tags</label>
+                            <div className="mt-0.5">
+                              <TagSelector
+                                tags={contactForm.tags ? contactForm.tags.split(",").filter(Boolean) : (contactDetails?.tags || [])}
+                                onChange={(newTags) => setContactForm((f) => ({ ...f, tags: newTags.join(",") }))}
+                                onCreateTag={handleCreateTag}
+                              />
                             </div>
                           </div>
                           <div className="flex gap-2">
@@ -948,12 +994,7 @@ const WhatsAppInbox = () => {
                           {/* Phone */}
                           <div className="flex items-center gap-2 text-xs">
                             <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span>{selectedConv.contact_phone || "—"}</span>
-                          </div>
-                          {/* WhatsApp JID */}
-                          <div className="flex items-center gap-2 text-xs">
-                            <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span className="text-muted-foreground truncate">{selectedConv.remote_jid}</span>
+                            <span>{formatPhoneWhatsApp(selectedConv.contact_phone)}</span>
                           </div>
                           {/* Email */}
                           <div className="flex items-center gap-2 text-xs">
@@ -969,17 +1010,18 @@ const WhatsAppInbox = () => {
                           {(contactDetails?.custom_fields?.city || contactDetails?.custom_fields?.state) && (
                             <div className="flex items-center gap-2 text-xs">
                               <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                              <span>{[contactDetails.custom_fields.city, contactDetails.custom_fields.state].filter(Boolean).join(", ")}</span>
+                              <span>
+                                {[
+                                  contactDetails.custom_fields.city,
+                                  BRAZIL_STATES.find(s => s.uf === contactDetails.custom_fields.state)?.name || contactDetails.custom_fields.state,
+                                ].filter(Boolean).join(", ")}
+                              </span>
                             </div>
                           )}
                           {/* Tags */}
-                          <div className="flex items-center gap-2 text-xs">
-                            <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <div className="flex flex-wrap gap-1">
-                              {(contactDetails?.tags || ["whatsapp"]).map((t, i) => (
-                                <Badge key={i} variant="secondary" className="text-[10px] h-4">{t}</Badge>
-                              ))}
-                            </div>
+                          <div className="flex items-start gap-2 text-xs">
+                            <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                            <TagSelector tags={contactDetails?.tags || []} onChange={() => {}} readOnly />
                           </div>
                         </div>
                       )}
