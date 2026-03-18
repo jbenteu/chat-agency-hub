@@ -368,6 +368,9 @@ const WhatsAppInbox = () => {
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-9 w-9">
+                    {profilePics[selectedConv.remote_jid] && (
+                      <AvatarImage src={profilePics[selectedConv.remote_jid]} alt={selectedConv.contact_name || ""} />
+                    )}
                     <AvatarFallback className="text-xs bg-primary/10 text-primary">
                       {getInitials(selectedConv.contact_name)}
                     </AvatarFallback>
