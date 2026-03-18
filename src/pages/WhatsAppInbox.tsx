@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
+import { MediaMessage } from "@/components/whatsapp/MediaMessage";
 import {
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
@@ -27,7 +28,7 @@ import {
   MessageCircle, Send, Image, Paperclip, Search, Phone, User, Tag, X, Loader2,
   ChevronRight, LayoutDashboard, Users, Settings, Shield, LogOut, Reply, Crown,
   ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, UserPlus, ChevronUp,
-  Copy, Edit2, Check, Play, Download, FileText,
+  Copy, Edit2, Check,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -193,24 +194,42 @@ const WhatsAppInbox = () => {
     return () => { supabase.removeChannel(ch); };
   }, [selectedInstanceId, fetchConversations]);
 
-  // ── Realtime: messages ──
+  // ── Realtime: messages + polling fallback ──
   useEffect(() => {
     if (!selectedConv?.id) return;
+    const convId = selectedConv.id;
+
+    const mergeNewMessages = (newMsgs: WhatsAppMessage[]) => {
+      setMessages((prev) => {
+        let updated = [...prev];
+        for (const newMsg of newMsgs) {
+          if (updated.some((m) => m.id === newMsg.id)) continue;
+          const optIdx = updated.findIndex((m) => m.id.startsWith("temp-") && m.direction === newMsg.direction && m.content === newMsg.content);
+          if (optIdx >= 0) { updated[optIdx] = newMsg; } else { updated.push(newMsg); }
+        }
+        return updated.length !== prev.length ? updated : prev;
+      });
+    };
+
     const ch = supabase
-      .channel(`conversation:${selectedConv.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${selectedConv.id}` },
-        (payload) => {
-          const newMsg = payload.new as WhatsAppMessage;
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === newMsg.id)) return prev;
-            const optIdx = prev.findIndex((m) => m.id.startsWith("temp-") && m.direction === newMsg.direction && m.content === newMsg.content);
-            if (optIdx >= 0) { const next = [...prev]; next[optIdx] = newMsg; return next; }
-            return [...prev, newMsg];
-          });
-        })
+      .channel(`conversation:${convId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${convId}` },
+        (payload) => { mergeNewMessages([payload.new as WhatsAppMessage]); })
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [selectedConv?.id]);
+
+    // Polling fallback every 5s to catch missed realtime events
+    const poll = setInterval(async () => {
+      try {
+        const data = await listMessages(convId, 100);
+        if (data?.messages) {
+          mergeNewMessages(data.messages);
+          setCachedMessages(convId, data.messages);
+        }
+      } catch { /* silent */ }
+    }, 5000);
+
+    return () => { supabase.removeChannel(ch); clearInterval(poll); };
+  }, [selectedConv?.id, listMessages]);
 
   // ── Auto-fetch group info ──
   useEffect(() => {
@@ -246,12 +265,13 @@ const WhatsAppInbox = () => {
     return () => { cancelled = true; };
   }, [selectedInstanceId, conversations, instances, fetchGroupInfo]);
 
-  // ── Fetch profile pictures (throttled to avoid 503) ──
+  // ── Fetch profile pictures (throttled, record nulls to avoid re-fetch) ──
+  const profilePicsFetchedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!profilePictureSupported || !selectedInstanceId || conversations.length === 0) return;
     const inst = instances.find((i) => i.id === selectedInstanceId);
     if (!inst) return;
-    const queue = conversations.filter((c) => !profilePics[c.remote_jid]).slice(0, 5);
+    const queue = conversations.filter((c) => !profilePics[c.remote_jid] && !profilePicsFetchedRef.current.has(c.remote_jid)).slice(0, 5);
     if (queue.length === 0) return;
     let cancelled = false;
     const fetchPicsSequential = async () => {
@@ -260,6 +280,7 @@ const WhatsAppInbox = () => {
         const key = `${inst.id}:${c.remote_jid}`;
         if (pendingProfileFetchesRef.current.has(key)) continue;
         pendingProfileFetchesRef.current.add(key);
+        profilePicsFetchedRef.current.add(c.remote_jid);
         try {
           const data = await getProfilePicture(inst.instance_name, c.remote_jid);
           if (data?.profilePictureUrl) { setProfilePics((prev) => ({ ...prev, [c.remote_jid]: data.profilePictureUrl })); setCachedProfilePic(c.remote_jid, data.profilePictureUrl); }
@@ -641,6 +662,7 @@ const WhatsAppInbox = () => {
                         const senderName = getSenderName(msg);
                         const senderPhone = getSenderPhone(msg);
                         const quoted = getQuotedInfo(msg);
+                        const currentInstName = instances.find((i) => i.id === selectedConv.instance_id)?.instance_name || "";
 
                         return (
                           <div key={msg.id} className={`group flex ${isOutbound ? "justify-end" : "justify-start"}`}>
@@ -662,30 +684,29 @@ const WhatsAppInbox = () => {
                                   <p className="truncate">{quoted.content}</p>
                                 </div>
                               )}
-                              {msg.media_type === "image" && msg.media_url && (
-                                <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="block mb-1">
-                                  <img src={msg.media_url} alt="Imagem" className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity" loading="lazy" />
-                                </a>
+                              {msg.media_type && msg.media_type !== "document" && (msg.media_url || msg.message_id) && (
+                                <MediaMessage
+                                  messageId={msg.message_id}
+                                  mediaUrl={msg.media_url}
+                                  mediaType={msg.media_type}
+                                  content={msg.content}
+                                  instanceName={currentInstName}
+                                  remoteJid={selectedConv.remote_jid}
+                                  isOutbound={isOutbound}
+                                />
                               )}
-                              {msg.media_type === "sticker" && msg.media_url && <img src={msg.media_url} alt="Sticker" className="mb-1 max-h-36 max-w-full rounded-lg" loading="lazy" />}
-                              {msg.media_type === "video" && msg.media_url && (
-                                <video controls className="mb-1 max-w-full rounded-lg" preload="metadata">
-                                  <source src={msg.media_url} />
-                                </video>
+                              {msg.media_type === "document" && (msg.media_url || msg.message_id) && (
+                                <MediaMessage
+                                  messageId={msg.message_id}
+                                  mediaUrl={msg.media_url}
+                                  mediaType="document"
+                                  content={msg.content}
+                                  instanceName={currentInstName}
+                                  remoteJid={selectedConv.remote_jid}
+                                  isOutbound={isOutbound}
+                                />
                               )}
-                              {msg.media_type === "audio" && msg.media_url && (
-                                <audio controls className="mb-1 w-full min-w-[200px]" preload="metadata">
-                                  <source src={msg.media_url} />
-                                </audio>
-                              )}
-                              {msg.media_type === "document" && msg.media_url && (
-                                <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs hover:bg-background/30 transition-colors cursor-pointer">
-                                  <FileText className="h-4 w-4 shrink-0" />
-                                  <span className="flex-1 truncate">{msg.content || "Documento"}</span>
-                                  <Download className="h-3.5 w-3.5 shrink-0" />
-                                </a>
-                              )}
-                              {msg.media_type === "document" && !msg.media_url && (
+                              {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
                                 <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
                               )}
                               {msg.content && msg.media_type !== "document" && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
