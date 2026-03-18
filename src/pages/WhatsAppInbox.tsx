@@ -37,6 +37,7 @@ const WhatsAppInbox = () => {
     sendText,
     sendMedia,
     getProfilePicture,
+    fetchGroupInfo,
   } = useEvolutionApi();
 
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
