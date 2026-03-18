@@ -276,7 +276,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Action: list instances from DB
+    // Action: list instances from DB (with sync against Evolution API)
     if (action === "list_instances") {
       const { data: instances, error: listError } = await supabaseAdmin
         .from("whatsapp_instances")
@@ -288,8 +288,35 @@ Deno.serve(async (req) => {
         throw new Error(`DB list error: ${listError.message}`);
       }
 
+      // Sync: check which instances still exist in Evolution API
+      const validInstances: typeof instances = [];
+      if (instances && instances.length > 0) {
+        for (const inst of instances) {
+          try {
+            const res = await fetch(`${baseUrl}/instance/connectionState/${inst.instance_name}`, {
+              method: "GET",
+              headers,
+            });
+            if (res.status === 404) {
+              // Instance no longer exists in Evolution — remove from DB
+              console.log(`Instance ${inst.instance_name} not found in Evolution API, removing from DB`);
+              await supabaseAdmin
+                .from("whatsapp_instances")
+                .delete()
+                .eq("id", inst.id);
+            } else {
+              validInstances.push(inst);
+            }
+          } catch (e) {
+            // On network error, keep the instance (don't delete on transient failures)
+            console.warn(`Could not check instance ${inst.instance_name}:`, e);
+            validInstances.push(inst);
+          }
+        }
+      }
+
       return new Response(
-        JSON.stringify({ success: true, instances: instances || [] }),
+        JSON.stringify({ success: true, instances: validInstances }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

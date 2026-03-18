@@ -42,7 +42,7 @@ const WhatsAppInbox = () => {
   } = useEvolutionApi();
 
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
-  const [selectedInstanceId, setSelectedInstanceId] = useState<string>("all");
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string>("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
@@ -64,17 +64,25 @@ const WhatsAppInbox = () => {
           (i: EvolutionInstance) => i.status === "connected"
         );
         setInstances(connected);
+        // Auto-select first connected instance
+        if (connected.length > 0 && !selectedInstanceId) {
+          setSelectedInstanceId(connected[0].id);
+        }
       } catch {}
     };
     load();
   }, []);
 
-  // Load conversations
+  // Load conversations (requires selected instance)
   const fetchConversations = useCallback(async () => {
+    if (!selectedInstanceId) {
+      setConversations([]);
+      setLoadingConvs(false);
+      return;
+    }
     setLoadingConvs(true);
     try {
-      const instanceId = selectedInstanceId === "all" ? undefined : selectedInstanceId;
-      const data = await listConversations(instanceId);
+      const data = await listConversations(selectedInstanceId);
       setConversations(data.conversations || []);
     } catch {} finally {
       setLoadingConvs(false);
@@ -234,12 +242,14 @@ const WhatsAppInbox = () => {
           <div className="flex items-center justify-between gap-2 border-b border-border p-3">
             <h2 className="text-sm font-semibold">Conversas</h2>
             <div className="flex items-center gap-1">
-              <Select value={selectedInstanceId} onValueChange={setSelectedInstanceId}>
+              <Select value={selectedInstanceId} onValueChange={(v) => {
+                setSelectedInstanceId(v);
+                setSelectedConv(null);
+              }}>
                 <SelectTrigger className="h-8 w-[140px] text-xs">
-                  <SelectValue placeholder="Instância" />
+                  <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
                   {instances.map((inst) => (
                     <SelectItem key={inst.id} value={inst.id}>
                       {inst.display_name || inst.phone_number || "Instância"}
