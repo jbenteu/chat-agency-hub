@@ -186,6 +186,12 @@ export function useEvolutionApi() {
     [callEvolution]
   );
 
+  const getMedia = useCallback(
+    (instanceName: string, messageId: string, remoteJid?: string) =>
+      callEvolution({ action: "get_media", instanceName, messageId, remoteJid }),
+    [callEvolution]
+  );
+
   return {
     loading,
     error,
@@ -207,6 +213,7 @@ export function useEvolutionApi() {
     removeGroupParticipant,
     promoteGroupParticipant,
     demoteGroupParticipant,
+    getMedia,
   };
 }
 
