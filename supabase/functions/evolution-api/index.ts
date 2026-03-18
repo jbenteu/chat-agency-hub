@@ -396,7 +396,18 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, mediaData: null, mediaUrl: null });
     }
 
-    // ── get_contact ──
+    // ── create_tag ──
+    if (action === "create_tag") {
+      const { name, color } = body as { name?: string; color?: string };
+      if (!name) return jsonResponse({ error: "name is required" }, 400);
+      const { error } = await supabaseAdmin.from("tags").upsert(
+        { tenant_id: tenantId, name: name.trim().toLowerCase(), color: color || "#6366f1" },
+        { onConflict: "tenant_id,name" }
+      );
+      if (error) throw new Error(`Create tag error: ${error.message}`);
+      return jsonResponse({ success: true });
+    }
+
     if (action === "get_contact") {
       const { contactId } = body as { contactId?: string };
       if (!contactId) return jsonResponse({ error: "contactId is required" }, 400);
