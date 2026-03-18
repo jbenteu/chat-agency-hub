@@ -194,24 +194,42 @@ const WhatsAppInbox = () => {
     return () => { supabase.removeChannel(ch); };
   }, [selectedInstanceId, fetchConversations]);
 
-  // ── Realtime: messages ──
+  // ── Realtime: messages + polling fallback ──
   useEffect(() => {
     if (!selectedConv?.id) return;
+    const convId = selectedConv.id;
+
+    const mergeNewMessages = (newMsgs: WhatsAppMessage[]) => {
+      setMessages((prev) => {
+        let updated = [...prev];
+        for (const newMsg of newMsgs) {
+          if (updated.some((m) => m.id === newMsg.id)) continue;
+          const optIdx = updated.findIndex((m) => m.id.startsWith("temp-") && m.direction === newMsg.direction && m.content === newMsg.content);
+          if (optIdx >= 0) { updated[optIdx] = newMsg; } else { updated.push(newMsg); }
+        }
+        return updated.length !== prev.length ? updated : prev;
+      });
+    };
+
     const ch = supabase
-      .channel(`conversation:${selectedConv.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${selectedConv.id}` },
-        (payload) => {
-          const newMsg = payload.new as WhatsAppMessage;
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === newMsg.id)) return prev;
-            const optIdx = prev.findIndex((m) => m.id.startsWith("temp-") && m.direction === newMsg.direction && m.content === newMsg.content);
-            if (optIdx >= 0) { const next = [...prev]; next[optIdx] = newMsg; return next; }
-            return [...prev, newMsg];
-          });
-        })
+      .channel(`conversation:${convId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${convId}` },
+        (payload) => { mergeNewMessages([payload.new as WhatsAppMessage]); })
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [selectedConv?.id]);
+
+    // Polling fallback every 5s to catch missed realtime events
+    const poll = setInterval(async () => {
+      try {
+        const data = await listMessages(convId, 100);
+        if (data?.messages) {
+          mergeNewMessages(data.messages);
+          setCachedMessages(convId, data.messages);
+        }
+      } catch { /* silent */ }
+    }, 5000);
+
+    return () => { supabase.removeChannel(ch); clearInterval(poll); };
+  }, [selectedConv?.id, listMessages]);
 
   // ── Auto-fetch group info ──
   useEffect(() => {
