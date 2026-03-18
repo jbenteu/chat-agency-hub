@@ -12,6 +12,14 @@ const jsonResponse = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
+// Helper to check if a group name is a placeholder (JID digits or "Grupo 1234...")
+const isPlaceholderGroupName = (name: string | null | undefined): boolean => {
+  if (!name) return true;
+  if (/^\d+$/.test(name)) return true;
+  if (/^Grupo\s+\d+/.test(name)) return true;
+  return false;
+};
+
 const normalizePhone = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   const base = value.includes("@") ? value.split("@")[0] : value;
@@ -161,12 +169,74 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL");
+  const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY");
 
   if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse({ ok: false, error: "Supabase env not configured" }, 500);
   }
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+
+  // Evolution API helper (best-effort, never blocks webhook processing)
+  const evoBaseUrl = EVOLUTION_API_URL
+    ? EVOLUTION_API_URL.trim().replace(/\/$/, "").replace(/\/manager$/, "")
+    : null;
+  const evoHeaders: Record<string, string> = EVOLUTION_API_KEY
+    ? { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY }
+    : { "Content-Type": "application/json" };
+
+  const fetchGroupSubjectFromApi = async (instName: string, groupJid: string): Promise<string | null> => {
+    if (!evoBaseUrl) return null;
+    const attempts = [
+      { path: `/group/findGroupInfos/${instName}`, method: "POST", body: JSON.stringify({ groupJid }) },
+      { path: `/chat/findGroupInfos/${instName}`, method: "POST", body: JSON.stringify({ groupJid }) },
+      { path: `/group/fetchAllGroups/${instName}`, method: "GET" },
+    ];
+    for (const attempt of attempts) {
+      try {
+        const init: RequestInit = { method: attempt.method, headers: evoHeaders };
+        if (attempt.body) init.body = attempt.body;
+        const res = await fetch(`${evoBaseUrl}${attempt.path}`, init);
+        if (!res.ok) continue;
+        const json = await res.json();
+        let groupData = json;
+        if (Array.isArray(json)) {
+          groupData = json.find((g: any) => g.id === groupJid || g.jid === groupJid) || null;
+          if (!groupData) continue;
+        }
+        const subject = groupData?.subject || groupData?.name || groupData?.groupName || groupData?.groupSubject || null;
+        if (subject) return subject;
+      } catch { /* ignore, best-effort */ }
+    }
+    return null;
+  };
+
+  const fetchContactNameFromApi = async (instName: string, phoneJid: string): Promise<string | null> => {
+    if (!evoBaseUrl) return null;
+    const paths = [
+      `/chat/findContacts/${instName}`,
+      `/contact/find/${instName}`,
+    ];
+    for (const path of paths) {
+      try {
+        const res = await fetch(`${evoBaseUrl}${path}`, {
+          method: "POST",
+          headers: evoHeaders,
+          body: JSON.stringify({ where: { id: phoneJid } }),
+        });
+        if (!res.ok) continue;
+        const json = await res.json();
+        const contacts = Array.isArray(json) ? json : json?.contacts || json?.data || [];
+        if (Array.isArray(contacts) && contacts.length > 0) {
+          const contact = contacts[0];
+          const name = contact?.name || contact?.pushName || contact?.notify || contact?.verifiedName || null;
+          if (name && !/^\d+$/.test(name)) return name;
+        }
+      } catch { /* ignore */ }
+    }
+    return null;
+  };
 
   try {
     const body = await req.json();
@@ -235,6 +305,10 @@ Deno.serve(async (req) => {
           data?.groupMetadata?.subject ||
           entry?.chatName ||
           data?.chatName ||
+          entry?.subject ||
+          data?.subject ||
+          entry?.name ||
+          data?.name ||
           null;
 
         let { data: conversation } = await supabaseAdmin
@@ -250,6 +324,15 @@ Deno.serve(async (req) => {
         let resolvedContactName = pushName;
 
         if (!isGroup) {
+          // Try to get saved contact name from Evolution API (device's contact list)
+          let evoContactName: string | null = null;
+          const phoneJid = conversationPhone ? `${conversationPhone}@s.whatsapp.net` : null;
+          if (phoneJid) {
+            try {
+              evoContactName = await fetchContactNameFromApi(instanceName, phoneJid);
+            } catch { /* best-effort */ }
+          }
+
           let contactRecord: { id: string; name: string | null } | null = null;
 
           if (contactId) {
@@ -274,12 +357,15 @@ Deno.serve(async (req) => {
             contactRecord = byPhone || null;
           }
 
+          // Use the best available name: CRM > Evolution contacts > pushName
+          const bestName = contactRecord?.name || evoContactName || pushName;
+
           if (!contactRecord && !fromMe && conversationPhone) {
             const { data: newContact } = await supabaseAdmin
               .from("contacts")
               .insert({
                 tenant_id: tenantId,
-                name: pushName,
+                name: evoContactName || pushName,
                 phone: conversationPhone,
                 tags: ["whatsapp", "lead"],
                 notes: "Contato criado automaticamente via WhatsApp",
@@ -302,19 +388,38 @@ Deno.serve(async (req) => {
 
           if (contactRecord?.id) {
             contactId = contactRecord.id;
-            resolvedContactName = contactRecord.name || pushName;
-          } else if (conversation?.contact_name) {
-            resolvedContactName = conversation.contact_name;
-          }
-        } else {
-          if (conversation?.contact_name && !conversation.contact_name.startsWith("Grupo ") && !/^\d+$/.test(conversation.contact_name)) {
-            resolvedContactName = conversation.contact_name;
-          } else if (groupSubject) {
-            resolvedContactName = groupSubject;
+            // If CRM has a generic name but Evolution has a better one, update it
+            if (evoContactName && contactRecord.name && contactRecord.name === pushName && evoContactName !== pushName) {
+              await supabaseAdmin.from("contacts").update({ name: evoContactName }).eq("id", contactRecord.id);
+              resolvedContactName = evoContactName;
+            } else {
+              resolvedContactName = contactRecord.name || bestName;
+            }
           } else if (conversation?.contact_name) {
             resolvedContactName = conversation.contact_name;
           } else {
-            resolvedContactName = `Grupo ${conversationPhone || remoteJid}`;
+            resolvedContactName = bestName;
+          }
+        } else {
+          // GROUP name resolution
+          if (conversation?.contact_name && !isPlaceholderGroupName(conversation.contact_name)) {
+            resolvedContactName = conversation.contact_name;
+          } else if (groupSubject) {
+            resolvedContactName = groupSubject;
+          } else {
+            // No subject from webhook payload — fetch from Evolution API
+            try {
+              const apiSubject = await fetchGroupSubjectFromApi(instanceName, remoteJid);
+              if (apiSubject) {
+                resolvedContactName = apiSubject;
+              } else if (conversation?.contact_name) {
+                resolvedContactName = conversation.contact_name;
+              } else {
+                resolvedContactName = `Grupo ${conversationPhone || remoteJid}`;
+              }
+            } catch {
+              resolvedContactName = conversation?.contact_name || `Grupo ${conversationPhone || remoteJid}`;
+            }
           }
         }
 
@@ -355,7 +460,9 @@ Deno.serve(async (req) => {
           if (!isGroup) {
             updatePayload.contact_id = contactId;
             updatePayload.contact_name = resolvedContactName;
-          } else if (groupSubject && (conversation.contact_name?.startsWith("Grupo ") || /^\d+$/.test(conversation.contact_name || ""))) {
+          } else if (!isPlaceholderGroupName(resolvedContactName) && isPlaceholderGroupName(conversation.contact_name)) {
+            updatePayload.contact_name = resolvedContactName;
+          } else if (groupSubject && isPlaceholderGroupName(conversation.contact_name)) {
             updatePayload.contact_name = groupSubject;
           }
 
