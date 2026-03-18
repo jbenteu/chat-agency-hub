@@ -86,11 +86,13 @@ export async function queryMessages(conversationId: string, limit = 100): Promis
     .order("created_at", { ascending: false })
     .limit(Math.min(limit, 500));
   if (error) throw new Error(error.message);
-  // Also reset unread count
-  supabase
+  return ((data || []) as unknown as WhatsAppMessage[]).reverse();
+}
+
+export async function markConversationRead(conversationId: string): Promise<void> {
+  const { error } = await supabase
     .from("whatsapp_conversations")
     .update({ unread_count: 0 })
-    .eq("id", conversationId)
-    .then(() => {});
-  return ((data || []) as unknown as WhatsAppMessage[]).reverse();
+    .eq("id", conversationId);
+  if (error) throw new Error(error.message);
 }
