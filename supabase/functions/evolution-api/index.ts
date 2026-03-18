@@ -58,11 +58,10 @@ Deno.serve(async (req) => {
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: authHeader } } });
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  const token = authHeader.replace("Bearer ", "");
-  const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
-  if (claimsError || !claimsData?.claims?.sub) return jsonResponse({ error: "Invalid token" }, 401);
+  const { data: userData, error: userError } = await userClient.auth.getUser();
+  if (userError || !userData?.user?.id) return jsonResponse({ error: "Invalid token" }, 401);
 
-  const userId = claimsData.claims.sub as string;
+  const userId = userData.user.id;
   const { data: roleData } = await supabaseAdmin.from("user_roles").select("tenant_id").eq("user_id", userId).limit(1).single();
   if (!roleData?.tenant_id) return jsonResponse({ error: "User has no tenant assigned" }, 403);
 
