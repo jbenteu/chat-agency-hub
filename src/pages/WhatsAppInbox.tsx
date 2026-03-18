@@ -119,27 +119,42 @@ const WhatsAppInbox = () => {
       const data = await listInstances();
       const connected = (data.instances || []).filter((i: EvolutionInstance) => i.status === "connected");
       setInstances(connected);
-      if (connected.length === 0) { setSelectedInstanceId(""); setConversations([]); setSelectedConv(null); return; }
-      if (!selectedInstanceId || !connected.some((i: EvolutionInstance) => i.id === selectedInstanceId))
+      setCachedInstances(connected);
+      if (connected.length === 0) { setSelectedInstanceId(""); setCachedSelectedInstance(""); setConversations([]); setSelectedConv(null); return; }
+      if (!selectedInstanceId || !connected.some((i: EvolutionInstance) => i.id === selectedInstanceId)) {
         setSelectedInstanceId(connected[0].id);
+        setCachedSelectedInstance(connected[0].id);
+      }
     } catch { /* UI handles */ }
   }, [listInstances, selectedInstanceId]);
 
   useEffect(() => { loadInstances(); }, [loadInstances]);
 
-  // ── Fetch conversations (only sets loading on first load) ──
+  // ── Fetch conversations (uses cache on mount, silent refresh) ──
   const fetchConversations = useCallback(async (silent = false) => {
     if (!selectedInstanceId) { setConversations([]); setLoadingConvs(false); return; }
-    if (!silent) setLoadingConvs(true);
+    // If we have fresh cache, skip loading indicator
+    const cached = getCachedConversations(selectedInstanceId);
+    if (cached && cached.length > 0 && !silent) {
+      setConversations(cached);
+      setLoadingConvs(false);
+      initialLoadDoneRef.current = true;
+    }
+    if (!silent && !cached?.length) setLoadingConvs(true);
     try {
       const data = await listConversations(selectedInstanceId);
-      setConversations(data.conversations || []);
+      const convs = data.conversations || [];
+      setConversations(convs);
+      setCachedConversations(selectedInstanceId, convs);
     } catch { /* UI handles */ }
     finally { setLoadingConvs(false); initialLoadDoneRef.current = true; }
   }, [listConversations, selectedInstanceId]);
 
   useEffect(() => {
-    initialLoadDoneRef.current = false;
+    const cached = getCachedConversations(selectedInstanceId);
+    if (!cached?.length) {
+      initialLoadDoneRef.current = false;
+    }
     groupInfoFetchedRef.current.clear();
     fetchConversations(false);
   }, [fetchConversations]);
