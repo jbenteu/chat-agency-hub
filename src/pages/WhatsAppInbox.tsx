@@ -282,8 +282,10 @@ const WhatsAppInbox = () => {
       try {
         const info = await fetchGroupInfo(inst.instance_name, selectedConv.remote_jid);
         if (info?.subject) {
-          setGroupInfoCache((prev) => ({ ...prev, [selectedConv.remote_jid]: { subject: info.subject, description: info.description, size: info.size, pictureUrl: info.pictureUrl, participants: info.participants || [] } }));
-          if (info.pictureUrl) setProfilePics((prev) => ({ ...prev, [selectedConv.remote_jid]: info.pictureUrl }));
+          const gi: GroupInfo = { subject: info.subject, description: info.description, size: info.size, pictureUrl: info.pictureUrl, participants: info.participants || [] };
+          setGroupInfoCache((prev) => ({ ...prev, [selectedConv.remote_jid]: gi }));
+          setCachedGroupInfo(selectedConv.remote_jid, gi);
+          if (info.pictureUrl) { setProfilePics((prev) => ({ ...prev, [selectedConv.remote_jid]: info.pictureUrl })); setCachedProfilePic(selectedConv.remote_jid, info.pictureUrl); }
           setSelectedConv((prev) => prev?.id === selectedConv.id ? { ...prev, contact_name: info.subject } : prev);
         }
       } catch { /* ignore */ }
