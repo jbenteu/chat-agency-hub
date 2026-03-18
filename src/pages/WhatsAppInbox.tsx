@@ -662,6 +662,7 @@ const WhatsAppInbox = () => {
                         const senderName = getSenderName(msg);
                         const senderPhone = getSenderPhone(msg);
                         const quoted = getQuotedInfo(msg);
+                        const currentInstName = instances.find((i) => i.id === selectedConv.instance_id)?.instance_name || "";
 
                         return (
                           <div key={msg.id} className={`group flex ${isOutbound ? "justify-end" : "justify-start"}`}>
