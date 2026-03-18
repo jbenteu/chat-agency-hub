@@ -52,18 +52,39 @@ Deno.serve(async (req) => {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY)
     return jsonResponse({ error: "Supabase environment is not configured" }, 500);
 
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) return jsonResponse({ error: "Unauthorized" }, 401);
+  const rawAuthHeader = req.headers.get("Authorization") || req.headers.get("authorization");
+  const bearerMatch = rawAuthHeader?.match(/^Bearer\s+(.+)$/i);
+  if (!bearerMatch) return jsonResponse({ error: "Unauthorized" }, 401);
 
-  const token = authHeader.replace("Bearer ", "");
+  const token = bearerMatch[1]?.trim();
+  if (!token) return jsonResponse({ error: "Unauthorized" }, 401);
+
+  const authHeader = `Bearer ${token}`;
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: authHeader } },
+  });
 
-  // Validate token by passing it explicitly to getUser
-  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: authHeader } } });
-  const { data: userData, error: userError } = await userClient.auth.getUser(token);
-  if (userError || !userData?.user?.id) return jsonResponse({ error: "Invalid token" }, 401);
+  // Primary validation path for signing-keys projects
+  let userId: string | null = null;
+  const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
+  if (!claimsError && claimsData?.claims?.sub) {
+    userId = claimsData.claims.sub;
+  }
 
-  const userId = userData.user.id;
+  // Fallback path for compatibility across runtimes
+  if (!userId) {
+    const { data: userData, error: userError } = await userClient.auth.getUser(token);
+    if (userError || !userData?.user?.id) {
+      console.error("Auth validation failed", {
+        claimsError: claimsError?.message || null,
+        userError: userError?.message || null,
+      });
+      return jsonResponse({ error: "Invalid token" }, 401);
+    }
+    userId = userData.user.id;
+  }
+
   const { data: roleData } = await supabaseAdmin.from("user_roles").select("tenant_id").eq("user_id", userId).limit(1).single();
   if (!roleData?.tenant_id) return jsonResponse({ error: "User has no tenant assigned" }, 403);
 
