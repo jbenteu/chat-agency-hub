@@ -402,8 +402,39 @@ const WhatsAppInbox = () => {
 
   const getInitials = (name: string | null) => { if (!name) return "?"; return name.split(" ").map((p) => p[0]).join("").substring(0, 2).toUpperCase(); };
   const formatTime = (d: string | null) => { if (!d) return ""; try { return format(new Date(d), "HH:mm"); } catch { return ""; } };
+  const formatConvTime = (d: string | null) => {
+    if (!d) return "";
+    try {
+      const date = new Date(d);
+      if (isToday(date)) return format(date, "HH:mm");
+      if (isYesterday(date)) return "Ontem";
+      return format(date, "dd/MM/yyyy");
+    } catch { return ""; }
+  };
   const formatDate = (d: string) => { try { const date = new Date(d); const today = new Date(); if (date.toDateString() === today.toDateString()) return formatTime(d); return format(date, "dd/MM/yyyy HH:mm"); } catch { return ""; } };
   const formatFullDate = (d: string) => { try { return format(new Date(d), "dd/MM/yyyy 'às' HH:mm"); } catch { return ""; } };
+  
+  const isMediaPlaceholder = (content: string | null) => {
+    if (!content) return false;
+    return ["[Imagem]", "[Áudio]", "[Vídeo]", "[Sticker]", "[Documento]"].includes(content);
+  };
+  
+  // Phone editing state
+  const [phoneCountryCode, setPhoneCountryCode] = useState("+55");
+  const [phoneCountryOpen, setPhoneCountryOpen] = useState(false);
+  
+  // Tag create handler via edge function
+  const handleCreateTag = async (name: string, color: string) => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) return;
+      await supabase.functions.invoke("evolution-api", {
+        body: { action: "create_tag", name, color },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch { /* ignore */ }
+  };
   const isGroupJid = (jid: string) => jid.endsWith("@g.us");
 
   const getSenderName = (msg: WhatsAppMessage): string | null => {
