@@ -159,14 +159,21 @@ const WhatsAppInbox = () => {
     fetchConversations(false);
   }, [fetchConversations]);
 
-  // ── Load messages ──
+  // ── Load messages (use cache for instant render) ──
   useEffect(() => {
     if (!selectedConv) return;
+    const cached = getCachedMessages(selectedConv.id);
+    if (cached && cached.length > 0) {
+      setMessages(cached);
+      setLoadingMsgs(false);
+    }
     const load = async () => {
-      setLoadingMsgs(true);
+      if (!cached?.length) setLoadingMsgs(true);
       try {
         const data = await listMessages(selectedConv.id, 100);
-        setMessages(data.messages || []);
+        const msgs = data.messages || [];
+        setMessages(msgs);
+        setCachedMessages(selectedConv.id, msgs);
       } catch { /* UI handles */ }
       finally { setLoadingMsgs(false); }
     };
