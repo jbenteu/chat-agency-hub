@@ -42,7 +42,7 @@ const WhatsAppInbox = () => {
   } = useEvolutionApi();
 
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
-  const [selectedInstanceId, setSelectedInstanceId] = useState<string>("all");
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string>("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
