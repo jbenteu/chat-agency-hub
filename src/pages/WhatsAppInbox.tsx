@@ -867,10 +867,10 @@ const WhatsAppInbox = () => {
                                 <p className="text-xs truncate">{p.phone || p.id}</p>
                               </div>
                               {p.admin === "admin" && (
-                                <ShieldCheck className="h-3 w-3 text-blue-500 shrink-0" title="Admin" />
+                                <span title="Admin"><ShieldCheck className="h-3 w-3 text-primary shrink-0" /></span>
                               )}
                               {p.admin === "superadmin" && (
-                                <Crown className="h-3 w-3 text-amber-500 shrink-0" title="Super Admin" />
+                                <span title="Super Admin"><Crown className="h-3 w-3 text-primary shrink-0" /></span>
                               )}
                             </div>
                           ))}
