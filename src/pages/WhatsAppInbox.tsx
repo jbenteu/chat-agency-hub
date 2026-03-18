@@ -72,7 +72,7 @@ const WhatsAppInbox = () => {
   const location = useLocation();
   const { user, signOut } = useAuth();
   const {
-    listInstances, listConversations, listMessages, sendText, sendMedia,
+    sendText, sendMedia,
     getProfilePicture, fetchGroupInfo, getContact, updateContact,
     getGroupInviteLink, removeGroupParticipant, promoteGroupParticipant,
     demoteGroupParticipant,
