@@ -9,7 +9,7 @@ import {
   setCachedGroupInfo, getCachedGroupInfoMap, isCacheFresh,
   type GroupInfo,
 } from "@/hooks/use-inbox-cache";
-import { queryInstances, queryConversations, queryMessages, markConversationRead } from "@/hooks/use-direct-queries";
+import { queryInstances, queryConversations, queryMessages, queryMessagesSince, markConversationRead } from "@/hooks/use-direct-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -17,6 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
