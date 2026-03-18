@@ -1036,7 +1036,7 @@ const WhatsAppInbox = () => {
                   <button key={c.id} onClick={() => { setSelectedConv(c); setShowContactPanel(false); setReplyTarget(null); setContactDetails(null); setEditingContact(false); setInviteLink(null); }}
                     className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 ${selectedConv?.id === c.id ? "bg-muted" : ""}`}>
                     <Avatar className="h-9 w-9 shrink-0">
-                      {profilePics[c.remote_jid] && <AvatarImage src={profilePics[c.remote_jid]} alt={c.contact_name || ""} />}
+                      {(profilePics[c.remote_jid] || c.profile_picture_url) && <AvatarImage src={profilePics[c.remote_jid] || c.profile_picture_url!} alt={c.contact_name || ""} />}
                       <AvatarFallback className="bg-primary/10 text-xs text-primary">
                         {isGroupJid(c.remote_jid) ? <Users className="h-4 w-4" /> : getInitials(c.contact_name)}
                       </AvatarFallback>
