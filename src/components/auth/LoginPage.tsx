@@ -1,35 +1,30 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Navigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import logo from "@/assets/logo.png";
 
-const AUTH_TIMEOUT_MS = 15000;
-
-const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      const timeoutId = window.setTimeout(() => {
-        window.clearTimeout(timeoutId);
-        reject(new Error("Tempo de resposta excedido. Tente novamente."));
-      }, timeoutMs);
-    }),
-  ]);
-};
+const SLOW_REQUEST_NOTICE_MS = 15000;
 
 const LoginPage: React.FC = () => {
   const { session, loading } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!loading && session) {
+      navigate("/", { replace: true });
+    }
+  }, [loading, session, navigate]);
 
   if (loading) {
     return (
@@ -40,7 +35,7 @@ const LoginPage: React.FC = () => {
   }
 
   if (session) {
-    return <Navigate to="/" replace />;
+    return null;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,16 +43,22 @@ const LoginPage: React.FC = () => {
     setSubmitting(true);
 
     const normalizedEmail = email.trim().toLowerCase();
+    const slowRequestTimer = window.setTimeout(() => {
+      toast({
+        title: "Conexão lenta",
+        description: "A autenticação está demorando mais que o normal. Ainda estamos tentando...",
+      });
+    }, SLOW_REQUEST_NOTICE_MS);
 
     try {
       if (isSignUp) {
-        const { data, error } = await withTimeout(
-          supabase.auth.signUp({
-            email: normalizedEmail,
-            password,
-          }),
-          AUTH_TIMEOUT_MS,
-        );
+        const { data, error } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            emailRedirectTo: window.location.origin,
+          },
+        });
 
         if (error) throw error;
 
@@ -68,16 +69,13 @@ const LoginPage: React.FC = () => {
 
         toast({
           title: "Conta criada!",
-          description: "Agora faça login com seu email e senha.",
+          description: "Verifique seu email para confirmar o cadastro antes do login.",
         });
       } else {
-        const { data, error } = await withTimeout(
-          supabase.auth.signInWithPassword({
-            email: normalizedEmail,
-            password,
-          }),
-          AUTH_TIMEOUT_MS,
-        );
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password,
+        });
 
         if (error) throw error;
         if (!data.session) throw new Error("Não foi possível iniciar sessão.");
@@ -91,6 +89,7 @@ const LoginPage: React.FC = () => {
         variant: "destructive",
       });
     } finally {
+      window.clearTimeout(slowRequestTimer);
       setSubmitting(false);
     }
   };
