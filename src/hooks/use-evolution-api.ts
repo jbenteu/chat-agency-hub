@@ -127,8 +127,8 @@ export function useEvolutionApi() {
   );
 
   const sendText = useCallback(
-    (instanceName: string, remoteJid: string, text: string) =>
-      callEvolution({ action: "send_text", instanceName, remoteJid, text }),
+    (instanceName: string, remoteJid: string, text: string, quotedMessageId?: string) =>
+      callEvolution({ action: "send_text", instanceName, remoteJid, text, quotedMessageId }),
     [callEvolution]
   );
 
