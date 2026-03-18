@@ -28,7 +28,7 @@ import {
   MessageCircle, Send, Image, Paperclip, Search, Phone, User, Tag, X, Loader2,
   ChevronRight, LayoutDashboard, Users, Settings, Shield, LogOut, Reply, Crown,
   ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, UserPlus, ChevronUp,
-  Copy, Edit2, Check, Play, Download, FileText,
+  Copy, Edit2, Check,
 } from "lucide-react";
 import { format } from "date-fns";
 
