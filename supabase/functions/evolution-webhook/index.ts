@@ -324,6 +324,15 @@ Deno.serve(async (req) => {
         let resolvedContactName = pushName;
 
         if (!isGroup) {
+          // Try to get saved contact name from Evolution API (device's contact list)
+          let evoContactName: string | null = null;
+          const phoneJid = conversationPhone ? `${conversationPhone}@s.whatsapp.net` : null;
+          if (phoneJid) {
+            try {
+              evoContactName = await fetchContactNameFromApi(instanceName, phoneJid);
+            } catch { /* best-effort */ }
+          }
+
           let contactRecord: { id: string; name: string | null } | null = null;
 
           if (contactId) {
@@ -348,12 +357,15 @@ Deno.serve(async (req) => {
             contactRecord = byPhone || null;
           }
 
+          // Use the best available name: CRM > Evolution contacts > pushName
+          const bestName = contactRecord?.name || evoContactName || pushName;
+
           if (!contactRecord && !fromMe && conversationPhone) {
             const { data: newContact } = await supabaseAdmin
               .from("contacts")
               .insert({
                 tenant_id: tenantId,
-                name: pushName,
+                name: evoContactName || pushName,
                 phone: conversationPhone,
                 tags: ["whatsapp", "lead"],
                 notes: "Contato criado automaticamente via WhatsApp",
@@ -376,19 +388,38 @@ Deno.serve(async (req) => {
 
           if (contactRecord?.id) {
             contactId = contactRecord.id;
-            resolvedContactName = contactRecord.name || pushName;
-          } else if (conversation?.contact_name) {
-            resolvedContactName = conversation.contact_name;
-          }
-        } else {
-          if (conversation?.contact_name && !conversation.contact_name.startsWith("Grupo ") && !/^\d+$/.test(conversation.contact_name)) {
-            resolvedContactName = conversation.contact_name;
-          } else if (groupSubject) {
-            resolvedContactName = groupSubject;
+            // If CRM has a generic name but Evolution has a better one, update it
+            if (evoContactName && contactRecord.name && contactRecord.name === pushName && evoContactName !== pushName) {
+              await supabaseAdmin.from("contacts").update({ name: evoContactName }).eq("id", contactRecord.id);
+              resolvedContactName = evoContactName;
+            } else {
+              resolvedContactName = contactRecord.name || bestName;
+            }
           } else if (conversation?.contact_name) {
             resolvedContactName = conversation.contact_name;
           } else {
-            resolvedContactName = `Grupo ${conversationPhone || remoteJid}`;
+            resolvedContactName = bestName;
+          }
+        } else {
+          // GROUP name resolution
+          if (conversation?.contact_name && !isPlaceholderGroupName(conversation.contact_name)) {
+            resolvedContactName = conversation.contact_name;
+          } else if (groupSubject) {
+            resolvedContactName = groupSubject;
+          } else {
+            // No subject from webhook payload — fetch from Evolution API
+            try {
+              const apiSubject = await fetchGroupSubjectFromApi(instanceName, remoteJid);
+              if (apiSubject) {
+                resolvedContactName = apiSubject;
+              } else if (conversation?.contact_name) {
+                resolvedContactName = conversation.contact_name;
+              } else {
+                resolvedContactName = `Grupo ${conversationPhone || remoteJid}`;
+              }
+            } catch {
+              resolvedContactName = conversation?.contact_name || `Grupo ${conversationPhone || remoteJid}`;
+            }
           }
         }
 
