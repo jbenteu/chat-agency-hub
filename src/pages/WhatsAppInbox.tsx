@@ -127,12 +127,14 @@ const WhatsAppInbox = () => {
       setInstances(connected);
       setCachedInstances(connected);
       if (connected.length === 0) { setSelectedInstanceId(""); setCachedSelectedInstance(""); setConversations([]); setSelectedConv(null); return; }
-      if (!selectedInstanceId || !connected.some((i: EvolutionInstance) => i.id === selectedInstanceId)) {
-        setSelectedInstanceId(connected[0].id);
-        setCachedSelectedInstance(connected[0].id);
-      }
+      setSelectedInstanceId((prev) => {
+        if (prev && connected.some((i: EvolutionInstance) => i.id === prev)) return prev;
+        const newId = connected[0].id;
+        setCachedSelectedInstance(newId);
+        return newId;
+      });
     } catch { /* UI handles */ }
-  }, [listInstances, selectedInstanceId]);
+  }, [listInstances]);
 
   useEffect(() => { loadInstances(); }, [loadInstances]);
 
