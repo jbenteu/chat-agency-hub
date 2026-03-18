@@ -6,76 +6,100 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const jsonResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+const normalizePhone = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const base = value.includes("@") ? value.split("@")[0] : value;
+  const digits = base.replace(/\D/g, "");
+  return digits.length >= 8 ? digits : null;
+};
+
+const extractPhoneNumber = (payload: Record<string, any> | null | undefined): string | null => {
+  if (!payload) return null;
+
+  const candidates: unknown[] = [
+    payload?.instance?.phone,
+    payload?.instance?.number,
+    payload?.instance?.owner,
+    payload?.instance?.ownerJid,
+    payload?.instance?.wid,
+    payload?.instance?.wuid,
+    payload?.instance?.me?.id,
+    payload?.instance?.me?.jid,
+    payload?.number,
+    payload?.owner,
+    payload?.wid,
+    payload?.wuid,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") {
+      const parsed = normalizePhone(candidate);
+      if (parsed) return parsed;
+    }
+
+    if (candidate && typeof candidate === "object") {
+      const objectCandidate = candidate as Record<string, unknown>;
+      const objectId =
+        normalizePhone(objectCandidate.id) ||
+        normalizePhone(objectCandidate.user) ||
+        normalizePhone(objectCandidate.jid);
+      if (objectId) return objectId;
+    }
+  }
+
+  return null;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
-  console.log("Env check:", { hasUrl: !!Deno.env.get("EVOLUTION_API_URL"), hasKey: !!Deno.env.get("EVOLUTION_API_KEY") });
-
   const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL");
-  if (!EVOLUTION_API_URL) {
-    return new Response(
-      JSON.stringify({ error: "EVOLUTION_API_URL is not configured" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  }
-
   const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY");
-  if (!EVOLUTION_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "EVOLUTION_API_KEY is not configured" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  if (!EVOLUTION_API_URL) return jsonResponse({ error: "EVOLUTION_API_URL is not configured" }, 500);
+  if (!EVOLUTION_API_KEY) return jsonResponse({ error: "EVOLUTION_API_KEY is not configured" }, 500);
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+    return jsonResponse({ error: "Supabase environment is not configured" }, 500);
   }
 
-  // Authenticate user
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return new Response(
-      JSON.stringify({ error: "Unauthorized" }),
-      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ error: "Unauthorized" }, 401);
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-  // Client with user's JWT for auth validation
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: authHeader } },
   });
-
-  // Admin client to bypass RLS for tenant lookup
-  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   const token = authHeader.replace("Bearer ", "");
-  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-  if (claimsError || !claimsData?.claims) {
-    return new Response(
-      JSON.stringify({ error: "Invalid token" }),
-      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
+  if (claimsError || !claimsData?.claims?.sub) {
+    return jsonResponse({ error: "Invalid token" }, 401);
   }
 
   const userId = claimsData.claims.sub as string;
 
-  // Get user's tenant using admin client (bypasses RLS)
-  const { data: roleData, error: roleError } = await supabaseAdmin
+  const { data: roleData } = await supabaseAdmin
     .from("user_roles")
     .select("tenant_id")
     .eq("user_id", userId)
     .limit(1)
     .single();
 
-  console.log("Tenant lookup:", { userId, roleData, roleError: roleError?.message });
-
   if (!roleData?.tenant_id) {
-    return new Response(
-      JSON.stringify({ error: "User has no tenant assigned" }),
-      { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ error: "User has no tenant assigned" }, 403);
   }
 
   const tenantId = roleData.tenant_id;
@@ -85,19 +109,21 @@ Deno.serve(async (req) => {
     try {
       body = await req.json();
     } catch {
-      return new Response(
-        JSON.stringify({ error: "Invalid JSON body" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ error: "Invalid JSON body" }, 400);
     }
-    const { action, instanceName, displayName } = body;
+
+    const action = body.action as string | undefined;
+    const instanceName = body.instanceName as string | undefined;
+    const displayName = body.displayName as string | undefined;
+
+    if (!action) return jsonResponse({ error: "action is required" }, 400);
 
     const normalizedUrl = EVOLUTION_API_URL.trim().replace(/\/$/, "");
     const baseUrl = normalizedUrl.endsWith("/manager")
       ? normalizedUrl.slice(0, -"/manager".length)
       : normalizedUrl;
 
-    const headers: Record<string, string> = {
+    const evoHeaders: Record<string, string> = {
       "Content-Type": "application/json",
       apikey: EVOLUTION_API_KEY,
     };
@@ -133,11 +159,10 @@ Deno.serve(async (req) => {
       operation: string,
     ): Promise<any> => {
       const url = `${baseUrl}${path}`;
-      console.log(`Evolution API request: ${init.method || "GET"} ${url}`);
       const res = await fetch(url, {
         ...init,
         headers: {
-          ...headers,
+          ...evoHeaders,
           ...(init.headers || {}),
         },
       });
@@ -145,14 +170,108 @@ Deno.serve(async (req) => {
       return await parseEvolutionResponse(res, operation);
     };
 
-    // Action: create instance
-    if (action === "create_instance") {
-      if (!instanceName) {
-        return new Response(
-          JSON.stringify({ error: "instanceName is required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    const getInstanceRow = async (name: string) => {
+      const { data } = await supabaseAdmin
+        .from("whatsapp_instances")
+        .select("id, instance_name")
+        .eq("tenant_id", tenantId)
+        .eq("instance_name", name)
+        .limit(1)
+        .maybeSingle();
+
+      return data;
+    };
+
+    const ensureOutboundConversation = async (name: string, remoteJid: string) => {
+      const instance = await getInstanceRow(name);
+      if (!instance) return null;
+
+      const { data: existingConversation } = await supabaseAdmin
+        .from("whatsapp_conversations")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("instance_id", instance.id)
+        .eq("remote_jid", remoteJid)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingConversation) return { conversationId: existingConversation.id, instanceId: instance.id };
+
+      const contactPhone = remoteJid.replace(/@.*$/, "");
+      const guessedName = remoteJid.endsWith("@g.us") ? `Grupo ${contactPhone}` : contactPhone;
+
+      const { data: createdConversation, error: convError } = await supabaseAdmin
+        .from("whatsapp_conversations")
+        .insert({
+          tenant_id: tenantId,
+          instance_id: instance.id,
+          remote_jid: remoteJid,
+          contact_name: guessedName || null,
+          contact_phone: contactPhone || null,
+          last_message: null,
+          last_message_at: new Date().toISOString(),
+          unread_count: 0,
+          status: "open",
+        })
+        .select("id")
+        .single();
+
+      if (convError) throw new Error(`Failed to create outbound conversation: ${convError.message}`);
+      return { conversationId: createdConversation.id, instanceId: instance.id };
+    };
+
+    const persistOutboundMessage = async (params: {
+      instanceName: string;
+      remoteJid: string;
+      messageId?: string | null;
+      content: string | null;
+      mediaType?: string | null;
+      mediaUrl?: string | null;
+      metadata?: Record<string, unknown>;
+    }) => {
+      const conversationData = await ensureOutboundConversation(params.instanceName, params.remoteJid);
+      if (!conversationData) return;
+
+      const { conversationId } = conversationData;
+
+      if (params.messageId) {
+        const { data: existingMessage } = await supabaseAdmin
+          .from("whatsapp_messages")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("conversation_id", conversationId)
+          .eq("message_id", params.messageId)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingMessage) return;
       }
+
+      await Promise.all([
+        supabaseAdmin.from("whatsapp_messages").insert({
+          tenant_id: tenantId,
+          conversation_id: conversationId,
+          message_id: params.messageId || null,
+          direction: "outbound",
+          content: params.content,
+          media_url: params.mediaUrl || null,
+          media_type: params.mediaType || null,
+          status: "sent",
+          metadata: params.metadata || {},
+        }),
+        supabaseAdmin
+          .from("whatsapp_conversations")
+          .update({
+            last_message: params.content || (params.mediaType ? `[${params.mediaType}]` : ""),
+            last_message_at: new Date().toISOString(),
+          })
+          .eq("tenant_id", tenantId)
+          .eq("id", conversationId),
+      ]);
+    };
+
+    if (action === "create_instance") {
+      if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
 
       const createPayload = JSON.stringify({
         instanceName,
@@ -179,7 +298,6 @@ Deno.serve(async (req) => {
           lastCreateError = error;
           const isNotFound = error instanceof Error && error.message.includes("[404]");
           if (!isNotFound) throw error;
-          console.warn(`Evolution create_instance path failed: ${createPath}`);
         }
       }
 
@@ -189,178 +307,171 @@ Deno.serve(async (req) => {
           : new Error("Evolution API create_instance failed on all known paths");
       }
 
-      // Save instance to DB
+      const phoneNumber = extractPhoneNumber(evoData);
+
       const { error: dbError } = await supabaseAdmin.from("whatsapp_instances").insert({
         tenant_id: tenantId,
         instance_name: instanceName,
-        display_name: (displayName as string) || null,
+        display_name: displayName || null,
         instance_id: evoData.instance?.instanceName || instanceName,
         status: "connecting",
+        phone_number: phoneNumber,
         qr_code: evoData.qrcode?.base64 || null,
       });
 
       if (dbError) {
-        console.error("DB insert error:", dbError);
+        throw new Error(`Failed to persist instance: ${dbError.message}`);
       }
 
-      return new Response(
-        JSON.stringify({
-          success: true,
-          instance: evoData.instance,
-          qrcode: evoData.qrcode,
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: true, instance: evoData.instance, qrcode: evoData.qrcode });
     }
 
-    // Action: get QR code
     if (action === "get_qrcode") {
-      if (!instanceName) {
-        return new Response(
-          JSON.stringify({ error: "instanceName is required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+      if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
 
       const evoData = await requestEvolution(
         `/instance/connect/${instanceName}`,
-        {
-          method: "GET",
-        },
+        { method: "GET" },
         "get_qrcode",
       );
 
-      // Update QR in DB
       await supabaseAdmin
         .from("whatsapp_instances")
         .update({ qr_code: evoData.base64 || null, status: "connecting" })
-        .eq("instance_name", instanceName)
-        .eq("tenant_id", tenantId);
+        .eq("tenant_id", tenantId)
+        .eq("instance_name", instanceName);
 
-      return new Response(
-        JSON.stringify({ success: true, qrcode: evoData }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: true, qrcode: evoData });
     }
 
-    // Action: check connection status
     if (action === "connection_status") {
-      if (!instanceName) {
-        return new Response(
-          JSON.stringify({ error: "instanceName is required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+      if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
 
       const evoData = await requestEvolution(
         `/instance/connectionState/${instanceName}`,
-        {
-          method: "GET",
-        },
+        { method: "GET" },
         "connection_status",
       );
 
-      const isConnected = evoData.instance?.state === "open";
-      const newStatus = isConnected ? "connected" : "connecting";
+      const state = evoData.instance?.state || evoData.state;
+      const isConnected = state === "open";
+      const phoneNumber = extractPhoneNumber(evoData);
 
-      // Update status in DB
+      const updatePayload: Record<string, unknown> = {
+        status: isConnected ? "connected" : "connecting",
+      };
+      if (phoneNumber) updatePayload.phone_number = phoneNumber;
+      if (isConnected) updatePayload.qr_code = null;
+
       await supabaseAdmin
         .from("whatsapp_instances")
-        .update({ status: newStatus })
-        .eq("instance_name", instanceName)
-        .eq("tenant_id", tenantId);
+        .update(updatePayload)
+        .eq("tenant_id", tenantId)
+        .eq("instance_name", instanceName);
 
-      return new Response(
-        JSON.stringify({ success: true, state: evoData.instance?.state, connected: isConnected }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: true, state, connected: isConnected, phoneNumber });
     }
 
-    // Action: list instances from DB (with sync against Evolution API)
     if (action === "list_instances") {
       const { data: instances, error: listError } = await supabaseAdmin
         .from("whatsapp_instances")
-        .select("*")
+        .select("id, tenant_id, instance_name, display_name, instance_id, status, phone_number, settings, created_at, updated_at")
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false });
 
-      if (listError) {
-        throw new Error(`DB list error: ${listError.message}`);
-      }
+      if (listError) throw new Error(`DB list error: ${listError.message}`);
+      if (!instances || instances.length === 0) return jsonResponse({ success: true, instances: [] });
 
-      // Sync: check which instances still exist in Evolution API
-      const validInstances: typeof instances = [];
-      if (instances && instances.length > 0) {
-        for (const inst of instances) {
+      const synced = await Promise.all(
+        instances.map(async (inst) => {
           try {
             const res = await fetch(`${baseUrl}/instance/connectionState/${inst.instance_name}`, {
               method: "GET",
-              headers,
+              headers: evoHeaders,
             });
-            if (res.status === 404) {
-              // Instance no longer exists in Evolution — remove from DB
-              console.log(`Instance ${inst.instance_name} not found in Evolution API, removing from DB`);
-              await supabaseAdmin
-                .from("whatsapp_instances")
-                .delete()
-                .eq("id", inst.id);
-            } else {
-              validInstances.push(inst);
-            }
-          } catch (e) {
-            // On network error, keep the instance (don't delete on transient failures)
-            console.warn(`Could not check instance ${inst.instance_name}:`, e);
-            validInstances.push(inst);
-          }
-        }
-      }
 
-      return new Response(
-        JSON.stringify({ success: true, instances: validInstances }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            if (res.status === 404) {
+              await supabaseAdmin.from("whatsapp_instances").delete().eq("tenant_id", tenantId).eq("id", inst.id);
+              return null;
+            }
+
+            const evoState = await parseEvolutionResponse(res, "sync_connection_status");
+            const state = evoState.instance?.state || evoState.state;
+            const nextStatus = state === "open" ? "connected" : "connecting";
+            const phoneNumber = extractPhoneNumber(evoState);
+
+            const dbPatch: Record<string, unknown> = {};
+            const responsePatch: Record<string, unknown> = {};
+
+            if (inst.status !== nextStatus) {
+              dbPatch.status = nextStatus;
+              responsePatch.status = nextStatus;
+            }
+
+            if (phoneNumber && phoneNumber !== inst.phone_number) {
+              dbPatch.phone_number = phoneNumber;
+              responsePatch.phone_number = phoneNumber;
+            }
+
+            if (nextStatus === "connected") {
+              dbPatch.qr_code = null;
+            }
+
+            if (Object.keys(dbPatch).length > 0) {
+              await supabaseAdmin.from("whatsapp_instances").update(dbPatch).eq("tenant_id", tenantId).eq("id", inst.id);
+            }
+
+            return { ...inst, ...responsePatch };
+          } catch (error) {
+            console.warn(`Could not sync instance ${inst.instance_name}:`, error);
+            return inst;
+          }
+        }),
       );
+
+      const validInstances = synced.filter((inst): inst is NonNullable<typeof inst> => Boolean(inst));
+      return jsonResponse({ success: true, instances: validInstances });
     }
 
-    // Action: delete instance
     if (action === "delete_instance") {
-      if (!instanceName) {
-        return new Response(
-          JSON.stringify({ error: "instanceName is required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+      if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
 
-      // Delete from Evolution API
+      const instance = await getInstanceRow(instanceName);
+
       try {
         await fetch(`${baseUrl}/instance/delete/${instanceName}`, {
           method: "DELETE",
-          headers,
+          headers: evoHeaders,
         });
-      } catch (e) {
-        console.error("Evolution delete error (non-fatal):", e);
+      } catch (error) {
+        console.warn("Evolution delete warning:", error);
       }
 
-      // Delete from DB
+      if (instance?.id) {
+        await supabaseAdmin
+          .from("whatsapp_conversations")
+          .delete()
+          .eq("tenant_id", tenantId)
+          .eq("instance_id", instance.id);
+      }
+
       await supabaseAdmin
         .from("whatsapp_instances")
         .delete()
-        .eq("instance_name", instanceName)
-        .eq("tenant_id", tenantId);
+        .eq("tenant_id", tenantId)
+        .eq("instance_name", instanceName);
 
-      return new Response(
-        JSON.stringify({ success: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: true });
     }
 
-    // Action: send text message
     if (action === "send_text") {
-      const { remoteJid, text } = body as { remoteJid?: string; text?: string; [k: string]: unknown };
+      const { remoteJid, text } = body as {
+        remoteJid?: string;
+        text?: string;
+      };
+
       if (!instanceName || !remoteJid || !text) {
-        return new Response(
-          JSON.stringify({ error: "instanceName, remoteJid, and text are required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return jsonResponse({ error: "instanceName, remoteJid, and text are required" }, 400);
       }
 
       const evoData = await requestEvolution(
@@ -372,52 +483,25 @@ Deno.serve(async (req) => {
         "send_text",
       );
 
-      // Save outbound message to DB
-      const { data: instData } = await supabaseAdmin
-        .from("whatsapp_instances")
-        .select("id")
-        .eq("instance_name", instanceName)
-        .eq("tenant_id", tenantId)
-        .limit(1)
-        .single();
+      const outboundMessageId =
+        evoData?.key?.id ||
+        evoData?.data?.key?.id ||
+        evoData?.message?.key?.id ||
+        null;
 
-      if (instData) {
-        const { data: convData } = await supabaseAdmin
-          .from("whatsapp_conversations")
-          .select("id")
-          .eq("instance_id", instData.id)
-          .eq("remote_jid", remoteJid)
-          .limit(1)
-          .single();
+      await persistOutboundMessage({
+        instanceName,
+        remoteJid,
+        messageId: outboundMessageId,
+        content: text,
+        mediaType: null,
+        mediaUrl: null,
+        metadata: { key: evoData?.key || evoData?.data?.key || null, source: "send_text" },
+      });
 
-        if (convData) {
-          await supabaseAdmin.from("whatsapp_messages").insert({
-            tenant_id: tenantId,
-            conversation_id: convData.id,
-            message_id: evoData?.key?.id || null,
-            direction: "outbound",
-            content: text,
-            status: "sent",
-            metadata: { key: evoData?.key },
-          });
-
-          await supabaseAdmin
-            .from("whatsapp_conversations")
-            .update({
-              last_message: text,
-              last_message_at: new Date().toISOString(),
-            })
-            .eq("id", convData.id);
-        }
-      }
-
-      return new Response(
-        JSON.stringify({ success: true, data: evoData }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: true, data: evoData });
     }
 
-    // Action: send media (image, audio, video, document)
     if (action === "send_media") {
       const { remoteJid, mediatype, media, caption, fileName } = body as {
         remoteJid?: string;
@@ -425,13 +509,10 @@ Deno.serve(async (req) => {
         media?: string;
         caption?: string;
         fileName?: string;
-        [k: string]: unknown;
       };
+
       if (!instanceName || !remoteJid || !mediatype || !media) {
-        return new Response(
-          JSON.stringify({ error: "instanceName, remoteJid, mediatype, and media are required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return jsonResponse({ error: "instanceName, remoteJid, mediatype, and media are required" }, 400);
       }
 
       const sendBody: Record<string, unknown> = {
@@ -451,16 +532,46 @@ Deno.serve(async (req) => {
         "send_media",
       );
 
-      return new Response(
-        JSON.stringify({ success: true, data: evoData }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      const outboundMessageId =
+        evoData?.key?.id ||
+        evoData?.data?.key?.id ||
+        evoData?.message?.key?.id ||
+        null;
+
+      const mediaLabelByType: Record<string, string> = {
+        image: "[Imagem]",
+        audio: "[Áudio]",
+        video: "[Vídeo]",
+        document: fileName || "[Documento]",
+        sticker: "[Sticker]",
+      };
+
+      const safeMediaUrl =
+        typeof media === "string" && media.startsWith("http")
+          ? media
+          : evoData?.mediaUrl || evoData?.data?.mediaUrl || null;
+
+      await persistOutboundMessage({
+        instanceName,
+        remoteJid,
+        messageId: outboundMessageId,
+        content: caption?.trim() || mediaLabelByType[mediatype] || "[Mídia]",
+        mediaType: mediatype,
+        mediaUrl: safeMediaUrl,
+        metadata: {
+          key: evoData?.key || evoData?.data?.key || null,
+          mediatype,
+          fileName: fileName || null,
+          source: "send_media",
+        },
+      });
+
+      return jsonResponse({ success: true, data: evoData });
     }
 
-    // Action: fetch conversations from DB
     if (action === "list_conversations") {
-      const { instanceId: filterInstanceId } = body as { instanceId?: string; [k: string]: unknown };
-      
+      const { instanceId: filterInstanceId } = body as { instanceId?: string };
+
       let query = supabaseAdmin
         .from("whatsapp_conversations")
         .select("*")
@@ -471,112 +582,105 @@ Deno.serve(async (req) => {
         query = query.eq("instance_id", filterInstanceId);
       }
 
-      const { data: conversations, error: convErr } = await query;
-      if (convErr) throw new Error(`DB error: ${convErr.message}`);
+      const { data: conversations, error } = await query;
+      if (error) throw new Error(`DB error: ${error.message}`);
 
-      return new Response(
-        JSON.stringify({ success: true, conversations: conversations || [] }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: true, conversations: conversations || [] });
     }
 
-    // Action: fetch messages for a conversation
     if (action === "list_messages") {
-      const { conversationId } = body as { conversationId?: string; [k: string]: unknown };
-      if (!conversationId) {
-        return new Response(
-          JSON.stringify({ error: "conversationId is required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+      const { conversationId } = body as { conversationId?: string };
+      if (!conversationId) return jsonResponse({ error: "conversationId is required" }, 400);
 
-      const { data: messages, error: msgErr } = await supabaseAdmin
+      const { data: messages, error } = await supabaseAdmin
         .from("whatsapp_messages")
         .select("*")
-        .eq("conversation_id", conversationId)
         .eq("tenant_id", tenantId)
+        .eq("conversation_id", conversationId)
         .order("created_at", { ascending: true });
 
-      if (msgErr) throw new Error(`DB error: ${msgErr.message}`);
+      if (error) throw new Error(`DB error: ${error.message}`);
 
-      // Mark as read
       await supabaseAdmin
         .from("whatsapp_conversations")
         .update({ unread_count: 0 })
+        .eq("tenant_id", tenantId)
         .eq("id", conversationId);
 
-      return new Response(
-        JSON.stringify({ success: true, messages: messages || [] }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: true, messages: messages || [] });
     }
 
-    // Action: update display name
     if (action === "update_display_name") {
       if (!instanceName || !displayName) {
-        return new Response(
-          JSON.stringify({ error: "instanceName and displayName are required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return jsonResponse({ error: "instanceName and displayName are required" }, 400);
       }
 
-      const { error: updateError } = await supabaseAdmin
+      const { error } = await supabaseAdmin
         .from("whatsapp_instances")
-        .update({ display_name: displayName as string })
-        .eq("instance_name", instanceName)
-        .eq("tenant_id", tenantId);
+        .update({ display_name: displayName })
+        .eq("tenant_id", tenantId)
+        .eq("instance_name", instanceName);
 
-      if (updateError) {
-        throw new Error(`DB update error: ${updateError.message}`);
-      }
+      if (error) throw new Error(`DB update error: ${error.message}`);
 
-      return new Response(
-        JSON.stringify({ success: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ success: true });
     }
 
-    // Action: get profile picture
     if (action === "get_profile_picture") {
-      const { remoteJid } = body as { remoteJid?: string; [k: string]: unknown };
+      const { remoteJid } = body as { remoteJid?: string };
       if (!instanceName || !remoteJid) {
-        return new Response(
-          JSON.stringify({ error: "instanceName and remoteJid are required" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return jsonResponse({ error: "instanceName and remoteJid are required" }, 400);
       }
 
-      try {
-        const evoData = await requestEvolution(
-          `/chat/fetchProfilePictureUrl/${instanceName}`,
-          {
-            method: "POST",
-            body: JSON.stringify({ number: remoteJid }),
-          },
-          "get_profile_picture",
-        );
-        return new Response(
-          JSON.stringify({ success: true, profilePictureUrl: evoData?.profilePictureUrl || evoData?.picture || null }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      } catch {
-        return new Response(
-          JSON.stringify({ success: true, profilePictureUrl: null }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      if (remoteJid.endsWith("@g.us")) {
+        return jsonResponse({ success: true, profilePictureUrl: null });
       }
+
+      const numberOnly = remoteJid.replace(/@.*$/, "");
+      const requestBodies = [
+        { number: remoteJid },
+        { number: numberOnly },
+        { jid: remoteJid },
+      ];
+      const paths = [
+        `/chat/fetchProfilePictureUrl/${instanceName}`,
+        `/chat/fetchProfilePicture/${instanceName}`,
+      ];
+
+      for (const path of paths) {
+        for (const payload of requestBodies) {
+          try {
+            const evoData = await requestEvolution(
+              path,
+              {
+                method: "POST",
+                body: JSON.stringify(payload),
+              },
+              "get_profile_picture",
+            );
+
+            const profilePictureUrl =
+              evoData?.profilePictureUrl || evoData?.picture || evoData?.url || evoData?.data?.profilePictureUrl || null;
+
+            if (profilePictureUrl) {
+              return jsonResponse({ success: true, profilePictureUrl });
+            }
+          } catch (error) {
+            const isNotFound = error instanceof Error && error.message.includes("[404]");
+            if (!isNotFound) {
+              console.warn("Profile picture fetch warning:", error);
+            }
+          }
+        }
+      }
+
+      return jsonResponse({ success: true, profilePictureUrl: null });
     }
 
-    return new Response(
-      JSON.stringify({ error: `Unknown action: ${action}` }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ error: `Unknown action: ${action}` }, 400);
   } catch (error: unknown) {
     console.error("Evolution API edge function error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return jsonResponse({ error: message }, 500);
   }
 });
