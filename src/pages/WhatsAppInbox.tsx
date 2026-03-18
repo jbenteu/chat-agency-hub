@@ -1134,6 +1134,9 @@ const WhatsAppInbox = () => {
                                   instanceName={currentInstName}
                                   remoteJid={selectedConv.remote_jid}
                                   isOutbound={isOutbound}
+                                  mediaThumbnail={msg.media_thumbnail}
+                                  mediaWidth={msg.media_width}
+                                  mediaHeight={msg.media_height}
                                 />
                               )}
                               {msg.media_type === "document" && (msg.media_url || msg.message_id) && (
