@@ -9,7 +9,7 @@ import {
   setCachedGroupInfo, getCachedGroupInfoMap, isCacheFresh,
   type GroupInfo,
 } from "@/hooks/use-inbox-cache";
-import { queryInstances, queryConversations, queryMessages, markConversationRead } from "@/hooks/use-direct-queries";
+import { queryInstances, queryConversations, queryMessages, queryMessagesSince, markConversationRead } from "@/hooks/use-direct-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -17,6 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
@@ -103,14 +104,36 @@ const WhatsAppInbox = () => {
   const [savingContact, setSavingContact] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [loadingInvite, setLoadingInvite] = useState(false);
+  const bootstrapCompletedRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
+  const [showBootstrapLoading, setShowBootstrapLoading] = useState(!bootstrapCompletedRef.current);
+  const [bootstrapProgress, setBootstrapProgress] = useState(bootstrapCompletedRef.current ? 100 : 12);
+  const [bootstrapLabel, setBootstrapLabel] = useState("Conectando instâncias…");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingProfileFetchesRef = useRef<Set<string>>(new Set());
+  const profilePicsResolvedRef = useRef<Set<string>>(new Set(Object.keys(getCachedProfilePics())));
   const groupInfoFetchedRef = useRef<Set<string>>(new Set());
   const initialLoadDoneRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
+  const conversationsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const conversationsRefreshInFlightRef = useRef(false);
+  const lastMessageAtRef = useRef<string | null>(null);
 
   const isSending = sendingCount > 0;
+
+  const updateBootstrapProgress = useCallback((progress: number, label?: string) => {
+    if (bootstrapCompletedRef.current) return;
+    setBootstrapProgress((prev) => Math.max(prev, Math.min(100, progress)));
+    if (label) setBootstrapLabel(label);
+  }, []);
+
+  const completeBootstrap = useCallback(() => {
+    if (bootstrapCompletedRef.current) return;
+    bootstrapCompletedRef.current = true;
+    setBootstrapProgress(100);
+    setBootstrapLabel("Tudo pronto");
+    setTimeout(() => setShowBootstrapLoading(false), 180);
+  }, []);
 
   const updateConversationPreview = useCallback((conversationId: string, preview: string, at: string) => {
     setConversations((prev) => prev.map((c) => c.id === conversationId ? { ...c, last_message: preview, last_message_at: at } : c));
@@ -122,67 +145,112 @@ const WhatsAppInbox = () => {
 
   // ── Load instances (direct DB query) ──
   const loadInstances = useCallback(async () => {
+    updateBootstrapProgress(20, "Conectando instâncias…");
     try {
       const allInstances = await queryInstances();
       const connected = allInstances.filter((i) => i.status === "connected");
       setInstances(connected);
       setCachedInstances(connected);
-      if (connected.length === 0) { setSelectedInstanceId(""); setCachedSelectedInstance(""); setConversations([]); setSelectedConv(null); return; }
+
+      if (connected.length === 0) {
+        setSelectedInstanceId("");
+        setCachedSelectedInstance("");
+        setConversations([]);
+        setSelectedConv(null);
+        completeBootstrap();
+        return;
+      }
+
       setSelectedInstanceId((prev) => {
         if (prev && connected.some((i) => i.id === prev)) return prev;
         const newId = connected[0].id;
         setCachedSelectedInstance(newId);
         return newId;
       });
-    } catch { /* UI handles */ }
-  }, []);
 
-  useEffect(() => { loadInstances(); }, [loadInstances]);
+      updateBootstrapProgress(45, "Carregando conversas…");
+    } catch {
+      setShowBootstrapLoading(false);
+    }
+  }, [completeBootstrap, updateBootstrapProgress]);
+
+  useEffect(() => {
+    loadInstances();
+  }, [loadInstances]);
 
   // ── Fetch conversations (direct DB query, uses cache on mount) ──
   const fetchConversations = useCallback(async (silent = false) => {
-    if (!selectedInstanceId) { setConversations([]); setLoadingConvs(false); return; }
+    if (!selectedInstanceId) {
+      setConversations([]);
+      setLoadingConvs(false);
+      return;
+    }
+
     const cached = getCachedConversations(selectedInstanceId);
     if (cached && cached.length > 0 && !silent) {
       setConversations(cached);
       setLoadingConvs(false);
       initialLoadDoneRef.current = true;
+      updateBootstrapProgress(70, "Sincronizando conversas…");
     }
-    if (!silent && !cached?.length) setLoadingConvs(true);
+
+    if (!silent && !cached?.length) {
+      setLoadingConvs(true);
+      updateBootstrapProgress(55, "Carregando conversas…");
+    }
+
     try {
       const convs = await queryConversations(selectedInstanceId);
       setConversations(convs);
       setCachedConversations(selectedInstanceId, convs);
-    } catch { /* UI handles */ }
-    finally { setLoadingConvs(false); initialLoadDoneRef.current = true; }
-  }, [selectedInstanceId]);
+      updateBootstrapProgress(88, "Aplicando sincronização inicial…");
+      if (!silent) completeBootstrap();
+    } catch {
+      if (!silent) setShowBootstrapLoading(false);
+    } finally {
+      setLoadingConvs(false);
+      initialLoadDoneRef.current = true;
+    }
+  }, [selectedInstanceId, completeBootstrap, updateBootstrapProgress]);
 
   useEffect(() => {
     const cached = getCachedConversations(selectedInstanceId);
     if (!cached?.length) {
       initialLoadDoneRef.current = false;
+      bootstrapCompletedRef.current = false;
+      setShowBootstrapLoading(true);
+      setBootstrapProgress(40);
+      setBootstrapLabel("Carregando conversas…");
     }
     groupInfoFetchedRef.current.clear();
     fetchConversations(false);
-  }, [fetchConversations]);
+  }, [fetchConversations, selectedInstanceId]);
 
   // ── Load messages (direct DB query, use cache for instant render) ──
   useEffect(() => {
     if (!selectedConv) return;
+
     const cached = getCachedMessages(selectedConv.id);
     if (cached && cached.length > 0) {
       setMessages(cached);
+      lastMessageAtRef.current = cached[cached.length - 1]?.created_at || null;
       setLoadingMsgs(false);
     }
+
     const load = async () => {
       if (!cached?.length) setLoadingMsgs(true);
       try {
         const msgs = await queryMessages(selectedConv.id, 100);
         setMessages(msgs);
+        lastMessageAtRef.current = msgs[msgs.length - 1]?.created_at || null;
         setCachedMessages(selectedConv.id, msgs);
-      } catch { /* UI handles */ }
-      finally { setLoadingMsgs(false); }
+      } catch {
+        /* UI handles */
+      } finally {
+        setLoadingMsgs(false);
+      }
     };
+
     load();
   }, [selectedConv?.id]);
 
@@ -193,91 +261,193 @@ const WhatsAppInbox = () => {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  // ── Realtime: conversations (silent refresh) ──
+  const scheduleSilentConversationsRefresh = useCallback(() => {
+    if (conversationsRefreshTimerRef.current) return;
+
+    conversationsRefreshTimerRef.current = setTimeout(async () => {
+      conversationsRefreshTimerRef.current = null;
+      if (conversationsRefreshInFlightRef.current) return;
+
+      conversationsRefreshInFlightRef.current = true;
+      try {
+        await fetchConversations(true);
+      } finally {
+        conversationsRefreshInFlightRef.current = false;
+      }
+    }, 700);
+  }, [fetchConversations]);
+
+  // ── Realtime: conversations (silent refresh, debounced) ──
   useEffect(() => {
     if (!selectedInstanceId) return;
+
     const ch = supabase
       .channel(`whatsapp-conversations:${selectedInstanceId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "whatsapp_conversations", filter: `instance_id=eq.${selectedInstanceId}` },
-        () => { fetchConversations(true); })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "whatsapp_conversations", filter: `instance_id=eq.${selectedInstanceId}` },
+        () => {
+          scheduleSilentConversationsRefresh();
+        }
+      )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [selectedInstanceId, fetchConversations]);
 
-  // ── Realtime: messages + polling fallback ──
+    return () => {
+      if (conversationsRefreshTimerRef.current) {
+        clearTimeout(conversationsRefreshTimerRef.current);
+        conversationsRefreshTimerRef.current = null;
+      }
+      supabase.removeChannel(ch);
+    };
+  }, [selectedInstanceId, scheduleSilentConversationsRefresh]);
+
+  // ── Realtime: messages + lightweight polling fallback ──
   useEffect(() => {
     if (!selectedConv?.id) return;
+
     const convId = selectedConv.id;
+    let cancelled = false;
+    let pollDelay = 2500;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const mergeNewMessages = (newMsgs: WhatsAppMessage[]) => {
+    const mergeNewMessages = (incoming: WhatsAppMessage[]) => {
+      if (!incoming.length) return false;
+
+      let changed = false;
+      let mergedCache: WhatsAppMessage[] | null = null;
+
       setMessages((prev) => {
-        const updated = [...prev];
-        let changed = false;
+        const map = new Map<string, WhatsAppMessage>();
+        for (const msg of prev) {
+          map.set(msg.message_id || msg.id, msg);
+        }
 
-        for (const newMsg of newMsgs) {
-          if (updated.some((m) => m.id === newMsg.id)) continue;
-          const optIdx = updated.findIndex(
-            (m) => m.id.startsWith("temp-") && m.direction === newMsg.direction && m.content === newMsg.content
-          );
-          if (optIdx >= 0) {
-            updated[optIdx] = newMsg;
+        for (const msg of incoming) {
+          const key = msg.message_id || msg.id;
+          const existing = map.get(key);
+
+          if (!existing) {
+            map.set(key, msg);
             changed = true;
-          } else {
-            updated.push(newMsg);
+            continue;
+          }
+
+          const shouldReplace =
+            existing.id.startsWith("temp-") ||
+            existing.status !== msg.status ||
+            existing.media_url !== msg.media_url ||
+            existing.content !== msg.content ||
+            existing.created_at !== msg.created_at;
+
+          if (shouldReplace) {
+            map.set(key, { ...existing, ...msg });
             changed = true;
           }
         }
 
         if (!changed) return prev;
-        return updated.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+        const next = Array.from(map.values()).sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        mergedCache = next;
+        return next;
       });
+
+      if (changed && mergedCache) {
+        setCachedMessages(convId, mergedCache);
+      }
+
+      const newest = incoming[incoming.length - 1];
+      if (newest?.created_at) {
+        lastMessageAtRef.current = newest.created_at;
+      }
+
+      return changed;
+    };
+
+    const pollForMissedMessages = async () => {
+      try {
+        const since = lastMessageAtRef.current;
+        const delta = since
+          ? await queryMessagesSince(convId, since, 150)
+          : await queryMessages(convId, 100);
+
+        const hasChanges = mergeNewMessages(delta);
+        pollDelay = hasChanges ? 1800 : Math.min(pollDelay + 1200, 12000);
+      } catch {
+        pollDelay = Math.min(pollDelay + 1500, 12000);
+      } finally {
+        if (!cancelled) {
+          pollTimer = setTimeout(pollForMissedMessages, pollDelay);
+        }
+      }
     };
 
     const ch = supabase
       .channel(`conversation:${convId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${convId}` },
-        (payload) => { mergeNewMessages([payload.new as WhatsAppMessage]); })
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${convId}` },
+        (payload) => {
+          mergeNewMessages([payload.new as WhatsAppMessage]);
+          pollDelay = 1800;
+        }
+      )
       .subscribe();
 
-    // Polling fallback mais rápido para evitar perda de mensagens
-    const poll = setInterval(async () => {
-      try {
-        const msgs = await queryMessages(convId, 100);
-        mergeNewMessages(msgs);
-        setCachedMessages(convId, msgs);
-      } catch { /* silent */ }
-    }, 4000);
+    pollTimer = setTimeout(pollForMissedMessages, pollDelay);
 
-    return () => { supabase.removeChannel(ch); clearInterval(poll); };
+    return () => {
+      cancelled = true;
+      if (pollTimer) clearTimeout(pollTimer);
+      supabase.removeChannel(ch);
+    };
   }, [selectedConv?.id]);
 
-  // ── Auto-fetch group info (throttled: only one top conversation per cycle) ──
+  // ── Auto-fetch group info (small parallel batch) ──
   useEffect(() => {
     if (!selectedInstanceId || conversations.length === 0) return;
     const inst = instances.find((i) => i.id === selectedInstanceId);
     if (!inst) return;
 
-    const candidate = conversations.slice(0, 20).find((c) => {
-      if (!c.remote_jid.endsWith("@g.us")) return false;
-      if (groupInfoFetchedRef.current.has(c.remote_jid)) return false;
-      const name = c.contact_name || "";
-      return !name || name.startsWith("Grupo ") || /^\d+$/.test(name);
-    });
+    const candidates = conversations
+      .slice(0, 18)
+      .filter((c) => {
+        if (!c.remote_jid.endsWith("@g.us")) return false;
+        if (groupInfoFetchedRef.current.has(c.remote_jid)) return false;
+        const name = c.contact_name || "";
+        return !name || name.startsWith("Grupo ") || /^\d+$/.test(name);
+      })
+      .slice(0, 3);
 
-    if (!candidate) return;
+    if (candidates.length === 0) return;
 
     let cancelled = false;
-    groupInfoFetchedRef.current.add(candidate.remote_jid);
+    candidates.forEach((c) => groupInfoFetchedRef.current.add(c.remote_jid));
 
-    const fetchInfo = async () => {
-      try {
-        const info = await fetchGroupInfo(inst.instance_name, candidate.remote_jid);
-        if (cancelled || !info?.subject) return;
+    const fetchBatch = async () => {
+      const results = await Promise.allSettled(
+        candidates.map(async (conversation) => {
+          const info = await fetchGroupInfo(inst.instance_name, conversation.remote_jid);
+          return { conversation, info };
+        })
+      );
 
-        setConversations((prev) => prev.map((c) => c.id === candidate.id ? { ...c, contact_name: info.subject } : c));
-        setSelectedConv((prev) => prev?.id === candidate.id ? { ...prev, contact_name: info.subject } : prev);
+      if (cancelled) return;
 
-        const gi: GroupInfo = {
+      const renamedConversationIds = new Map<string, string>();
+      const pictureUpdates: Record<string, string> = {};
+
+      results.forEach((result) => {
+        if (result.status !== "fulfilled") return;
+
+        const { conversation, info } = result.value;
+        if (!info?.subject) return;
+
+        renamedConversationIds.set(conversation.id, info.subject);
+
+        const groupInfo: GroupInfo = {
           subject: info.subject,
           description: info.description,
           size: info.size,
@@ -285,68 +455,119 @@ const WhatsAppInbox = () => {
           participants: info.participants || [],
         };
 
-        setGroupInfoCache((prev) => ({ ...prev, [candidate.remote_jid]: gi }));
-        setCachedGroupInfo(candidate.remote_jid, gi);
+        setGroupInfoCache((prev) => ({ ...prev, [conversation.remote_jid]: groupInfo }));
+        setCachedGroupInfo(conversation.remote_jid, groupInfo);
 
         if (info.pictureUrl) {
-          setProfilePics((prev) => ({ ...prev, [candidate.remote_jid]: info.pictureUrl }));
-          setCachedProfilePic(candidate.remote_jid, info.pictureUrl);
+          pictureUpdates[conversation.remote_jid] = info.pictureUrl;
+          setCachedProfilePic(conversation.remote_jid, info.pictureUrl);
+          profilePicsResolvedRef.current.add(conversation.remote_jid);
         }
-      } catch { /* silently ignore */ }
+      });
+
+      if (renamedConversationIds.size > 0) {
+        setConversations((prev) =>
+          prev.map((conversation) => {
+            const subject = renamedConversationIds.get(conversation.id);
+            return subject ? { ...conversation, contact_name: subject } : conversation;
+          })
+        );
+
+        setSelectedConv((prev) => {
+          if (!prev) return prev;
+          const subject = renamedConversationIds.get(prev.id);
+          return subject ? { ...prev, contact_name: subject } : prev;
+        });
+      }
+
+      if (Object.keys(pictureUpdates).length > 0) {
+        setProfilePics((prev) => ({ ...prev, ...pictureUpdates }));
+      }
     };
 
-    const timer = setTimeout(fetchInfo, 350);
-    return () => { cancelled = true; clearTimeout(timer); };
+    const timer = setTimeout(fetchBatch, 160);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [selectedInstanceId, conversations, instances, fetchGroupInfo]);
 
-  // ── Fetch profile pictures (throttled: selected + top 2 conversations) ──
-  const profilePicsFetchedRef = useRef<Set<string>>(new Set());
+  // ── Fetch profile pictures (prioritized, batched, non-blocking) ──
   useEffect(() => {
     if (!profilePictureSupported || !selectedInstanceId || conversations.length === 0) return;
     const inst = instances.find((i) => i.id === selectedInstanceId);
     if (!inst) return;
 
-    const priorityIds = new Set(conversations.slice(0, 2).map((c) => c.id));
-    if (selectedConv?.id) priorityIds.add(selectedConv.id);
+    const prioritized = [
+      ...(selectedConv ? [selectedConv] : []),
+      ...conversations.slice(0, 24).filter((conversation) => conversation.id !== selectedConv?.id),
+    ];
 
-    const queue = conversations
-      .filter((c) => priorityIds.has(c.id) && !profilePics[c.remote_jid] && !profilePicsFetchedRef.current.has(c.remote_jid))
-      .slice(0, 3);
+    const queue = prioritized
+      .filter(
+        (conversation) =>
+          !profilePics[conversation.remote_jid] &&
+          !pendingProfileFetchesRef.current.has(conversation.remote_jid) &&
+          !profilePicsResolvedRef.current.has(conversation.remote_jid)
+      )
+      .slice(0, 12);
 
     if (queue.length === 0) return;
 
     let cancelled = false;
-    queue.forEach((c) => profilePicsFetchedRef.current.add(c.remote_jid));
+    queue.forEach((conversation) => pendingProfileFetchesRef.current.add(conversation.remote_jid));
 
-    const fetchPics = async () => {
-      const results = await Promise.allSettled(
-        queue.map((c) =>
-          getProfilePicture(inst.instance_name, c.remote_jid).then((data) => ({ jid: c.remote_jid, url: data?.profilePictureUrl }))
-        )
-      );
+    const fetchBatch = async () => {
+      const chunkSize = 4;
 
-      if (cancelled) return;
+      for (let i = 0; i < queue.length; i += chunkSize) {
+        if (cancelled) return;
 
-      for (const result of results) {
-        if (result.status !== "fulfilled") {
-          const err = result.status === "rejected" ? result.reason : null;
-          if (String(err?.message || "").includes("Unknown action: get_profile_picture")) {
-            setProfilePictureSupported(false);
-            return;
+        const chunk = queue.slice(i, i + chunkSize);
+        const results = await Promise.allSettled(
+          chunk.map((conversation) =>
+            getProfilePicture(inst.instance_name, conversation.remote_jid).then((data) => ({
+              jid: conversation.remote_jid,
+              url: data?.profilePictureUrl,
+            }))
+          )
+        );
+
+        if (cancelled) return;
+
+        const updates: Record<string, string> = {};
+
+        for (const result of results) {
+          if (result.status !== "fulfilled") {
+            const err = result.reason;
+            if (String(err?.message || "").includes("Unknown action: get_profile_picture")) {
+              setProfilePictureSupported(false);
+              return;
+            }
+            continue;
           }
-          continue;
+
+          const { jid, url } = result.value;
+          pendingProfileFetchesRef.current.delete(jid);
+          profilePicsResolvedRef.current.add(jid);
+
+          if (url) {
+            updates[jid] = url;
+            setCachedProfilePic(jid, url);
+          }
         }
 
-        const { jid, url } = result.value;
-        if (url) {
-          setProfilePics((prev) => ({ ...prev, [jid]: url }));
-          setCachedProfilePic(jid, url);
+        if (Object.keys(updates).length > 0) {
+          setProfilePics((prev) => ({ ...prev, ...updates }));
         }
       }
     };
 
-    const timer = setTimeout(fetchPics, 250);
-    return () => { cancelled = true; clearTimeout(timer); };
+    const timer = setTimeout(fetchBatch, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [profilePictureSupported, selectedInstanceId, conversations, instances, profilePics, selectedConv?.id, getProfilePicture]);
 
   // ── Fetch group info when selecting a group conversation ──
@@ -502,78 +723,16 @@ const WhatsAppInbox = () => {
     event.target.value = "";
   };
 
-  const normalizeConversationPreview = useCallback((content: string | null) => {
-    if (!content) return "…";
-
-    const placeholderMap: Record<string, string> = {
-      "[Imagem]": "Imagem",
-      "[Áudio]": "Áudio",
-      "[Vídeo]": "Vídeo",
-      "[Sticker]": "Sticker",
-      "[Documento]": "Documento",
-      "[Mídia]": "Mídia",
-    };
-
-    const trimmed = content.trim();
-    if (placeholderMap[trimmed]) return placeholderMap[trimmed];
-
-    const colonIdx = trimmed.lastIndexOf(": ");
-    if (colonIdx > 0) {
-      const sender = trimmed.substring(0, colonIdx).trim();
-      const afterColon = trimmed.substring(colonIdx + 2).trim();
-      if (placeholderMap[afterColon]) return `${sender}: ${placeholderMap[afterColon]}`;
-    }
-
-    return content;
-  }, []);
-
-  const deduplicatedConversations = useMemo(() => {
-    const byRemoteJid = new Map<string, Conversation>();
-
-    for (const conversation of conversations) {
-      const key = `${conversation.instance_id}:${conversation.remote_jid}`;
-      const normalized: Conversation = {
-        ...conversation,
-        last_message: normalizeConversationPreview(conversation.last_message),
-      };
-
-      const existing = byRemoteJid.get(key);
-      if (!existing) {
-        byRemoteJid.set(key, normalized);
-        continue;
-      }
-
-      const existingTs = existing.last_message_at ? new Date(existing.last_message_at).getTime() : 0;
-      const currentTs = normalized.last_message_at ? new Date(normalized.last_message_at).getTime() : 0;
-      const existingUpdatedTs = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
-      const currentUpdatedTs = normalized.updated_at ? new Date(normalized.updated_at).getTime() : 0;
-
-      const keepCurrent = currentTs > existingTs || (currentTs === existingTs && currentUpdatedTs >= existingUpdatedTs);
-      const winner = keepCurrent ? normalized : existing;
-      const loser = keepCurrent ? existing : normalized;
-
-      byRemoteJid.set(key, {
-        ...winner,
-        contact_name: winner.contact_name || loser.contact_name,
-        contact_phone: winner.contact_phone || loser.contact_phone,
-        last_message: winner.last_message || loser.last_message,
-        last_message_at: winner.last_message_at || loser.last_message_at,
-        unread_count: Math.max(existing.unread_count || 0, normalized.unread_count || 0),
-      });
-    }
-
-    return Array.from(byRemoteJid.values()).sort((a, b) => {
-      const aTs = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-      const bTs = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-      return bTs - aTs;
-    });
-  }, [conversations, normalizeConversationPreview]);
-
-  const filteredConversations = deduplicatedConversations.filter((c) => {
-    if (!searchQuery) return true;
+  const filteredConversations = useMemo(() => {
+    if (!searchQuery) return conversations;
     const q = searchQuery.toLowerCase();
-    return c.contact_name?.toLowerCase().includes(q) || c.contact_phone?.toLowerCase().includes(q) || c.last_message?.toLowerCase().includes(q);
-  });
+    return conversations.filter(
+      (c) =>
+        c.contact_name?.toLowerCase().includes(q) ||
+        c.contact_phone?.toLowerCase().includes(q) ||
+        c.last_message?.toLowerCase().includes(q)
+    );
+  }, [conversations, searchQuery]);
 
   const getInitials = (name: string | null) => { if (!name) return "?"; return name.split(" ").map((p) => p[0]).join("").substring(0, 2).toUpperCase(); };
   const formatTime = (d: string | null) => { if (!d) return ""; try { return format(new Date(d), "HH:mm"); } catch { return ""; } };
@@ -792,7 +951,18 @@ const WhatsAppInbox = () => {
         </Sidebar>
 
         {/* Main area */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="relative flex flex-1 overflow-hidden">
+          {showBootstrapLoading && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/90 px-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-sm">
+                <p className="text-sm font-semibold">Carregando conversas</p>
+                <p className="mt-1 text-xs text-muted-foreground">{bootstrapLabel}</p>
+                <Progress value={bootstrapProgress} className="mt-4 h-2" />
+                <p className="mt-2 text-[11px] text-muted-foreground">{Math.round(bootstrapProgress)}%</p>
+              </div>
+            </div>
+          )}
+
           {/* Conversation list */}
           <div className="flex w-72 flex-col border-r border-border bg-background">
             <div className="flex items-center justify-between gap-2 border-b border-border p-3">

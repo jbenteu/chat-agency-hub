@@ -58,6 +58,32 @@ function deduplicateConversations(conversations: Conversation[]): Conversation[]
   });
 }
 
+function deduplicateMessages(messages: WhatsAppMessage[]): WhatsAppMessage[] {
+  const map = new Map<string, WhatsAppMessage>();
+
+  for (const msg of messages) {
+    const key = msg.message_id || msg.id;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, msg);
+      continue;
+    }
+
+    const existingTs = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+    const currentTs = msg.created_at ? new Date(msg.created_at).getTime() : 0;
+
+    const keepCurrent =
+      currentTs > existingTs ||
+      (currentTs === existingTs && (msg.media_url || msg.status !== existing.status));
+
+    if (keepCurrent) map.set(key, msg);
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+}
+
 export async function queryInstances(): Promise<EvolutionInstance[]> {
   const { data, error } = await supabase
     .from("whatsapp_instances")
@@ -86,7 +112,24 @@ export async function queryMessages(conversationId: string, limit = 100): Promis
     .order("created_at", { ascending: false })
     .limit(Math.min(limit, 500));
   if (error) throw new Error(error.message);
-  return ((data || []) as unknown as WhatsAppMessage[]).reverse();
+  return deduplicateMessages((data || []) as unknown as WhatsAppMessage[]);
+}
+
+export async function queryMessagesSince(
+  conversationId: string,
+  since: string,
+  limit = 150
+): Promise<WhatsAppMessage[]> {
+  const { data, error } = await supabase
+    .from("whatsapp_messages")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .gte("created_at", since)
+    .order("created_at", { ascending: true })
+    .limit(Math.min(limit, 300));
+
+  if (error) throw new Error(error.message);
+  return deduplicateMessages((data || []) as unknown as WhatsAppMessage[]);
 }
 
 export async function markConversationRead(conversationId: string): Promise<void> {
