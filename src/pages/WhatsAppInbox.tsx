@@ -199,8 +199,10 @@ const WhatsAppInbox = () => {
       return !name || name.startsWith("Grupo ") || /^\d+$/.test(name);
     });
     if (needsInfo.length === 0) return;
+    let cancelled = false;
     const fetchInfos = async () => {
-      for (const conv of needsInfo.slice(0, 10)) {
+      for (const conv of needsInfo.slice(0, 5)) {
+        if (cancelled) break;
         groupInfoFetchedRef.current.add(conv.remote_jid);
         try {
           const info = await fetchGroupInfo(inst.instance_name, conv.remote_jid);
@@ -214,6 +216,7 @@ const WhatsAppInbox = () => {
       }
     };
     fetchInfos();
+    return () => { cancelled = true; };
   }, [selectedInstanceId, conversations, instances, fetchGroupInfo]);
 
   // ── Fetch profile pictures (throttled to avoid 503) ──
