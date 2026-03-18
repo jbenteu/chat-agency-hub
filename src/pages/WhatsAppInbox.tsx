@@ -248,20 +248,24 @@ const WhatsAppInbox = () => {
     if (needsInfo.length === 0) return;
     let cancelled = false;
     const fetchInfos = async () => {
-      for (const conv of needsInfo.slice(0, 5)) {
-        if (cancelled) break;
-        groupInfoFetchedRef.current.add(conv.remote_jid);
-        try {
-          const info = await fetchGroupInfo(inst.instance_name, conv.remote_jid);
-          if (info?.subject) {
-            setConversations((prev) => prev.map((c) => c.id === conv.id ? { ...c, contact_name: info.subject } : c));
-            setSelectedConv((prev) => prev?.id === conv.id ? { ...prev, contact_name: info.subject } : prev);
-            const gi: GroupInfo = { subject: info.subject, description: info.description, size: info.size, pictureUrl: info.pictureUrl, participants: info.participants || [] };
-            setGroupInfoCache((prev) => ({ ...prev, [conv.remote_jid]: gi }));
-            setCachedGroupInfo(conv.remote_jid, gi);
-            if (info.pictureUrl) { setProfilePics((prev) => ({ ...prev, [conv.remote_jid]: info.pictureUrl })); setCachedProfilePic(conv.remote_jid, info.pictureUrl); }
-          }
-        } catch { /* silently ignore */ }
+      // Fetch in parallel (up to 5 at a time)
+      const batch = needsInfo.slice(0, 5);
+      batch.forEach((c) => groupInfoFetchedRef.current.add(c.remote_jid));
+      const results = await Promise.allSettled(
+        batch.map((conv) => fetchGroupInfo(inst.instance_name, conv.remote_jid).then((info) => ({ conv, info })))
+      );
+      if (cancelled) return;
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        const { conv, info } = result.value;
+        if (info?.subject) {
+          setConversations((prev) => prev.map((c) => c.id === conv.id ? { ...c, contact_name: info.subject } : c));
+          setSelectedConv((prev) => prev?.id === conv.id ? { ...prev, contact_name: info.subject } : prev);
+          const gi: GroupInfo = { subject: info.subject, description: info.description, size: info.size, pictureUrl: info.pictureUrl, participants: info.participants || [] };
+          setGroupInfoCache((prev) => ({ ...prev, [conv.remote_jid]: gi }));
+          setCachedGroupInfo(conv.remote_jid, gi);
+          if (info.pictureUrl) { setProfilePics((prev) => ({ ...prev, [conv.remote_jid]: info.pictureUrl })); setCachedProfilePic(conv.remote_jid, info.pictureUrl); }
+        }
       }
     };
     fetchInfos();
