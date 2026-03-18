@@ -298,7 +298,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        const parsed = parseMessagePayload(entry?.message || data?.message || {});
+        const parsed = parseMessagePayload(entry, data);
         if (parsed.skip) continue;
 
         const participantJid = key?.participant || entry?.participant || data?.participant || null;
