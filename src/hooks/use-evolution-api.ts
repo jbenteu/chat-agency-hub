@@ -164,6 +164,7 @@ export function useEvolutionApi() {
     sendText,
     sendMedia,
     getProfilePicture,
+    fetchGroupInfo,
   };
 }
 
