@@ -102,7 +102,6 @@ const WhatsAppInbox = () => {
   const pendingProfileFetchesRef = useRef<Set<string>>(new Set());
   const groupInfoFetchedRef = useRef<Set<string>>(new Set());
   const initialLoadDoneRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
-  const initialLoadDoneRef = useRef(false);
 
   const isSending = sendingCount > 0;
 
