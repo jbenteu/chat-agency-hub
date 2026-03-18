@@ -73,12 +73,16 @@ const WhatsAppInbox = () => {
     load();
   }, []);
 
-  // Load conversations
+  // Load conversations (requires selected instance)
   const fetchConversations = useCallback(async () => {
+    if (!selectedInstanceId) {
+      setConversations([]);
+      setLoadingConvs(false);
+      return;
+    }
     setLoadingConvs(true);
     try {
-      const instanceId = selectedInstanceId === "all" ? undefined : selectedInstanceId;
-      const data = await listConversations(instanceId);
+      const data = await listConversations(selectedInstanceId);
       setConversations(data.conversations || []);
     } catch {} finally {
       setLoadingConvs(false);
