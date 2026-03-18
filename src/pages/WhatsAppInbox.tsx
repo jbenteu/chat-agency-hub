@@ -104,14 +104,36 @@ const WhatsAppInbox = () => {
   const [savingContact, setSavingContact] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [loadingInvite, setLoadingInvite] = useState(false);
+  const bootstrapCompletedRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
+  const [showBootstrapLoading, setShowBootstrapLoading] = useState(!bootstrapCompletedRef.current);
+  const [bootstrapProgress, setBootstrapProgress] = useState(bootstrapCompletedRef.current ? 100 : 12);
+  const [bootstrapLabel, setBootstrapLabel] = useState("Conectando instâncias…");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingProfileFetchesRef = useRef<Set<string>>(new Set());
+  const profilePicsResolvedRef = useRef<Set<string>>(new Set(Object.keys(getCachedProfilePics())));
   const groupInfoFetchedRef = useRef<Set<string>>(new Set());
   const initialLoadDoneRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
+  const conversationsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const conversationsRefreshInFlightRef = useRef(false);
+  const lastMessageAtRef = useRef<string | null>(null);
 
   const isSending = sendingCount > 0;
+
+  const updateBootstrapProgress = useCallback((progress: number, label?: string) => {
+    if (bootstrapCompletedRef.current) return;
+    setBootstrapProgress((prev) => Math.max(prev, Math.min(100, progress)));
+    if (label) setBootstrapLabel(label);
+  }, []);
+
+  const completeBootstrap = useCallback(() => {
+    if (bootstrapCompletedRef.current) return;
+    bootstrapCompletedRef.current = true;
+    setBootstrapProgress(100);
+    setBootstrapLabel("Tudo pronto");
+    setTimeout(() => setShowBootstrapLoading(false), 180);
+  }, []);
 
   const updateConversationPreview = useCallback((conversationId: string, preview: string, at: string) => {
     setConversations((prev) => prev.map((c) => c.id === conversationId ? { ...c, last_message: preview, last_message_at: at } : c));
