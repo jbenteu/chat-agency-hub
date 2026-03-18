@@ -951,7 +951,18 @@ const WhatsAppInbox = () => {
         </Sidebar>
 
         {/* Main area */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="relative flex flex-1 overflow-hidden">
+          {showBootstrapLoading && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/90 px-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-sm">
+                <p className="text-sm font-semibold">Carregando conversas</p>
+                <p className="mt-1 text-xs text-muted-foreground">{bootstrapLabel}</p>
+                <Progress value={bootstrapProgress} className="mt-4 h-2" />
+                <p className="mt-2 text-[11px] text-muted-foreground">{Math.round(bootstrapProgress)}%</p>
+              </div>
+            </div>
+          )}
+
           {/* Conversation list */}
           <div className="flex w-72 flex-col border-r border-border bg-background">
             <div className="flex items-center justify-between gap-2 border-b border-border p-3">
