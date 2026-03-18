@@ -668,7 +668,7 @@ const WhatsAppInbox = () => {
                     <div>
                       <p className="text-sm font-medium">{selectedConv.contact_name || selectedConv.contact_phone || "Desconhecido"}</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {isGroupJid(selectedConv.remote_jid) ? `Grupo · ${currentGroupInfo?.size || "…"} participantes` : selectedConv.contact_phone}
+                        {isGroupJid(selectedConv.remote_jid) ? `Grupo · ${currentGroupInfo?.size || "…"} participantes` : formatPhoneWhatsApp(selectedConv.contact_phone)}
                       </p>
                     </div>
                   </div>
