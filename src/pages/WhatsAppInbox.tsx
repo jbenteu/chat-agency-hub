@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
+import { AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -39,6 +40,7 @@ const WhatsAppInbox = () => {
     listMessages,
     sendText,
     sendMedia,
+    getProfilePicture,
   } = useEvolutionApi();
 
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
@@ -54,6 +56,7 @@ const WhatsAppInbox = () => {
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [profilePics, setProfilePics] = useState<Record<string, string>>({});
 
   // Load instances
   useEffect(() => {
@@ -92,6 +95,24 @@ const WhatsAppInbox = () => {
   useEffect(() => {
     fetchConversations();
   }, [selectedInstanceId]);
+
+  // Fetch profile pictures for conversations
+  useEffect(() => {
+    if (conversations.length === 0 || instances.length === 0) return;
+    const inst = instances.find((i) => i.id === selectedInstanceId);
+    if (!inst) return;
+
+    conversations.forEach((conv) => {
+      if (profilePics[conv.remote_jid] || conv.remote_jid.includes("@g.us")) return;
+      getProfilePicture(inst.instance_name, conv.remote_jid)
+        .then((data) => {
+          if (data?.profilePictureUrl) {
+            setProfilePics((prev) => ({ ...prev, [conv.remote_jid]: data.profilePictureUrl }));
+          }
+        })
+        .catch(() => {});
+    });
+  }, [conversations, instances, selectedInstanceId]);
 
   // Load messages when conversation selected
   useEffect(() => {
@@ -306,6 +327,9 @@ const WhatsAppInbox = () => {
                   }`}
                 >
                   <Avatar className="h-10 w-10 shrink-0">
+                    {profilePics[conv.remote_jid] && (
+                      <AvatarImage src={profilePics[conv.remote_jid]} alt={conv.contact_name || ""} />
+                    )}
                     <AvatarFallback className="text-xs bg-primary/10 text-primary">
                       {getInitials(conv.contact_name)}
                     </AvatarFallback>
@@ -344,6 +368,9 @@ const WhatsAppInbox = () => {
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-9 w-9">
+                    {profilePics[selectedConv.remote_jid] && (
+                      <AvatarImage src={profilePics[selectedConv.remote_jid]} alt={selectedConv.contact_name || ""} />
+                    )}
                     <AvatarFallback className="text-xs bg-primary/10 text-primary">
                       {getInitials(selectedConv.contact_name)}
                     </AvatarFallback>
@@ -523,6 +550,9 @@ const WhatsAppInbox = () => {
             <div className="p-4 space-y-4">
               <div className="flex flex-col items-center text-center">
                 <Avatar className="h-16 w-16 mb-2">
+                  {profilePics[selectedConv.remote_jid] && (
+                    <AvatarImage src={profilePics[selectedConv.remote_jid]} alt={selectedConv.contact_name || ""} />
+                  )}
                   <AvatarFallback className="text-lg bg-primary/10 text-primary">
                     {getInitials(selectedConv.contact_name)}
                   </AvatarFallback>

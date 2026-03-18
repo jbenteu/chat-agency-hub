@@ -50,8 +50,7 @@ Deno.serve(async (req) => {
 
     // Handle message events
     if (event === "messages.upsert") {
-      const msg = data.message || data;
-      const key = msg.key || data.key;
+      const key = data.key;
       const remoteJid = key?.remoteJid;
       const fromMe = key?.fromMe || false;
       const messageId = key?.id;
@@ -63,8 +62,8 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Extract message content
-      const msgContent = msg.message || {};
+      // Extract message content — data.message IS the content object
+      const msgContent = data.message || {};
       let content = "";
       let mediaUrl = "";
       let mediaType = "";
@@ -92,13 +91,30 @@ Deno.serve(async (req) => {
       } else if (msgContent.stickerMessage) {
         content = "[Sticker]";
         mediaType = "sticker";
+      } else if (msgContent.reactionMessage) {
+        content = msgContent.reactionMessage.text || "[Reação]";
+      } else if (msgContent.contactMessage || msgContent.contactsArrayMessage) {
+        content = "[Contato]";
+      } else if (msgContent.locationMessage || msgContent.liveLocationMessage) {
+        content = "[Localização]";
+      } else if (msgContent.pollCreationMessage || msgContent.pollCreationMessageV3) {
+        content = "[Enquete]";
+      } else if (msgContent.protocolMessage || msgContent.senderKeyDistributionMessage) {
+        // Protocol/system messages — skip silently
+        return new Response(JSON.stringify({ ok: true, skipped: "protocol_message" }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       } else {
-        content = "[Mensagem não suportada]";
+        // Log unknown message types for debugging
+        const msgKeys = Object.keys(msgContent).join(", ");
+        console.warn("Unhandled message type, keys:", msgKeys);
+        content = `[${msgKeys || "Mensagem"}]`;
       }
 
       // Extract contact info from JID
       const contactPhone = remoteJid.replace(/@.*$/, "");
-      const pushName = msg.pushName || data.pushName || contactPhone;
+      const pushName = data.pushName || contactPhone;
       const direction = fromMe ? "outbound" : "inbound";
 
       // Find or create conversation

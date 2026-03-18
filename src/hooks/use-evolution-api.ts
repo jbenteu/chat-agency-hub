@@ -138,6 +138,12 @@ export function useEvolutionApi() {
     [callEvolution]
   );
 
+  const getProfilePicture = useCallback(
+    (instanceName: string, remoteJid: string) =>
+      callEvolution({ action: "get_profile_picture", instanceName, remoteJid }),
+    [callEvolution]
+  );
+
   return {
     loading,
     error,
@@ -151,6 +157,7 @@ export function useEvolutionApi() {
     listMessages,
     sendText,
     sendMedia,
+    getProfilePicture,
   };
 }
 
