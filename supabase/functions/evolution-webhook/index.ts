@@ -81,7 +81,8 @@ const unwrapMessageContent = (message: Record<string, any> | null | undefined): 
   return current;
 };
 
-const parseMessagePayload = (message: Record<string, any>) => {
+const parseMessagePayload = (entry: Record<string, any>, data: Record<string, any>) => {
+  const message = entry?.message || data?.message || {};
   const contentNode = unwrapMessageContent(message);
 
   let content = "";
@@ -150,6 +151,16 @@ const parseMessagePayload = (message: Record<string, any>) => {
   }
 
   const primaryType = Object.keys(contentNode)[0] || "unknown";
+
+  // Prefer MinIO/Evolution-stored media URL over WhatsApp CDN URL (which expires)
+  const minioMediaUrl =
+    entry?.mediaUrl || entry?.media_url ||
+    data?.mediaUrl || data?.media_url ||
+    entry?.message?.mediaUrl || null;
+
+  if (minioMediaUrl && mediaType) {
+    mediaUrl = minioMediaUrl;
+  }
 
   return {
     skip: false,
@@ -287,7 +298,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        const parsed = parseMessagePayload(entry?.message || data?.message || {});
+        const parsed = parseMessagePayload(entry, data);
         if (parsed.skip) continue;
 
         const participantJid = key?.participant || entry?.participant || data?.participant || null;

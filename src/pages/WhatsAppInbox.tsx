@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
+import {
+  getInboxCache, setCachedInstances, setCachedSelectedInstance,
+  setCachedConversations, getCachedConversations, setCachedMessages,
+  getCachedMessages, setCachedProfilePic, getCachedProfilePics,
+  setCachedGroupInfo, getCachedGroupInfoMap, isCacheFresh,
+  type GroupInfo,
+} from "@/hooks/use-inbox-cache";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -20,7 +27,7 @@ import {
   MessageCircle, Send, Image, Paperclip, Search, Phone, User, Tag, X, Loader2,
   ChevronRight, LayoutDashboard, Users, Settings, Shield, LogOut, Reply, Crown,
   ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, UserPlus, ChevronUp,
-  Copy, Edit2, Check,
+  Copy, Edit2, Check, Play, Download, FileText,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -44,14 +51,6 @@ function getSenderColor(sender: string): string {
   return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
 }
 
-interface GroupInfo {
-  subject: string;
-  description?: string | null;
-  size?: number;
-  pictureUrl?: string | null;
-  participants: Array<{ id: string; admin: string | null; phone: string | null }>;
-}
-
 interface ReplyTarget { messageId: string; content: string; senderName: string; }
 
 interface ContactDetails {
@@ -72,19 +71,23 @@ const WhatsAppInbox = () => {
     demoteGroupParticipant,
   } = useEvolutionApi();
 
-  const [instances, setInstances] = useState<EvolutionInstance[]>([]);
-  const [selectedInstanceId, setSelectedInstanceId] = useState("");
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  // Initialize state from cache
+  const inboxCache = getInboxCache();
+  const [instances, setInstances] = useState<EvolutionInstance[]>(inboxCache.instances);
+  const [selectedInstanceId, setSelectedInstanceId] = useState(inboxCache.selectedInstanceId);
+  const [conversations, setConversations] = useState<Conversation[]>(
+    inboxCache.selectedInstanceId ? (getCachedConversations(inboxCache.selectedInstanceId) || []) : []
+  );
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
   const [messageText, setMessageText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showContactPanel, setShowContactPanel] = useState(false);
-  const [loadingConvs, setLoadingConvs] = useState(true);
+  const [loadingConvs, setLoadingConvs] = useState(!isCacheFresh(inboxCache.selectedInstanceId));
   const [loadingMsgs, setLoadingMsgs] = useState(false);
-  const [profilePics, setProfilePics] = useState<Record<string, string>>({});
+  const [profilePics, setProfilePics] = useState<Record<string, string>>(getCachedProfilePics());
   const [profilePictureSupported, setProfilePictureSupported] = useState(true);
-  const [groupInfoCache, setGroupInfoCache] = useState<Record<string, GroupInfo>>({});
+  const [groupInfoCache, setGroupInfoCache] = useState<Record<string, GroupInfo>>(getCachedGroupInfoMap());
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [sendingCount, setSendingCount] = useState(0);
   const [contactDetails, setContactDetails] = useState<ContactDetails | null>(null);
@@ -98,7 +101,7 @@ const WhatsAppInbox = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingProfileFetchesRef = useRef<Set<string>>(new Set());
   const groupInfoFetchedRef = useRef<Set<string>>(new Set());
-  const initialLoadDoneRef = useRef(false);
+  const initialLoadDoneRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
 
   const isSending = sendingCount > 0;
 
@@ -116,39 +119,61 @@ const WhatsAppInbox = () => {
       const data = await listInstances();
       const connected = (data.instances || []).filter((i: EvolutionInstance) => i.status === "connected");
       setInstances(connected);
-      if (connected.length === 0) { setSelectedInstanceId(""); setConversations([]); setSelectedConv(null); return; }
-      if (!selectedInstanceId || !connected.some((i: EvolutionInstance) => i.id === selectedInstanceId))
+      setCachedInstances(connected);
+      if (connected.length === 0) { setSelectedInstanceId(""); setCachedSelectedInstance(""); setConversations([]); setSelectedConv(null); return; }
+      if (!selectedInstanceId || !connected.some((i: EvolutionInstance) => i.id === selectedInstanceId)) {
         setSelectedInstanceId(connected[0].id);
+        setCachedSelectedInstance(connected[0].id);
+      }
     } catch { /* UI handles */ }
   }, [listInstances, selectedInstanceId]);
 
   useEffect(() => { loadInstances(); }, [loadInstances]);
 
-  // ── Fetch conversations (only sets loading on first load) ──
+  // ── Fetch conversations (uses cache on mount, silent refresh) ──
   const fetchConversations = useCallback(async (silent = false) => {
     if (!selectedInstanceId) { setConversations([]); setLoadingConvs(false); return; }
-    if (!silent) setLoadingConvs(true);
+    // If we have fresh cache, skip loading indicator
+    const cached = getCachedConversations(selectedInstanceId);
+    if (cached && cached.length > 0 && !silent) {
+      setConversations(cached);
+      setLoadingConvs(false);
+      initialLoadDoneRef.current = true;
+    }
+    if (!silent && !cached?.length) setLoadingConvs(true);
     try {
       const data = await listConversations(selectedInstanceId);
-      setConversations(data.conversations || []);
+      const convs = data.conversations || [];
+      setConversations(convs);
+      setCachedConversations(selectedInstanceId, convs);
     } catch { /* UI handles */ }
     finally { setLoadingConvs(false); initialLoadDoneRef.current = true; }
   }, [listConversations, selectedInstanceId]);
 
   useEffect(() => {
-    initialLoadDoneRef.current = false;
+    const cached = getCachedConversations(selectedInstanceId);
+    if (!cached?.length) {
+      initialLoadDoneRef.current = false;
+    }
     groupInfoFetchedRef.current.clear();
     fetchConversations(false);
   }, [fetchConversations]);
 
-  // ── Load messages ──
+  // ── Load messages (use cache for instant render) ──
   useEffect(() => {
     if (!selectedConv) return;
+    const cached = getCachedMessages(selectedConv.id);
+    if (cached && cached.length > 0) {
+      setMessages(cached);
+      setLoadingMsgs(false);
+    }
     const load = async () => {
-      setLoadingMsgs(true);
+      if (!cached?.length) setLoadingMsgs(true);
       try {
         const data = await listMessages(selectedConv.id, 100);
-        setMessages(data.messages || []);
+        const msgs = data.messages || [];
+        setMessages(msgs);
+        setCachedMessages(selectedConv.id, msgs);
       } catch { /* UI handles */ }
       finally { setLoadingMsgs(false); }
     };
@@ -209,8 +234,10 @@ const WhatsAppInbox = () => {
           if (info?.subject) {
             setConversations((prev) => prev.map((c) => c.id === conv.id ? { ...c, contact_name: info.subject } : c));
             setSelectedConv((prev) => prev?.id === conv.id ? { ...prev, contact_name: info.subject } : prev);
-            setGroupInfoCache((prev) => ({ ...prev, [conv.remote_jid]: { subject: info.subject, description: info.description, size: info.size, pictureUrl: info.pictureUrl, participants: info.participants || [] } }));
-            if (info.pictureUrl) setProfilePics((prev) => ({ ...prev, [conv.remote_jid]: info.pictureUrl }));
+            const gi: GroupInfo = { subject: info.subject, description: info.description, size: info.size, pictureUrl: info.pictureUrl, participants: info.participants || [] };
+            setGroupInfoCache((prev) => ({ ...prev, [conv.remote_jid]: gi }));
+            setCachedGroupInfo(conv.remote_jid, gi);
+            if (info.pictureUrl) { setProfilePics((prev) => ({ ...prev, [conv.remote_jid]: info.pictureUrl })); setCachedProfilePic(conv.remote_jid, info.pictureUrl); }
           }
         } catch { /* silently ignore */ }
       }
@@ -235,7 +262,7 @@ const WhatsAppInbox = () => {
         pendingProfileFetchesRef.current.add(key);
         try {
           const data = await getProfilePicture(inst.instance_name, c.remote_jid);
-          if (data?.profilePictureUrl) setProfilePics((prev) => ({ ...prev, [c.remote_jid]: data.profilePictureUrl }));
+          if (data?.profilePictureUrl) { setProfilePics((prev) => ({ ...prev, [c.remote_jid]: data.profilePictureUrl })); setCachedProfilePic(c.remote_jid, data.profilePictureUrl); }
         } catch (err: any) {
           if (String(err?.message || "").includes("Unknown action: get_profile_picture")) setProfilePictureSupported(false);
         } finally { pendingProfileFetchesRef.current.delete(key); }
@@ -255,8 +282,10 @@ const WhatsAppInbox = () => {
       try {
         const info = await fetchGroupInfo(inst.instance_name, selectedConv.remote_jid);
         if (info?.subject) {
-          setGroupInfoCache((prev) => ({ ...prev, [selectedConv.remote_jid]: { subject: info.subject, description: info.description, size: info.size, pictureUrl: info.pictureUrl, participants: info.participants || [] } }));
-          if (info.pictureUrl) setProfilePics((prev) => ({ ...prev, [selectedConv.remote_jid]: info.pictureUrl }));
+          const gi: GroupInfo = { subject: info.subject, description: info.description, size: info.size, pictureUrl: info.pictureUrl, participants: info.participants || [] };
+          setGroupInfoCache((prev) => ({ ...prev, [selectedConv.remote_jid]: gi }));
+          setCachedGroupInfo(selectedConv.remote_jid, gi);
+          if (info.pictureUrl) { setProfilePics((prev) => ({ ...prev, [selectedConv.remote_jid]: info.pictureUrl })); setCachedProfilePic(selectedConv.remote_jid, info.pictureUrl); }
           setSelectedConv((prev) => prev?.id === selectedConv.id ? { ...prev, contact_name: info.subject } : prev);
         }
       } catch { /* ignore */ }
@@ -513,7 +542,7 @@ const WhatsAppInbox = () => {
                 <h2 className="text-sm font-semibold">Conversas</h2>
               </div>
               <div className="flex items-center gap-1">
-                <Select value={selectedInstanceId} onValueChange={(v) => { setSelectedInstanceId(v); setSelectedConv(null); setMessages([]); }}>
+                <Select value={selectedInstanceId} onValueChange={(v) => { setSelectedInstanceId(v); setCachedSelectedInstance(v); setSelectedConv(null); setMessages([]); const cached = getCachedConversations(v); if (cached) setConversations(cached); }}>
                   <SelectTrigger className="h-7 w-[130px] text-xs"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
                     {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{i.display_name || i.phone_number || "Instância"}</SelectItem>))}
@@ -633,11 +662,30 @@ const WhatsAppInbox = () => {
                                   <p className="truncate">{quoted.content}</p>
                                 </div>
                               )}
-                              {msg.media_type === "image" && msg.media_url && <img src={msg.media_url} alt="Imagem" className="mb-1 max-w-full rounded-lg" loading="lazy" />}
+                              {msg.media_type === "image" && msg.media_url && (
+                                <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="block mb-1">
+                                  <img src={msg.media_url} alt="Imagem" className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity" loading="lazy" />
+                                </a>
+                              )}
                               {msg.media_type === "sticker" && msg.media_url && <img src={msg.media_url} alt="Sticker" className="mb-1 max-h-36 max-w-full rounded-lg" loading="lazy" />}
-                              {msg.media_type === "video" && msg.media_url && <video controls className="mb-1 max-w-full rounded-lg"><source src={msg.media_url} /></video>}
-                              {msg.media_type === "audio" && msg.media_url && <audio controls className="mb-1 max-w-full"><source src={msg.media_url} /></audio>}
-                              {msg.media_type === "document" && (
+                              {msg.media_type === "video" && msg.media_url && (
+                                <video controls className="mb-1 max-w-full rounded-lg" preload="metadata">
+                                  <source src={msg.media_url} />
+                                </video>
+                              )}
+                              {msg.media_type === "audio" && msg.media_url && (
+                                <audio controls className="mb-1 w-full min-w-[200px]" preload="metadata">
+                                  <source src={msg.media_url} />
+                                </audio>
+                              )}
+                              {msg.media_type === "document" && msg.media_url && (
+                                <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs hover:bg-background/30 transition-colors cursor-pointer">
+                                  <FileText className="h-4 w-4 shrink-0" />
+                                  <span className="flex-1 truncate">{msg.content || "Documento"}</span>
+                                  <Download className="h-3.5 w-3.5 shrink-0" />
+                                </a>
+                              )}
+                              {msg.media_type === "document" && !msg.media_url && (
                                 <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
                               )}
                               {msg.content && msg.media_type !== "document" && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
