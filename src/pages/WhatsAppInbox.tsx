@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
+import {
+  getInboxCache, setCachedInstances, setCachedSelectedInstance,
+  setCachedConversations, getCachedConversations, setCachedMessages,
+  getCachedMessages, setCachedProfilePic, getCachedProfilePics,
+  setCachedGroupInfo, getCachedGroupInfoMap, isCacheFresh,
+  type GroupInfo,
+} from "@/hooks/use-inbox-cache";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -20,7 +27,7 @@ import {
   MessageCircle, Send, Image, Paperclip, Search, Phone, User, Tag, X, Loader2,
   ChevronRight, LayoutDashboard, Users, Settings, Shield, LogOut, Reply, Crown,
   ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, UserPlus, ChevronUp,
-  Copy, Edit2, Check,
+  Copy, Edit2, Check, Play, Download, FileText,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -44,14 +51,6 @@ function getSenderColor(sender: string): string {
   return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
 }
 
-interface GroupInfo {
-  subject: string;
-  description?: string | null;
-  size?: number;
-  pictureUrl?: string | null;
-  participants: Array<{ id: string; admin: string | null; phone: string | null }>;
-}
-
 interface ReplyTarget { messageId: string; content: string; senderName: string; }
 
 interface ContactDetails {
@@ -72,19 +71,23 @@ const WhatsAppInbox = () => {
     demoteGroupParticipant,
   } = useEvolutionApi();
 
-  const [instances, setInstances] = useState<EvolutionInstance[]>([]);
-  const [selectedInstanceId, setSelectedInstanceId] = useState("");
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  // Initialize state from cache
+  const inboxCache = getInboxCache();
+  const [instances, setInstances] = useState<EvolutionInstance[]>(inboxCache.instances);
+  const [selectedInstanceId, setSelectedInstanceId] = useState(inboxCache.selectedInstanceId);
+  const [conversations, setConversations] = useState<Conversation[]>(
+    inboxCache.selectedInstanceId ? (getCachedConversations(inboxCache.selectedInstanceId) || []) : []
+  );
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
   const [messageText, setMessageText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showContactPanel, setShowContactPanel] = useState(false);
-  const [loadingConvs, setLoadingConvs] = useState(true);
+  const [loadingConvs, setLoadingConvs] = useState(!isCacheFresh(inboxCache.selectedInstanceId));
   const [loadingMsgs, setLoadingMsgs] = useState(false);
-  const [profilePics, setProfilePics] = useState<Record<string, string>>({});
+  const [profilePics, setProfilePics] = useState<Record<string, string>>(getCachedProfilePics());
   const [profilePictureSupported, setProfilePictureSupported] = useState(true);
-  const [groupInfoCache, setGroupInfoCache] = useState<Record<string, GroupInfo>>({});
+  const [groupInfoCache, setGroupInfoCache] = useState<Record<string, GroupInfo>>(getCachedGroupInfoMap());
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [sendingCount, setSendingCount] = useState(0);
   const [contactDetails, setContactDetails] = useState<ContactDetails | null>(null);
@@ -98,6 +101,7 @@ const WhatsAppInbox = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingProfileFetchesRef = useRef<Set<string>>(new Set());
   const groupInfoFetchedRef = useRef<Set<string>>(new Set());
+  const initialLoadDoneRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
   const initialLoadDoneRef = useRef(false);
 
   const isSending = sendingCount > 0;
