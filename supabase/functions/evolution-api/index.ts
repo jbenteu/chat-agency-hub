@@ -270,6 +270,7 @@ Deno.serve(async (req) => {
       ]);
     };
 
+    // ── create_instance ──
     if (action === "create_instance") {
       if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
 
@@ -285,14 +286,7 @@ Deno.serve(async (req) => {
 
       for (const createPath of createPaths) {
         try {
-          evoData = await requestEvolution(
-            createPath,
-            {
-              method: "POST",
-              body: createPayload,
-            },
-            "create_instance",
-          );
+          evoData = await requestEvolution(createPath, { method: "POST", body: createPayload }, "create_instance");
           break;
         } catch (error) {
           lastCreateError = error;
@@ -319,21 +313,16 @@ Deno.serve(async (req) => {
         qr_code: evoData.qrcode?.base64 || null,
       });
 
-      if (dbError) {
-        throw new Error(`Failed to persist instance: ${dbError.message}`);
-      }
+      if (dbError) throw new Error(`Failed to persist instance: ${dbError.message}`);
 
       return jsonResponse({ success: true, instance: evoData.instance, qrcode: evoData.qrcode });
     }
 
+    // ── get_qrcode ──
     if (action === "get_qrcode") {
       if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
 
-      const evoData = await requestEvolution(
-        `/instance/connect/${instanceName}`,
-        { method: "GET" },
-        "get_qrcode",
-      );
+      const evoData = await requestEvolution(`/instance/connect/${instanceName}`, { method: "GET" }, "get_qrcode");
 
       await supabaseAdmin
         .from("whatsapp_instances")
@@ -344,22 +333,17 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, qrcode: evoData });
     }
 
+    // ── connection_status ──
     if (action === "connection_status") {
       if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
 
-      const evoData = await requestEvolution(
-        `/instance/connectionState/${instanceName}`,
-        { method: "GET" },
-        "connection_status",
-      );
+      const evoData = await requestEvolution(`/instance/connectionState/${instanceName}`, { method: "GET" }, "connection_status");
 
       const state = evoData.instance?.state || evoData.state;
       const isConnected = state === "open";
       const phoneNumber = extractPhoneNumber(evoData);
 
-      const updatePayload: Record<string, unknown> = {
-        status: isConnected ? "connected" : "connecting",
-      };
+      const updatePayload: Record<string, unknown> = { status: isConnected ? "connected" : "connecting" };
       if (phoneNumber) updatePayload.phone_number = phoneNumber;
       if (isConnected) updatePayload.qr_code = null;
 
@@ -372,6 +356,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, state, connected: isConnected, phoneNumber });
     }
 
+    // ── list_instances ──
     if (action === "list_instances") {
       const { data: instances, error: listError } = await supabaseAdmin
         .from("whatsapp_instances")
@@ -433,75 +418,68 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, instances: validInstances });
     }
 
+    // ── delete_instance ──
     if (action === "delete_instance") {
       if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
 
       const instance = await getInstanceRow(instanceName);
 
       try {
-        await fetch(`${baseUrl}/instance/delete/${instanceName}`, {
-          method: "DELETE",
-          headers: evoHeaders,
-        });
+        await fetch(`${baseUrl}/instance/delete/${instanceName}`, { method: "DELETE", headers: evoHeaders });
       } catch (error) {
         console.warn("Evolution delete warning:", error);
       }
 
       if (instance?.id) {
-        await supabaseAdmin
-          .from("whatsapp_conversations")
-          .delete()
-          .eq("tenant_id", tenantId)
-          .eq("instance_id", instance.id);
+        await supabaseAdmin.from("whatsapp_conversations").delete().eq("tenant_id", tenantId).eq("instance_id", instance.id);
       }
 
-      await supabaseAdmin
-        .from("whatsapp_instances")
-        .delete()
-        .eq("tenant_id", tenantId)
-        .eq("instance_name", instanceName);
+      await supabaseAdmin.from("whatsapp_instances").delete().eq("tenant_id", tenantId).eq("instance_name", instanceName);
 
       return jsonResponse({ success: true });
     }
 
+    // ── send_text ──
     if (action === "send_text") {
-      const { remoteJid, text } = body as {
+      const { remoteJid, text, quotedMessageId } = body as {
         remoteJid?: string;
         text?: string;
+        quotedMessageId?: string;
       };
 
       if (!instanceName || !remoteJid || !text) {
         return jsonResponse({ error: "instanceName, remoteJid, and text are required" }, 400);
       }
 
+      const sendBody: Record<string, unknown> = { number: remoteJid, text };
+      if (quotedMessageId) {
+        sendBody.quoted = { key: { id: quotedMessageId, remoteJid } };
+      }
+
       const evoData = await requestEvolution(
         `/message/sendText/${instanceName}`,
-        {
-          method: "POST",
-          body: JSON.stringify({ number: remoteJid, text }),
-        },
+        { method: "POST", body: JSON.stringify(sendBody) },
         "send_text",
       );
 
-      const outboundMessageId =
-        evoData?.key?.id ||
-        evoData?.data?.key?.id ||
-        evoData?.message?.key?.id ||
-        null;
+      const outboundMessageId = evoData?.key?.id || evoData?.data?.key?.id || evoData?.message?.key?.id || null;
 
       await persistOutboundMessage({
         instanceName,
         remoteJid,
         messageId: outboundMessageId,
         content: text,
-        mediaType: null,
-        mediaUrl: null,
-        metadata: { key: evoData?.key || evoData?.data?.key || null, source: "send_text" },
+        metadata: {
+          key: evoData?.key || evoData?.data?.key || null,
+          source: "send_text",
+          quotedMessageId: quotedMessageId || null,
+        },
       });
 
       return jsonResponse({ success: true, data: evoData });
     }
 
+    // ── send_media ──
     if (action === "send_media") {
       const { remoteJid, mediatype, media, caption, fileName } = body as {
         remoteJid?: string;
@@ -515,28 +493,17 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "instanceName, remoteJid, mediatype, and media are required" }, 400);
       }
 
-      const sendBody: Record<string, unknown> = {
-        number: remoteJid,
-        mediatype,
-        media,
-      };
+      const sendBody: Record<string, unknown> = { number: remoteJid, mediatype, media };
       if (caption) sendBody.caption = caption;
       if (fileName) sendBody.fileName = fileName;
 
       const evoData = await requestEvolution(
         `/message/sendMedia/${instanceName}`,
-        {
-          method: "POST",
-          body: JSON.stringify(sendBody),
-        },
+        { method: "POST", body: JSON.stringify(sendBody) },
         "send_media",
       );
 
-      const outboundMessageId =
-        evoData?.key?.id ||
-        evoData?.data?.key?.id ||
-        evoData?.message?.key?.id ||
-        null;
+      const outboundMessageId = evoData?.key?.id || evoData?.data?.key?.id || evoData?.message?.key?.id || null;
 
       const mediaLabelByType: Record<string, string> = {
         image: "[Imagem]",
@@ -569,6 +536,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, data: evoData });
     }
 
+    // ── list_conversations ──
     if (action === "list_conversations") {
       const { instanceId: filterInstanceId } = body as { instanceId?: string };
 
@@ -588,6 +556,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, conversations: conversations || [] });
     }
 
+    // ── list_messages ──
     if (action === "list_messages") {
       const { conversationId } = body as { conversationId?: string };
       if (!conversationId) return jsonResponse({ error: "conversationId is required" }, 400);
@@ -610,6 +579,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, messages: messages || [] });
     }
 
+    // ── update_display_name ──
     if (action === "update_display_name") {
       if (!instanceName || !displayName) {
         return jsonResponse({ error: "instanceName and displayName are required" }, 400);
@@ -626,6 +596,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true });
     }
 
+    // ── fetch_group_info ──
     if (action === "fetch_group_info") {
       const { remoteJid } = body as { remoteJid?: string };
       if (!instanceName || !remoteJid) {
@@ -646,32 +617,33 @@ Deno.serve(async (req) => {
         try {
           const evoData = await requestEvolution(
             path,
-            {
-              method: "POST",
-              body: JSON.stringify({ groupJid: remoteJid }),
-            },
+            { method: "POST", body: JSON.stringify({ groupJid: remoteJid }) },
             "fetch_group_info",
           );
 
           const subject = evoData?.subject || evoData?.name || evoData?.groupName || null;
           const desc = evoData?.desc || evoData?.description || null;
-          const participants = evoData?.participants || evoData?.members || [];
-          const size = evoData?.size || participants.length || 0;
+          const rawParticipants = evoData?.participants || evoData?.members || [];
+          const size = evoData?.size || rawParticipants.length || 0;
           const pictureUrl = evoData?.pictureUrl || evoData?.profilePictureUrl || null;
 
           if (subject) {
-            // Update conversation name in DB
-            if (instanceName) {
-              const inst = await getInstanceRow(instanceName);
-              if (inst?.id) {
-                await supabaseAdmin
-                  .from("whatsapp_conversations")
-                  .update({ contact_name: subject })
-                  .eq("tenant_id", tenantId)
-                  .eq("instance_id", inst.id)
-                  .eq("remote_jid", remoteJid);
-              }
+            const inst = await getInstanceRow(instanceName);
+            if (inst?.id) {
+              await supabaseAdmin
+                .from("whatsapp_conversations")
+                .update({ contact_name: subject })
+                .eq("tenant_id", tenantId)
+                .eq("instance_id", inst.id)
+                .eq("remote_jid", remoteJid);
             }
+
+            // Return participants with full info
+            const participants = rawParticipants.slice(0, 100).map((p: any) => ({
+              id: p.id || p.jid || null,
+              admin: p.admin || null,
+              phone: normalizePhone(p.id || p.jid) || null,
+            }));
 
             return jsonResponse({
               success: true,
@@ -680,10 +652,7 @@ Deno.serve(async (req) => {
               description: desc,
               size,
               pictureUrl,
-              participants: participants.slice(0, 50).map((p: any) => ({
-                id: p.id || p.jid,
-                admin: p.admin || null,
-              })),
+              participants,
             });
           }
         } catch (error) {
@@ -697,16 +666,14 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, isGroup: true, subject: null });
     }
 
+    // ── get_profile_picture ──
     if (action === "get_profile_picture") {
       const { remoteJid } = body as { remoteJid?: string };
       if (!instanceName || !remoteJid) {
         return jsonResponse({ error: "instanceName and remoteJid are required" }, 400);
       }
 
-      if (remoteJid.endsWith("@g.us")) {
-        return jsonResponse({ success: true, profilePictureUrl: null });
-      }
-
+      // Support both individual and group profile pictures
       const numberOnly = remoteJid.replace(/@.*$/, "");
       const requestBodies = [
         { number: remoteJid },
@@ -723,10 +690,7 @@ Deno.serve(async (req) => {
           try {
             const evoData = await requestEvolution(
               path,
-              {
-                method: "POST",
-                body: JSON.stringify(payload),
-              },
+              { method: "POST", body: JSON.stringify(payload) },
               "get_profile_picture",
             );
 
