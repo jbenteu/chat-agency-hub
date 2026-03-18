@@ -639,7 +639,7 @@ const WhatsAppInbox = () => {
                     <div className="flex-1 overflow-hidden">
                       <div className="flex items-center justify-between">
                         <p className="truncate text-sm font-medium">{c.contact_name || c.contact_phone || "Desconhecido"}</p>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatTime(c.last_message_at)}</span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatConvTime(c.last_message_at)}</span>
                       </div>
                       <div className="mt-0.5 flex items-center justify-between">
                         <p className="truncate text-xs text-muted-foreground">{c.last_message || "…"}</p>
