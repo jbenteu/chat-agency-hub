@@ -23,6 +23,7 @@ import {
   Shield,
   LogOut,
 } from "lucide-react";
+import logo from "@/assets/logo.png";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/" },
