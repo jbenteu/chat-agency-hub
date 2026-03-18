@@ -12,6 +12,14 @@ const jsonResponse = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
+// Helper to check if a group name is a placeholder (JID digits or "Grupo 1234...")
+const isPlaceholderGroupName = (name: string | null | undefined): boolean => {
+  if (!name) return true;
+  if (/^\d+$/.test(name)) return true;
+  if (/^Grupo\s+\d+/.test(name)) return true;
+  return false;
+};
+
 const normalizePhone = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   const base = value.includes("@") ? value.split("@")[0] : value;
