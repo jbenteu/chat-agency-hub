@@ -366,37 +366,140 @@ const WhatsAppInbox = () => {
     if (!file || !selectedConv) return;
     const inst = instances.find((i) => i.id === selectedConv.instance_id);
     if (!inst) return;
+
     const reader = new FileReader();
     reader.onload = async () => {
-      const base64 = reader.result as string;
+      const dataUrl = reader.result as string;
+      if (!dataUrl || typeof dataUrl !== "string") {
+        toast({ title: "Erro ao enviar mídia", description: "Arquivo inválido", variant: "destructive" });
+        return;
+      }
+
+      const mediaPayload = (dataUrl.startsWith("data:") ? dataUrl.split(",").slice(1).join(",") : dataUrl).replace(/\s/g, "");
+      if (!mediaPayload) {
+        toast({ title: "Erro ao enviar mídia", description: "Não foi possível processar o arquivo", variant: "destructive" });
+        return;
+      }
+
       let mediatype = "document";
       if (file.type === "image/webp") mediatype = "sticker";
       else if (file.type.startsWith("image/")) mediatype = "image";
       else if (file.type.startsWith("audio/")) mediatype = "audio";
       else if (file.type.startsWith("video/")) mediatype = "video";
-      const labelMap: Record<string, string> = { image: file.name, audio: "[Áudio]", video: "[Vídeo]", document: file.name || "[Documento]", sticker: "[Sticker]" };
+
+      const labelMap: Record<string, string> = {
+        image: file.name,
+        audio: "[Áudio]",
+        video: "[Vídeo]",
+        document: file.name || "[Documento]",
+        sticker: "[Sticker]",
+      };
+
       const previewText = labelMap[mediatype] || "[Mídia]";
-      const previewMediaUrl = (mediatype === "image" || mediatype === "sticker") ? base64 : null;
+      const previewMediaUrl = (mediatype === "image" || mediatype === "sticker") ? dataUrl : null;
       const now = new Date().toISOString();
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
       const optimisticMessage: WhatsAppMessage = {
-        id: tempId, tenant_id: selectedConv.tenant_id, conversation_id: selectedConv.id,
-        message_id: null, direction: "outbound", content: previewText, media_url: previewMediaUrl,
-        media_type: mediatype, status: "pending", metadata: { optimistic: true, fileName: file.name },
+        id: tempId,
+        tenant_id: selectedConv.tenant_id,
+        conversation_id: selectedConv.id,
+        message_id: null,
+        direction: "outbound",
+        content: previewText,
+        media_url: previewMediaUrl,
+        media_type: mediatype,
+        status: "pending",
+        metadata: { optimistic: true, fileName: file.name },
         created_at: now,
       };
+
       addOptimisticMessage(optimisticMessage);
       updateConversationPreview(selectedConv.id, previewText, now);
       setSendingCount((c) => c + 1);
-      try { await sendMedia(inst.instance_name, selectedConv.remote_jid, mediatype, base64, mediatype === "image" ? file.name : undefined, file.name); }
-      catch (err: any) { removeOptimisticMessage(tempId); toast({ title: "Erro ao enviar mídia", description: err?.message || "Falha no envio", variant: "destructive" }); }
-      finally { setSendingCount((c) => Math.max(0, c - 1)); }
+
+      try {
+        await sendMedia(inst.instance_name, selectedConv.remote_jid, mediatype, mediaPayload, undefined, file.name);
+      } catch (err: any) {
+        removeOptimisticMessage(tempId);
+        toast({ title: "Erro ao enviar mídia", description: err?.message || "Falha no envio", variant: "destructive" });
+      } finally {
+        setSendingCount((c) => Math.max(0, c - 1));
+      }
     };
+
     reader.readAsDataURL(file);
     event.target.value = "";
   };
 
-  const filteredConversations = conversations.filter((c) => {
+  const normalizeConversationPreview = useCallback((content: string | null) => {
+    if (!content) return "…";
+
+    const placeholderMap: Record<string, string> = {
+      "[Imagem]": "Imagem",
+      "[Áudio]": "Áudio",
+      "[Vídeo]": "Vídeo",
+      "[Sticker]": "Sticker",
+      "[Documento]": "Documento",
+      "[Mídia]": "Mídia",
+    };
+
+    const trimmed = content.trim();
+    if (placeholderMap[trimmed]) return placeholderMap[trimmed];
+
+    const colonIdx = trimmed.lastIndexOf(": ");
+    if (colonIdx > 0) {
+      const sender = trimmed.substring(0, colonIdx).trim();
+      const afterColon = trimmed.substring(colonIdx + 2).trim();
+      if (placeholderMap[afterColon]) return `${sender}: ${placeholderMap[afterColon]}`;
+    }
+
+    return content;
+  }, []);
+
+  const deduplicatedConversations = useMemo(() => {
+    const byRemoteJid = new Map<string, Conversation>();
+
+    for (const conversation of conversations) {
+      const key = `${conversation.instance_id}:${conversation.remote_jid}`;
+      const normalized: Conversation = {
+        ...conversation,
+        last_message: normalizeConversationPreview(conversation.last_message),
+      };
+
+      const existing = byRemoteJid.get(key);
+      if (!existing) {
+        byRemoteJid.set(key, normalized);
+        continue;
+      }
+
+      const existingTs = existing.last_message_at ? new Date(existing.last_message_at).getTime() : 0;
+      const currentTs = normalized.last_message_at ? new Date(normalized.last_message_at).getTime() : 0;
+      const existingUpdatedTs = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+      const currentUpdatedTs = normalized.updated_at ? new Date(normalized.updated_at).getTime() : 0;
+
+      const keepCurrent = currentTs > existingTs || (currentTs === existingTs && currentUpdatedTs >= existingUpdatedTs);
+      const winner = keepCurrent ? normalized : existing;
+      const loser = keepCurrent ? existing : normalized;
+
+      byRemoteJid.set(key, {
+        ...winner,
+        contact_name: winner.contact_name || loser.contact_name,
+        contact_phone: winner.contact_phone || loser.contact_phone,
+        last_message: winner.last_message || loser.last_message,
+        last_message_at: winner.last_message_at || loser.last_message_at,
+        unread_count: Math.max(existing.unread_count || 0, normalized.unread_count || 0),
+      });
+    }
+
+    return Array.from(byRemoteJid.values()).sort((a, b) => {
+      const aTs = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+      const bTs = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+      return bTs - aTs;
+    });
+  }, [conversations, normalizeConversationPreview]);
+
+  const filteredConversations = deduplicatedConversations.filter((c) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return c.contact_name?.toLowerCase().includes(q) || c.contact_phone?.toLowerCase().includes(q) || c.last_message?.toLowerCase().includes(q);
@@ -408,18 +511,28 @@ const WhatsAppInbox = () => {
     if (!d) return "";
     try {
       const date = new Date(d);
-      if (isToday(date)) return format(date, "HH:mm");
-      if (isYesterday(date)) return "Ontem";
+      if (Number.isNaN(date.getTime())) return "";
+
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const dayDiff = Math.floor((todayStart.getTime() - dateStart.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (dayDiff <= 0) return format(date, "HH:mm");
+      if (dayDiff === 1) return "Ontem";
+      if (dayDiff === 2) return "Anteontem";
+      if (dayDiff <= 7) return "Semana passada";
       return format(date, "dd/MM/yyyy");
-    } catch { return ""; }
+    } catch {
+      return "";
+    }
   };
   const formatDate = (d: string) => { try { const date = new Date(d); const today = new Date(); if (date.toDateString() === today.toDateString()) return formatTime(d); return format(date, "dd/MM/yyyy HH:mm"); } catch { return ""; } };
   const formatFullDate = (d: string) => { try { return format(new Date(d), "dd/MM/yyyy 'às' HH:mm"); } catch { return ""; } };
-  
+
   const isMediaPlaceholder = (content: string | null) => {
     if (!content) return false;
     const placeholders = ["[Imagem]", "[Áudio]", "[Vídeo]", "[Sticker]", "[Documento]", "[Mídia]"];
-    // Exact match or sender-prefixed match (e.g. "Abel Sando: [Áudio]")
     if (placeholders.includes(content)) return true;
     const colonIdx = content.lastIndexOf(": ");
     if (colonIdx > 0) {
