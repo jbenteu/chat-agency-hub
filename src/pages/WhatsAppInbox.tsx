@@ -40,6 +40,7 @@ const WhatsAppInbox = () => {
     listMessages,
     sendText,
     sendMedia,
+    getProfilePicture,
   } = useEvolutionApi();
 
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
