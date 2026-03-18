@@ -121,8 +121,8 @@ export function useEvolutionApi() {
   );
 
   const listMessages = useCallback(
-    (conversationId: string) =>
-      callEvolution({ action: "list_messages", conversationId }),
+    (conversationId: string, limit?: number) =>
+      callEvolution({ action: "list_messages", conversationId, limit }),
     [callEvolution]
   );
 
@@ -150,6 +150,42 @@ export function useEvolutionApi() {
     [callEvolution]
   );
 
+  const getContact = useCallback(
+    (contactId: string) =>
+      callEvolution({ action: "get_contact", contactId }),
+    [callEvolution]
+  );
+
+  const updateContact = useCallback(
+    (contactId: string, fields: Record<string, unknown>) =>
+      callEvolution({ action: "update_contact", contactId, fields }),
+    [callEvolution]
+  );
+
+  const getGroupInviteLink = useCallback(
+    (instanceName: string, remoteJid: string) =>
+      callEvolution({ action: "get_group_invite_link", instanceName, remoteJid }),
+    [callEvolution]
+  );
+
+  const removeGroupParticipant = useCallback(
+    (instanceName: string, remoteJid: string, participantJid: string) =>
+      callEvolution({ action: "remove_group_participant", instanceName, remoteJid, participantJid }),
+    [callEvolution]
+  );
+
+  const promoteGroupParticipant = useCallback(
+    (instanceName: string, remoteJid: string, participantJid: string) =>
+      callEvolution({ action: "promote_group_participant", instanceName, remoteJid, participantJid }),
+    [callEvolution]
+  );
+
+  const demoteGroupParticipant = useCallback(
+    (instanceName: string, remoteJid: string, participantJid: string) =>
+      callEvolution({ action: "demote_group_participant", instanceName, remoteJid, participantJid }),
+    [callEvolution]
+  );
+
   return {
     loading,
     error,
@@ -165,6 +201,12 @@ export function useEvolutionApi() {
     sendMedia,
     getProfilePicture,
     fetchGroupInfo,
+    getContact,
+    updateContact,
+    getGroupInviteLink,
+    removeGroupParticipant,
+    promoteGroupParticipant,
+    demoteGroupParticipant,
   };
 }
 
