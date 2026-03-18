@@ -64,6 +64,10 @@ const WhatsAppInbox = () => {
           (i: EvolutionInstance) => i.status === "connected"
         );
         setInstances(connected);
+        // Auto-select first connected instance
+        if (connected.length > 0 && !selectedInstanceId) {
+          setSelectedInstanceId(connected[0].id);
+        }
       } catch {}
     };
     load();
