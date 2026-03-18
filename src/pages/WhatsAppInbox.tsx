@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
+import { MediaMessage } from "@/components/whatsapp/MediaMessage";
 import {
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
