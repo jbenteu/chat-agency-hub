@@ -144,6 +144,12 @@ export function useEvolutionApi() {
     [callEvolution]
   );
 
+  const fetchGroupInfo = useCallback(
+    (instanceName: string, remoteJid: string) =>
+      callEvolution({ action: "fetch_group_info", instanceName, remoteJid }),
+    [callEvolution]
+  );
+
   return {
     loading,
     error,
