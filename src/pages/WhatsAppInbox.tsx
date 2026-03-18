@@ -145,67 +145,112 @@ const WhatsAppInbox = () => {
 
   // ── Load instances (direct DB query) ──
   const loadInstances = useCallback(async () => {
+    updateBootstrapProgress(20, "Conectando instâncias…");
     try {
       const allInstances = await queryInstances();
       const connected = allInstances.filter((i) => i.status === "connected");
       setInstances(connected);
       setCachedInstances(connected);
-      if (connected.length === 0) { setSelectedInstanceId(""); setCachedSelectedInstance(""); setConversations([]); setSelectedConv(null); return; }
+
+      if (connected.length === 0) {
+        setSelectedInstanceId("");
+        setCachedSelectedInstance("");
+        setConversations([]);
+        setSelectedConv(null);
+        completeBootstrap();
+        return;
+      }
+
       setSelectedInstanceId((prev) => {
         if (prev && connected.some((i) => i.id === prev)) return prev;
         const newId = connected[0].id;
         setCachedSelectedInstance(newId);
         return newId;
       });
-    } catch { /* UI handles */ }
-  }, []);
 
-  useEffect(() => { loadInstances(); }, [loadInstances]);
+      updateBootstrapProgress(45, "Carregando conversas…");
+    } catch {
+      setShowBootstrapLoading(false);
+    }
+  }, [completeBootstrap, updateBootstrapProgress]);
+
+  useEffect(() => {
+    loadInstances();
+  }, [loadInstances]);
 
   // ── Fetch conversations (direct DB query, uses cache on mount) ──
   const fetchConversations = useCallback(async (silent = false) => {
-    if (!selectedInstanceId) { setConversations([]); setLoadingConvs(false); return; }
+    if (!selectedInstanceId) {
+      setConversations([]);
+      setLoadingConvs(false);
+      return;
+    }
+
     const cached = getCachedConversations(selectedInstanceId);
     if (cached && cached.length > 0 && !silent) {
       setConversations(cached);
       setLoadingConvs(false);
       initialLoadDoneRef.current = true;
+      updateBootstrapProgress(70, "Sincronizando conversas…");
     }
-    if (!silent && !cached?.length) setLoadingConvs(true);
+
+    if (!silent && !cached?.length) {
+      setLoadingConvs(true);
+      updateBootstrapProgress(55, "Carregando conversas…");
+    }
+
     try {
       const convs = await queryConversations(selectedInstanceId);
       setConversations(convs);
       setCachedConversations(selectedInstanceId, convs);
-    } catch { /* UI handles */ }
-    finally { setLoadingConvs(false); initialLoadDoneRef.current = true; }
-  }, [selectedInstanceId]);
+      updateBootstrapProgress(88, "Aplicando sincronização inicial…");
+      if (!silent) completeBootstrap();
+    } catch {
+      if (!silent) setShowBootstrapLoading(false);
+    } finally {
+      setLoadingConvs(false);
+      initialLoadDoneRef.current = true;
+    }
+  }, [selectedInstanceId, completeBootstrap, updateBootstrapProgress]);
 
   useEffect(() => {
     const cached = getCachedConversations(selectedInstanceId);
     if (!cached?.length) {
       initialLoadDoneRef.current = false;
+      bootstrapCompletedRef.current = false;
+      setShowBootstrapLoading(true);
+      setBootstrapProgress(40);
+      setBootstrapLabel("Carregando conversas…");
     }
     groupInfoFetchedRef.current.clear();
     fetchConversations(false);
-  }, [fetchConversations]);
+  }, [fetchConversations, selectedInstanceId]);
 
   // ── Load messages (direct DB query, use cache for instant render) ──
   useEffect(() => {
     if (!selectedConv) return;
+
     const cached = getCachedMessages(selectedConv.id);
     if (cached && cached.length > 0) {
       setMessages(cached);
+      lastMessageAtRef.current = cached[cached.length - 1]?.created_at || null;
       setLoadingMsgs(false);
     }
+
     const load = async () => {
       if (!cached?.length) setLoadingMsgs(true);
       try {
         const msgs = await queryMessages(selectedConv.id, 100);
         setMessages(msgs);
+        lastMessageAtRef.current = msgs[msgs.length - 1]?.created_at || null;
         setCachedMessages(selectedConv.id, msgs);
-      } catch { /* UI handles */ }
-      finally { setLoadingMsgs(false); }
+      } catch {
+        /* UI handles */
+      } finally {
+        setLoadingMsgs(false);
+      }
     };
+
     load();
   }, [selectedConv?.id]);
 
