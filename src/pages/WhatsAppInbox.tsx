@@ -660,11 +660,30 @@ const WhatsAppInbox = () => {
                                   <p className="truncate">{quoted.content}</p>
                                 </div>
                               )}
-                              {msg.media_type === "image" && msg.media_url && <img src={msg.media_url} alt="Imagem" className="mb-1 max-w-full rounded-lg" loading="lazy" />}
+                              {msg.media_type === "image" && msg.media_url && (
+                                <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="block mb-1">
+                                  <img src={msg.media_url} alt="Imagem" className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity" loading="lazy" />
+                                </a>
+                              )}
                               {msg.media_type === "sticker" && msg.media_url && <img src={msg.media_url} alt="Sticker" className="mb-1 max-h-36 max-w-full rounded-lg" loading="lazy" />}
-                              {msg.media_type === "video" && msg.media_url && <video controls className="mb-1 max-w-full rounded-lg"><source src={msg.media_url} /></video>}
-                              {msg.media_type === "audio" && msg.media_url && <audio controls className="mb-1 max-w-full"><source src={msg.media_url} /></audio>}
-                              {msg.media_type === "document" && (
+                              {msg.media_type === "video" && msg.media_url && (
+                                <video controls className="mb-1 max-w-full rounded-lg" preload="metadata">
+                                  <source src={msg.media_url} />
+                                </video>
+                              )}
+                              {msg.media_type === "audio" && msg.media_url && (
+                                <audio controls className="mb-1 w-full min-w-[200px]" preload="metadata">
+                                  <source src={msg.media_url} />
+                                </audio>
+                              )}
+                              {msg.media_type === "document" && msg.media_url && (
+                                <a href={msg.media_url} target="_blank" rel="noopener noreferrer" className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs hover:bg-background/30 transition-colors cursor-pointer">
+                                  <FileText className="h-4 w-4 shrink-0" />
+                                  <span className="flex-1 truncate">{msg.content || "Documento"}</span>
+                                  <Download className="h-3.5 w-3.5 shrink-0" />
+                                </a>
+                              )}
+                              {msg.media_type === "document" && !msg.media_url && (
                                 <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
                               )}
                               {msg.content && msg.media_type !== "document" && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
