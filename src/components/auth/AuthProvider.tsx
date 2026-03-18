@@ -21,45 +21,57 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const initialLoadDone = useRef(false);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    const markReady = (s: Session | null) => {
-      console.log("[Auth] markReady called, session:", !!s, "initialLoadDone:", initialLoadDone.current);
-      setSession(s);
-      if (!initialLoadDone.current) {
-        initialLoadDone.current = true;
+    let isMounted = true;
+
+    const finishInitialization = (nextSession: Session | null) => {
+      if (!isMounted) return;
+      setSession(nextSession);
+
+      if (!initializedRef.current) {
+        initializedRef.current = true;
         setLoading(false);
       }
     };
 
-    // 1. Set up listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("[Auth] onAuthStateChange event:", event);
-      markReady(session);
-    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!isMounted) return;
+      setSession(nextSession);
 
-    // 2. Then get current session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      console.log("[Auth] getSession result, session:", !!session, "error:", error);
-      markReady(session);
-    }).catch((err) => {
-      console.error("[Auth] getSession failed:", err);
-      markReady(null);
-    });
-
-    // 3. Safety timeout - force loading=false after 5 seconds
-    const timeout = setTimeout(() => {
-      if (!initialLoadDone.current) {
-        console.warn("[Auth] Safety timeout triggered - forcing loading=false");
-        initialLoadDone.current = true;
+      if (!initializedRef.current) {
+        initializedRef.current = true;
         setLoading(false);
       }
-    }, 5000);
+    });
+
+    supabase.auth
+      .getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) {
+          console.error("[Auth] getSession error:", error.message);
+        }
+        finishInitialization(session ?? null);
+      })
+      .catch((error) => {
+        console.error("[Auth] getSession exception:", error);
+        finishInitialization(null);
+      });
+
+    const safetyTimeout = window.setTimeout(() => {
+      if (!initializedRef.current && isMounted) {
+        initializedRef.current = true;
+        setLoading(false);
+      }
+    }, 7000);
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
-      clearTimeout(timeout);
+      window.clearTimeout(safetyTimeout);
     };
   }, []);
 

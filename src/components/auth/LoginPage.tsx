@@ -9,6 +9,20 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import logo from "@/assets/logo.png";
 
+const AUTH_TIMEOUT_MS = 15000;
+
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        window.clearTimeout(timeoutId);
+        reject(new Error("Tempo de resposta excedido. Tente novamente."));
+      }, timeoutMs);
+    }),
+  ]);
+};
+
 const LoginPage: React.FC = () => {
   const { session, loading } = useAuth();
   const { toast } = useToast();
@@ -33,23 +47,49 @@ const LoginPage: React.FC = () => {
     e.preventDefault();
     setSubmitting(true);
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: window.location.origin },
+        const { data, error } = await withTimeout(
+          supabase.auth.signUp({
+            email: normalizedEmail,
+            password,
+          }),
+          AUTH_TIMEOUT_MS,
+        );
+
+        if (error) throw error;
+
+        if (data.session) {
+          window.location.assign("/");
+          return;
+        }
+
+        toast({
+          title: "Conta criada!",
+          description: "Agora faça login com seu email e senha.",
         });
-        if (error) throw error;
-        toast({ title: "Conta criada!", description: "Verifique seu email para confirmar." });
-        setSubmitting(false);
-        return;
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await withTimeout(
+          supabase.auth.signInWithPassword({
+            email: normalizedEmail,
+            password,
+          }),
+          AUTH_TIMEOUT_MS,
+        );
+
         if (error) throw error;
+        if (!data.session) throw new Error("Não foi possível iniciar sessão.");
+
+        window.location.assign("/");
       }
     } catch (error: any) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
+      toast({
+        title: "Erro de autenticação",
+        description: error?.message ?? "Falha ao autenticar. Tente novamente.",
+        variant: "destructive",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -67,7 +107,7 @@ const LoginPage: React.FC = () => {
               {isSignUp ? "Criar conta" : "Entrar"}
             </CardTitle>
             <CardDescription>
-              {isSignUp ? "Preencha seus dados para criar uma conta" : "Entre com seu email e senha"}
+              {isSignUp ? "Cadastre-se para acessar o painel" : "Entre com seu email e senha"}
             </CardDescription>
           </CardHeader>
           <CardContent>
