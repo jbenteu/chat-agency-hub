@@ -113,9 +113,15 @@ Deno.serve(async (req) => {
       }
 
       // Extract contact info from JID
+      const isGroup = remoteJid.endsWith("@g.us");
       const contactPhone = remoteJid.replace(/@.*$/, "");
       const pushName = data.pushName || contactPhone;
       const direction = fromMe ? "outbound" : "inbound";
+
+      // For groups, use the group subject if available, or the participant's pushName
+      const conversationName = isGroup
+        ? (data.groupMetadata?.subject || data.pushName || `Grupo ${contactPhone}`)
+        : pushName;
 
       // Find or create conversation
       let { data: conversation } = await supabaseAdmin
@@ -129,30 +135,31 @@ Deno.serve(async (req) => {
       let contactId: string | null = null;
 
       if (!conversation) {
-        // Auto-create contact as lead in CRM
-        const { data: newContact } = await supabaseAdmin
-          .from("contacts")
-          .insert({
-            tenant_id: tenantId,
-            name: pushName,
-            phone: contactPhone,
-            tags: ["whatsapp", "lead"],
-            notes: "Contato criado automaticamente via WhatsApp",
-          })
-          .select("id")
-          .single();
+        // Only create CRM contact/deal for individual chats, not groups
+        if (!isGroup) {
+          const { data: newContact } = await supabaseAdmin
+            .from("contacts")
+            .insert({
+              tenant_id: tenantId,
+              name: pushName,
+              phone: contactPhone,
+              tags: ["whatsapp", "lead"],
+              notes: "Contato criado automaticamente via WhatsApp",
+            })
+            .select("id")
+            .single();
 
-        contactId = newContact?.id || null;
+          contactId = newContact?.id || null;
 
-        // Also create a deal for the lead
-        if (contactId) {
-          await supabaseAdmin.from("deals").insert({
-            tenant_id: tenantId,
-            contact_id: contactId,
-            title: `Lead WhatsApp - ${pushName}`,
-            stage: "lead",
-            status: "open",
-          });
+          if (contactId) {
+            await supabaseAdmin.from("deals").insert({
+              tenant_id: tenantId,
+              contact_id: contactId,
+              title: `Lead WhatsApp - ${pushName}`,
+              stage: "lead",
+              status: "open",
+            });
+          }
         }
 
         // Create conversation
@@ -163,7 +170,7 @@ Deno.serve(async (req) => {
             instance_id: instanceId,
             contact_id: contactId,
             remote_jid: remoteJid,
-            contact_name: pushName,
+            contact_name: conversationName,
             contact_phone: contactPhone,
             last_message: content,
             last_message_at: new Date().toISOString(),
