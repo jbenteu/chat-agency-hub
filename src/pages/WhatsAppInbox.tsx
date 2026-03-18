@@ -9,6 +9,7 @@ import {
   setCachedGroupInfo, getCachedGroupInfoMap, isCacheFresh,
   type GroupInfo,
 } from "@/hooks/use-inbox-cache";
+import { queryInstances, queryConversations, queryMessages } from "@/hooks/use-direct-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
