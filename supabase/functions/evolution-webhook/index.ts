@@ -460,7 +460,9 @@ Deno.serve(async (req) => {
           if (!isGroup) {
             updatePayload.contact_id = contactId;
             updatePayload.contact_name = resolvedContactName;
-          } else if (groupSubject && (conversation.contact_name?.startsWith("Grupo ") || /^\d+$/.test(conversation.contact_name || ""))) {
+          } else if (!isPlaceholderGroupName(resolvedContactName) && isPlaceholderGroupName(conversation.contact_name)) {
+            updatePayload.contact_name = resolvedContactName;
+          } else if (groupSubject && isPlaceholderGroupName(conversation.contact_name)) {
             updatePayload.contact_name = groupSubject;
           }
 
