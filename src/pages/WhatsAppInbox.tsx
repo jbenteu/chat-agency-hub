@@ -262,7 +262,7 @@ const WhatsAppInbox = () => {
         pendingProfileFetchesRef.current.add(key);
         try {
           const data = await getProfilePicture(inst.instance_name, c.remote_jid);
-          if (data?.profilePictureUrl) setProfilePics((prev) => ({ ...prev, [c.remote_jid]: data.profilePictureUrl }));
+          if (data?.profilePictureUrl) { setProfilePics((prev) => ({ ...prev, [c.remote_jid]: data.profilePictureUrl })); setCachedProfilePic(c.remote_jid, data.profilePictureUrl); }
         } catch (err: any) {
           if (String(err?.message || "").includes("Unknown action: get_profile_picture")) setProfilePictureSupported(false);
         } finally { pendingProfileFetchesRef.current.delete(key); }
