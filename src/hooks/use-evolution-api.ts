@@ -55,32 +55,39 @@ export function useEvolutionApi() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const callEvolution = useCallback(async (body: Record<string, unknown>) => {
-    setLoading(true);
-    setError(null);
+  const callEvolution = useCallback(
+    async (
+      body: Record<string, unknown>,
+      options: { trackLoading?: boolean; trackError?: boolean } = {}
+    ) => {
+      const { trackLoading = true, trackError = true } = options;
+      if (trackLoading) setLoading(true);
+      if (trackError) setError(null);
 
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) throw new Error("Não autenticado");
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (!token) throw new Error("Não autenticado");
 
-      const { data, error: fnError } = await supabase.functions.invoke("evolution-api", {
-        body,
-        headers: { Authorization: `Bearer ${token}` },
-      });
+        const { data, error: fnError } = await supabase.functions.invoke("evolution-api", {
+          body,
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
-      if (fnError) throw new Error(fnError.message);
-      if (data?.error) throw new Error(data.error);
+        if (fnError) throw new Error(fnError.message);
+        if (data?.error) throw new Error(data.error);
 
-      return data;
-    } catch (err: any) {
-      const msg = err.message || "Erro desconhecido";
-      setError(msg);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+        return data;
+      } catch (err: any) {
+        const msg = err.message || "Erro desconhecido";
+        if (trackError) setError(msg);
+        throw err;
+      } finally {
+        if (trackLoading) setLoading(false);
+      }
+    },
+    []
+  );
 
   const createInstance = useCallback(
     (instanceName: string, displayName?: string) =>
@@ -140,13 +147,19 @@ export function useEvolutionApi() {
 
   const getProfilePicture = useCallback(
     (instanceName: string, remoteJid: string) =>
-      callEvolution({ action: "get_profile_picture", instanceName, remoteJid }),
+      callEvolution(
+        { action: "get_profile_picture", instanceName, remoteJid },
+        { trackLoading: false, trackError: false }
+      ),
     [callEvolution]
   );
 
   const fetchGroupInfo = useCallback(
     (instanceName: string, remoteJid: string) =>
-      callEvolution({ action: "fetch_group_info", instanceName, remoteJid }),
+      callEvolution(
+        { action: "fetch_group_info", instanceName, remoteJid },
+        { trackLoading: false, trackError: false }
+      ),
     [callEvolution]
   );
 
@@ -188,7 +201,10 @@ export function useEvolutionApi() {
 
   const getMedia = useCallback(
     (instanceName: string, messageId: string, remoteJid?: string) =>
-      callEvolution({ action: "get_media", instanceName, messageId, remoteJid }),
+      callEvolution(
+        { action: "get_media", instanceName, messageId, remoteJid },
+        { trackLoading: false, trackError: false }
+      ),
     [callEvolution]
   );
 
