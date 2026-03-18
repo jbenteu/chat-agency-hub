@@ -23,6 +23,7 @@ import {
   Shield,
   LogOut,
 } from "lucide-react";
+import logo from "@/assets/logo.png";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/" },
@@ -40,10 +41,8 @@ const AppSidebar: React.FC = () => {
     <Sidebar>
       <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-bold">
-            C
-          </div>
-          <span className="text-sm font-semibold text-sidebar-accent-foreground">CRM</span>
+          <img src={logo} alt="Advanced Marketing" className="h-8 w-auto" />
+          <span className="text-sm font-semibold text-sidebar-accent-foreground">Advanced Marketing</span>
         </div>
       </SidebarHeader>
       <SidebarContent>
