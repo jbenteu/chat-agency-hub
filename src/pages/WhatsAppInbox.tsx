@@ -723,78 +723,16 @@ const WhatsAppInbox = () => {
     event.target.value = "";
   };
 
-  const normalizeConversationPreview = useCallback((content: string | null) => {
-    if (!content) return "…";
-
-    const placeholderMap: Record<string, string> = {
-      "[Imagem]": "Imagem",
-      "[Áudio]": "Áudio",
-      "[Vídeo]": "Vídeo",
-      "[Sticker]": "Sticker",
-      "[Documento]": "Documento",
-      "[Mídia]": "Mídia",
-    };
-
-    const trimmed = content.trim();
-    if (placeholderMap[trimmed]) return placeholderMap[trimmed];
-
-    const colonIdx = trimmed.lastIndexOf(": ");
-    if (colonIdx > 0) {
-      const sender = trimmed.substring(0, colonIdx).trim();
-      const afterColon = trimmed.substring(colonIdx + 2).trim();
-      if (placeholderMap[afterColon]) return `${sender}: ${placeholderMap[afterColon]}`;
-    }
-
-    return content;
-  }, []);
-
-  const deduplicatedConversations = useMemo(() => {
-    const byRemoteJid = new Map<string, Conversation>();
-
-    for (const conversation of conversations) {
-      const key = `${conversation.instance_id}:${conversation.remote_jid}`;
-      const normalized: Conversation = {
-        ...conversation,
-        last_message: normalizeConversationPreview(conversation.last_message),
-      };
-
-      const existing = byRemoteJid.get(key);
-      if (!existing) {
-        byRemoteJid.set(key, normalized);
-        continue;
-      }
-
-      const existingTs = existing.last_message_at ? new Date(existing.last_message_at).getTime() : 0;
-      const currentTs = normalized.last_message_at ? new Date(normalized.last_message_at).getTime() : 0;
-      const existingUpdatedTs = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
-      const currentUpdatedTs = normalized.updated_at ? new Date(normalized.updated_at).getTime() : 0;
-
-      const keepCurrent = currentTs > existingTs || (currentTs === existingTs && currentUpdatedTs >= existingUpdatedTs);
-      const winner = keepCurrent ? normalized : existing;
-      const loser = keepCurrent ? existing : normalized;
-
-      byRemoteJid.set(key, {
-        ...winner,
-        contact_name: winner.contact_name || loser.contact_name,
-        contact_phone: winner.contact_phone || loser.contact_phone,
-        last_message: winner.last_message || loser.last_message,
-        last_message_at: winner.last_message_at || loser.last_message_at,
-        unread_count: Math.max(existing.unread_count || 0, normalized.unread_count || 0),
-      });
-    }
-
-    return Array.from(byRemoteJid.values()).sort((a, b) => {
-      const aTs = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-      const bTs = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-      return bTs - aTs;
-    });
-  }, [conversations, normalizeConversationPreview]);
-
-  const filteredConversations = deduplicatedConversations.filter((c) => {
-    if (!searchQuery) return true;
+  const filteredConversations = useMemo(() => {
+    if (!searchQuery) return conversations;
     const q = searchQuery.toLowerCase();
-    return c.contact_name?.toLowerCase().includes(q) || c.contact_phone?.toLowerCase().includes(q) || c.last_message?.toLowerCase().includes(q);
-  });
+    return conversations.filter(
+      (c) =>
+        c.contact_name?.toLowerCase().includes(q) ||
+        c.contact_phone?.toLowerCase().includes(q) ||
+        c.last_message?.toLowerCase().includes(q)
+    );
+  }, [conversations, searchQuery]);
 
   const getInitials = (name: string | null) => { if (!name) return "?"; return name.split(" ").map((p) => p[0]).join("").substring(0, 2).toUpperCase(); };
   const formatTime = (d: string | null) => { if (!d) return ""; try { return format(new Date(d), "HH:mm"); } catch { return ""; } };
