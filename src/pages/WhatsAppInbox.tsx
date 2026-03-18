@@ -56,6 +56,7 @@ const WhatsAppInbox = () => {
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [profilePics, setProfilePics] = useState<Record<string, string>>({});
 
   // Load instances
   useEffect(() => {
