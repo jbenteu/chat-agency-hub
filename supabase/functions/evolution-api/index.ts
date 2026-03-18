@@ -294,11 +294,13 @@ Deno.serve(async (req) => {
       if (!instanceName || !remoteJid) return jsonResponse({ error: "instanceName and remoteJid are required" }, 400);
       if (!remoteJid.endsWith("@g.us")) return jsonResponse({ success: true, isGroup: false });
 
-      // Try multiple API paths (POST and GET variants)
+      // Try multiple API paths — findGroupInfos uses GET with query param
+      const encodedJid = encodeURIComponent(remoteJid);
       const attempts: Array<{ path: string; method: string; body?: string }> = [
+        { path: `/group/findGroupInfos/${instanceName}?groupJid=${encodedJid}`, method: "GET" },
+        { path: `/chat/findGroupInfos/${instanceName}?groupJid=${encodedJid}`, method: "GET" },
         { path: `/group/findGroupInfos/${instanceName}`, method: "POST", body: JSON.stringify({ groupJid: remoteJid }) },
-        { path: `/chat/findGroupInfos/${instanceName}`, method: "POST", body: JSON.stringify({ groupJid: remoteJid }) },
-        { path: `/group/fetchAllGroups/${instanceName}`, method: "GET" },
+        { path: `/group/fetchAllGroups/${instanceName}?getParticipants=true`, method: "GET" },
       ];
 
       for (const attempt of attempts) {

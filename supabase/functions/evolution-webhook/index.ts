@@ -188,17 +188,19 @@ Deno.serve(async (req) => {
 
   const fetchGroupSubjectFromApi = async (instName: string, groupJid: string): Promise<string | null> => {
     if (!evoBaseUrl) return null;
+    const encodedJid = encodeURIComponent(groupJid);
     const attempts = [
+      { path: `/group/findGroupInfos/${instName}?groupJid=${encodedJid}`, method: "GET" },
+      { path: `/chat/findGroupInfos/${instName}?groupJid=${encodedJid}`, method: "GET" },
       { path: `/group/findGroupInfos/${instName}`, method: "POST", body: JSON.stringify({ groupJid }) },
-      { path: `/chat/findGroupInfos/${instName}`, method: "POST", body: JSON.stringify({ groupJid }) },
-      { path: `/group/fetchAllGroups/${instName}`, method: "GET" },
+      { path: `/group/fetchAllGroups/${instName}?getParticipants=false`, method: "GET" },
     ];
     for (const attempt of attempts) {
       try {
         const init: RequestInit = { method: attempt.method, headers: evoHeaders };
         if (attempt.body) init.body = attempt.body;
         const res = await fetch(`${evoBaseUrl}${attempt.path}`, init);
-        if (!res.ok) continue;
+        if (!res.ok) { try { await res.text(); } catch {} continue; }
         const json = await res.json();
         let groupData = json;
         if (Array.isArray(json)) {
