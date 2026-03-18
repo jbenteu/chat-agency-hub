@@ -327,7 +327,8 @@ const WhatsApp = () => {
                     <div>
                       <p className="text-sm font-medium">{getDisplayLabel(inst)}</p>
                       <p className="text-xs text-muted-foreground">
-                        {inst.phone_number || "Sem número associado"}
+                        {inst.phone_number ||
+                          (inst.status === "connected" ? "Número sincronizando..." : "Aguardando conexão")}
                       </p>
                     </div>
                   </div>

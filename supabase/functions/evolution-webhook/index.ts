@@ -2,7 +2,136 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+const jsonResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
+const normalizePhone = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const base = value.includes("@") ? value.split("@")[0] : value;
+  const digits = base.replace(/\D/g, "");
+  return digits.length >= 8 ? digits : null;
+};
+
+const extractConnectionPhone = (payload: Record<string, any>): string | null => {
+  const candidates: unknown[] = [
+    payload?.phone,
+    payload?.number,
+    payload?.instance?.phone,
+    payload?.instance?.number,
+    payload?.instance?.owner,
+    payload?.instance?.ownerJid,
+    payload?.instance?.wid,
+    payload?.instance?.wuid,
+    payload?.me?.id,
+    payload?.me?.jid,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") {
+      const parsed = normalizePhone(candidate);
+      if (parsed) return parsed;
+    }
+
+    if (candidate && typeof candidate === "object") {
+      const objectCandidate = candidate as Record<string, unknown>;
+      const parsed =
+        normalizePhone(objectCandidate.id) ||
+        normalizePhone(objectCandidate.user) ||
+        normalizePhone(objectCandidate.jid);
+      if (parsed) return parsed;
+    }
+  }
+
+  return null;
+};
+
+const getMessageEntries = (data: any): any[] => {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.messages)) return data.messages;
+  if (Array.isArray(data.data)) return data.data;
+  return [data];
+};
+
+const unwrapMessageContent = (message: Record<string, any> | null | undefined): Record<string, any> => {
+  if (!message || typeof message !== "object") return {};
+
+  let current = message;
+
+  if (current.ephemeralMessage?.message) current = current.ephemeralMessage.message;
+  if (current.viewOnceMessage?.message) current = current.viewOnceMessage.message;
+  if (current.viewOnceMessageV2?.message) current = current.viewOnceMessageV2.message;
+  if (current.documentWithCaptionMessage?.message) current = current.documentWithCaptionMessage.message;
+
+  return current;
+};
+
+const parseMessagePayload = (message: Record<string, any>) => {
+  const contentNode = unwrapMessageContent(message);
+
+  let content = "";
+  let mediaUrl: string | null = null;
+  let mediaType: string | null = null;
+
+  if (contentNode.conversation) {
+    content = contentNode.conversation;
+  } else if (contentNode.extendedTextMessage?.text) {
+    content = contentNode.extendedTextMessage.text;
+  } else if (contentNode.imageMessage) {
+    content = contentNode.imageMessage.caption || "[Imagem]";
+    mediaType = "image";
+    mediaUrl = contentNode.imageMessage.url || contentNode.imageMessage.directPath || null;
+  } else if (contentNode.videoMessage) {
+    content = contentNode.videoMessage.caption || "[Vídeo]";
+    mediaType = "video";
+    mediaUrl = contentNode.videoMessage.url || contentNode.videoMessage.directPath || null;
+  } else if (contentNode.audioMessage) {
+    content = "[Áudio]";
+    mediaType = "audio";
+    mediaUrl = contentNode.audioMessage.url || contentNode.audioMessage.directPath || null;
+  } else if (contentNode.documentMessage) {
+    content = contentNode.documentMessage.fileName || "[Documento]";
+    mediaType = "document";
+    mediaUrl = contentNode.documentMessage.url || contentNode.documentMessage.directPath || null;
+  } else if (contentNode.stickerMessage) {
+    content = "[Sticker]";
+    mediaType = "sticker";
+    mediaUrl =
+      contentNode.stickerMessage.url ||
+      contentNode.stickerMessage.mediaUrl ||
+      contentNode.stickerMessage.directPath ||
+      null;
+  } else if (contentNode.reactionMessage) {
+    content = contentNode.reactionMessage.text || "[Reação]";
+  } else if (contentNode.contactsArrayMessage || contentNode.contactMessage) {
+    content = "[Contato]";
+  } else if (contentNode.locationMessage || contentNode.liveLocationMessage) {
+    content = "[Localização]";
+  } else if (contentNode.pollCreationMessage || contentNode.pollCreationMessageV3) {
+    content = "[Enquete]";
+  } else if (contentNode.protocolMessage || contentNode.senderKeyDistributionMessage) {
+    return { skip: true, reason: "protocol_message" };
+  } else {
+    const keys = Object.keys(contentNode);
+    content = keys.length > 0 ? `[${keys[0]}]` : "[Mensagem]";
+  }
+
+  const primaryType = Object.keys(contentNode)[0] || "unknown";
+
+  return {
+    skip: false,
+    content,
+    mediaType,
+    mediaUrl,
+    primaryType,
+  };
 };
 
 Deno.serve(async (req) => {
@@ -10,277 +139,278 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return jsonResponse({ ok: false, error: "Supabase env not configured" }, 500);
+  }
+
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
   try {
     const body = await req.json();
-    console.log("Webhook received:", JSON.stringify(body).substring(0, 500));
-
-    const event = body.event;
-    const instanceName = body.instance;
-    const data = body.data;
+    const event = body?.event;
+    const instanceName = body?.instance;
+    const data = body?.data;
 
     if (!event || !instanceName || !data) {
-      return new Response(JSON.stringify({ ok: true, skipped: "missing fields" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ ok: true, skipped: "missing fields" });
     }
 
-    // Look up the instance to get tenant_id
-    const { data: instance, error: instErr } = await supabaseAdmin
+    const { data: instance, error: instanceError } = await supabaseAdmin
       .from("whatsapp_instances")
       .select("id, tenant_id")
       .eq("instance_name", instanceName)
       .limit(1)
       .single();
 
-    if (instErr || !instance) {
+    if (instanceError || !instance) {
       console.warn("Instance not found for webhook:", instanceName);
-      return new Response(JSON.stringify({ ok: true, skipped: "instance not found" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ ok: true, skipped: "instance not found" });
     }
 
     const tenantId = instance.tenant_id;
     const instanceId = instance.id;
 
-    // Handle message events
     if (event === "messages.upsert") {
-      const key = data.key;
-      const remoteJid = key?.remoteJid;
-      const fromMe = key?.fromMe || false;
-      const messageId = key?.id;
+      const entries = getMessageEntries(data);
+      let processed = 0;
 
-      if (!remoteJid || remoteJid === "status@broadcast") {
-        return new Response(JSON.stringify({ ok: true, skipped: "broadcast" }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      for (const entry of entries) {
+        const key = entry?.key || data?.key;
+        const remoteJid = key?.remoteJid || entry?.remoteJid;
+        const fromMe = Boolean(key?.fromMe);
+        const messageId = key?.id || entry?.id || null;
 
-      // Extract message content — data.message IS the content object
-      const msgContent = data.message || {};
-      let content = "";
-      let mediaUrl = "";
-      let mediaType = "";
+        if (!remoteJid || remoteJid === "status@broadcast") continue;
 
-      if (msgContent.conversation) {
-        content = msgContent.conversation;
-      } else if (msgContent.extendedTextMessage?.text) {
-        content = msgContent.extendedTextMessage.text;
-      } else if (msgContent.imageMessage) {
-        content = msgContent.imageMessage.caption || "[Imagem]";
-        mediaType = "image";
-        mediaUrl = msgContent.imageMessage.url || "";
-      } else if (msgContent.audioMessage) {
-        content = "[Áudio]";
-        mediaType = "audio";
-        mediaUrl = msgContent.audioMessage.url || "";
-      } else if (msgContent.videoMessage) {
-        content = msgContent.videoMessage.caption || "[Vídeo]";
-        mediaType = "video";
-        mediaUrl = msgContent.videoMessage.url || "";
-      } else if (msgContent.documentMessage) {
-        content = msgContent.documentMessage.fileName || "[Documento]";
-        mediaType = "document";
-        mediaUrl = msgContent.documentMessage.url || "";
-      } else if (msgContent.stickerMessage) {
-        content = "[Sticker]";
-        mediaType = "sticker";
-      } else if (msgContent.reactionMessage) {
-        content = msgContent.reactionMessage.text || "[Reação]";
-      } else if (msgContent.contactMessage || msgContent.contactsArrayMessage) {
-        content = "[Contato]";
-      } else if (msgContent.locationMessage || msgContent.liveLocationMessage) {
-        content = "[Localização]";
-      } else if (msgContent.pollCreationMessage || msgContent.pollCreationMessageV3) {
-        content = "[Enquete]";
-      } else if (msgContent.protocolMessage || msgContent.senderKeyDistributionMessage) {
-        // Protocol/system messages — skip silently
-        return new Response(JSON.stringify({ ok: true, skipped: "protocol_message" }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      } else {
-        // Log unknown message types for debugging
-        const msgKeys = Object.keys(msgContent).join(", ");
-        console.warn("Unhandled message type, keys:", msgKeys);
-        content = `[${msgKeys || "Mensagem"}]`;
-      }
+        const parsed = parseMessagePayload(entry?.message || data?.message || {});
+        if (parsed.skip) continue;
 
-      // Extract contact info from JID
-      const isGroup = remoteJid.endsWith("@g.us");
-      const contactPhone = remoteJid.replace(/@.*$/, "");
-      const pushName = data.pushName || contactPhone;
-      const direction = fromMe ? "outbound" : "inbound";
+        const participantJid = key?.participant || entry?.participant || data?.participant || null;
+        const isGroup = String(remoteJid).endsWith("@g.us");
+        const conversationPhone = normalizePhone(remoteJid) || remoteJid.replace(/@.*$/, "");
+        const participantPhone = normalizePhone(participantJid);
 
-      // For groups, use the group subject if available, or the participant's pushName
-      const conversationName = isGroup
-        ? (data.groupMetadata?.subject || data.pushName || `Grupo ${contactPhone}`)
-        : pushName;
+        const pushName =
+          entry?.pushName ||
+          data?.pushName ||
+          participantPhone ||
+          conversationPhone ||
+          "Contato";
 
-      // Find or create conversation
-      let { data: conversation } = await supabaseAdmin
-        .from("whatsapp_conversations")
-        .select("id, contact_id, unread_count")
-        .eq("instance_id", instanceId)
-        .eq("remote_jid", remoteJid)
-        .limit(1)
-        .single();
+        const groupSubject =
+          entry?.groupMetadata?.subject ||
+          data?.groupMetadata?.subject ||
+          entry?.chatName ||
+          data?.chatName ||
+          null;
 
-      let contactId: string | null = null;
+        let { data: conversation } = await supabaseAdmin
+          .from("whatsapp_conversations")
+          .select("id, contact_id, contact_name, unread_count")
+          .eq("tenant_id", tenantId)
+          .eq("instance_id", instanceId)
+          .eq("remote_jid", remoteJid)
+          .limit(1)
+          .maybeSingle();
 
-      if (!conversation) {
-        // Only create CRM contact/deal for individual chats, not groups
+        let contactId: string | null = conversation?.contact_id || null;
+        let resolvedContactName = pushName;
+
         if (!isGroup) {
-          const { data: newContact } = await supabaseAdmin
-            .from("contacts")
-            .insert({
-              tenant_id: tenantId,
-              name: pushName,
-              phone: contactPhone,
-              tags: ["whatsapp", "lead"],
-              notes: "Contato criado automaticamente via WhatsApp",
-            })
-            .select("id")
-            .single();
-
-          contactId = newContact?.id || null;
+          let contactRecord: { id: string; name: string | null } | null = null;
 
           if (contactId) {
-            await supabaseAdmin.from("deals").insert({
+            const { data: byId } = await supabaseAdmin
+              .from("contacts")
+              .select("id, name")
+              .eq("id", contactId)
+              .limit(1)
+              .maybeSingle();
+            contactRecord = byId || null;
+          }
+
+          if (!contactRecord && conversationPhone) {
+            const { data: byPhone } = await supabaseAdmin
+              .from("contacts")
+              .select("id, name")
+              .eq("tenant_id", tenantId)
+              .eq("phone", conversationPhone)
+              .order("created_at", { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            contactRecord = byPhone || null;
+          }
+
+          if (!contactRecord && !fromMe && conversationPhone) {
+            const { data: newContact } = await supabaseAdmin
+              .from("contacts")
+              .insert({
+                tenant_id: tenantId,
+                name: pushName,
+                phone: conversationPhone,
+                tags: ["whatsapp", "lead"],
+                notes: "Contato criado automaticamente via WhatsApp",
+              })
+              .select("id, name")
+              .single();
+
+            if (newContact?.id) {
+              await supabaseAdmin.from("deals").insert({
+                tenant_id: tenantId,
+                contact_id: newContact.id,
+                title: `Lead WhatsApp - ${newContact.name || pushName}`,
+                stage: "lead",
+                status: "open",
+              });
+            }
+
+            contactRecord = newContact || null;
+          }
+
+          if (contactRecord?.id) {
+            contactId = contactRecord.id;
+            resolvedContactName = contactRecord.name || pushName;
+          } else if (conversation?.contact_name) {
+            resolvedContactName = conversation.contact_name;
+          }
+        } else {
+          resolvedContactName =
+            conversation?.contact_name ||
+            groupSubject ||
+            `Grupo ${conversationPhone || remoteJid}`;
+        }
+
+        const conversationMessage =
+          isGroup && !fromMe ? `${pushName}: ${parsed.content}` : parsed.content;
+
+        if (!conversation) {
+          const { data: newConversation } = await supabaseAdmin
+            .from("whatsapp_conversations")
+            .insert({
               tenant_id: tenantId,
-              contact_id: contactId,
-              title: `Lead WhatsApp - ${pushName}`,
-              stage: "lead",
+              instance_id: instanceId,
+              contact_id: isGroup ? null : contactId,
+              remote_jid: remoteJid,
+              contact_name: resolvedContactName,
+              contact_phone: conversationPhone,
+              last_message: conversationMessage,
+              last_message_at: new Date().toISOString(),
+              unread_count: fromMe ? 0 : 1,
               status: "open",
-            });
+            })
+            .select("id, contact_id, unread_count")
+            .single();
+
+          conversation = newConversation || null;
+        } else {
+          await supabaseAdmin
+            .from("whatsapp_conversations")
+            .update({
+              contact_id: isGroup ? null : contactId,
+              contact_name: resolvedContactName,
+              last_message: conversationMessage,
+              last_message_at: new Date().toISOString(),
+              unread_count: fromMe ? conversation.unread_count || 0 : (conversation.unread_count || 0) + 1,
+            })
+            .eq("tenant_id", tenantId)
+            .eq("id", conversation.id);
+        }
+
+        if (!conversation?.id) continue;
+
+        if (messageId) {
+          const { data: existingMessage } = await supabaseAdmin
+            .from("whatsapp_messages")
+            .select("id")
+            .eq("tenant_id", tenantId)
+            .eq("conversation_id", conversation.id)
+            .eq("message_id", messageId)
+            .limit(1)
+            .maybeSingle();
+
+          if (existingMessage) {
+            processed += 1;
+            continue;
           }
         }
 
-        // Create conversation
-        const { data: newConv } = await supabaseAdmin
-          .from("whatsapp_conversations")
-          .insert({
-            tenant_id: tenantId,
-            instance_id: instanceId,
-            contact_id: contactId,
-            remote_jid: remoteJid,
-            contact_name: conversationName,
-            contact_phone: contactPhone,
-            last_message: content,
-            last_message_at: new Date().toISOString(),
-            unread_count: fromMe ? 0 : 1,
-            status: "open",
-          })
-          .select("id")
-          .single();
-
-        conversation = newConv ? { ...newConv, contact_id: contactId, unread_count: 0 } : null;
-      } else {
-        contactId = conversation.contact_id;
-
-        // Update conversation — for groups don't overwrite name with individual pushName
-        const updateData: Record<string, unknown> = {
-          last_message: isGroup ? `${pushName}: ${content}` : content,
-          last_message_at: new Date().toISOString(),
-          unread_count: fromMe ? 0 : (conversation.unread_count || 0) + 1,
-        };
-        if (!isGroup) {
-          updateData.contact_name = pushName;
-        }
-
-        await supabaseAdmin
-          .from("whatsapp_conversations")
-          .update(updateData)
-          .eq("id", conversation.id);
-
-        // Update contact name if changed (only for individual chats)
-        if (contactId && !isGroup) {
-          await supabaseAdmin
-            .from("contacts")
-            .update({ name: pushName })
-            .eq("id", contactId);
-        }
-      }
-
-      if (conversation) {
-        // Insert message — for groups, include sender info in metadata
-        const participant = isGroup ? (data.key?.participant || data.participant || null) : null;
         await supabaseAdmin.from("whatsapp_messages").insert({
           tenant_id: tenantId,
           conversation_id: conversation.id,
           message_id: messageId,
-          direction,
-          content: isGroup && !fromMe ? `${pushName}: ${content}` : content,
-          media_url: mediaUrl || null,
-          media_type: mediaType || null,
+          direction: fromMe ? "outbound" : "inbound",
+          content: conversationMessage,
+          media_url: parsed.mediaUrl,
+          media_type: parsed.mediaType,
           status: fromMe ? "sent" : "received",
-          metadata: { pushName, key: data.key, participant, isGroup },
+          metadata: {
+            pushName,
+            key,
+            participant: participantJid,
+            isGroup,
+            messageType: parsed.primaryType,
+          },
         });
+
+        processed += 1;
       }
 
-      return new Response(JSON.stringify({ ok: true, event: "message_stored" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ ok: true, event: "message_stored", processed });
     }
 
-    // Handle connection update
     if (event === "connection.update") {
-      const state = data.state;
+      const state = data?.state || data?.connection || "connecting";
       const newStatus = state === "open" ? "connected" : state === "close" ? "disconnected" : "connecting";
+      const phoneNumber = extractConnectionPhone(data || {});
+
+      const patch: Record<string, unknown> = { status: newStatus };
+      if (phoneNumber) patch.phone_number = phoneNumber;
+      if (newStatus === "connected") patch.qr_code = null;
 
       await supabaseAdmin
         .from("whatsapp_instances")
-        .update({ status: newStatus })
+        .update(patch)
         .eq("instance_name", instanceName);
 
-      return new Response(JSON.stringify({ ok: true, event: "status_updated" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ ok: true, event: "status_updated", status: newStatus, phoneNumber });
     }
 
-    // Handle message status updates (delivered, read)
     if (event === "messages.update") {
-      const updates = Array.isArray(data) ? data : [data];
-      for (const upd of updates) {
-        const msgId = upd.key?.id;
-        const status = upd.update?.status;
-        if (msgId && status !== undefined) {
-          const statusMap: Record<number, string> = {
-            2: "sent",
-            3: "delivered",
-            4: "read",
-          };
-          const newStatus = statusMap[status] || "sent";
-          await supabaseAdmin
-            .from("whatsapp_messages")
-            .update({ status: newStatus })
-            .eq("message_id", msgId);
-        }
+      const updates = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.messages)
+          ? data.messages
+          : [data];
+
+      const statusMap: Record<number, string> = {
+        2: "sent",
+        3: "delivered",
+        4: "read",
+      };
+
+      for (const update of updates) {
+        const msgId = update?.key?.id;
+        const rawStatus = update?.update?.status;
+        if (!msgId || rawStatus === undefined) continue;
+
+        const mappedStatus = statusMap[rawStatus] || "sent";
+
+        await supabaseAdmin
+          .from("whatsapp_messages")
+          .update({ status: mappedStatus })
+          .eq("message_id", msgId)
+          .eq("tenant_id", tenantId);
       }
 
-      return new Response(JSON.stringify({ ok: true, event: "status_updated" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ ok: true, event: "status_updated" });
     }
 
-    return new Response(JSON.stringify({ ok: true, skipped: "unhandled event" }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ ok: true, skipped: "unhandled event" });
   } catch (error: unknown) {
     console.error("Webhook error:", error);
-    return new Response(JSON.stringify({ ok: false, error: String(error) }), {
-      status: 200, // Always 200 to avoid retries
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ ok: false, error: String(error) });
   }
 });
