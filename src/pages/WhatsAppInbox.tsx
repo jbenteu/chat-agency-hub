@@ -203,6 +203,18 @@ const WhatsAppInbox = () => {
       const convs = await queryConversations(selectedInstanceId);
       setConversations(convs);
       setCachedConversations(selectedInstanceId, convs);
+      // Seed profile pics from DB-stored profile_picture_url
+      const picUpdates: Record<string, string> = {};
+      for (const c of convs) {
+        if (c.profile_picture_url && !profilePicsResolvedRef.current.has(c.remote_jid)) {
+          picUpdates[c.remote_jid] = c.profile_picture_url;
+          setCachedProfilePic(c.remote_jid, c.profile_picture_url);
+          profilePicsResolvedRef.current.add(c.remote_jid);
+        }
+      }
+      if (Object.keys(picUpdates).length > 0) {
+        setProfilePics((prev) => ({ ...prev, ...picUpdates }));
+      }
       updateBootstrapProgress(88, "Aplicando sincronização inicial…");
       if (!silent) completeBootstrap();
     } catch {
