@@ -246,12 +246,13 @@ const WhatsAppInbox = () => {
     return () => { cancelled = true; };
   }, [selectedInstanceId, conversations, instances, fetchGroupInfo]);
 
-  // ── Fetch profile pictures (throttled to avoid 503) ──
+  // ── Fetch profile pictures (throttled, record nulls to avoid re-fetch) ──
+  const profilePicsFetchedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!profilePictureSupported || !selectedInstanceId || conversations.length === 0) return;
     const inst = instances.find((i) => i.id === selectedInstanceId);
     if (!inst) return;
-    const queue = conversations.filter((c) => !profilePics[c.remote_jid]).slice(0, 5);
+    const queue = conversations.filter((c) => !profilePics[c.remote_jid] && !profilePicsFetchedRef.current.has(c.remote_jid)).slice(0, 5);
     if (queue.length === 0) return;
     let cancelled = false;
     const fetchPicsSequential = async () => {
@@ -260,6 +261,7 @@ const WhatsAppInbox = () => {
         const key = `${inst.id}:${c.remote_jid}`;
         if (pendingProfileFetchesRef.current.has(key)) continue;
         pendingProfileFetchesRef.current.add(key);
+        profilePicsFetchedRef.current.add(c.remote_jid);
         try {
           const data = await getProfilePicture(inst.instance_name, c.remote_jid);
           if (data?.profilePictureUrl) { setProfilePics((prev) => ({ ...prev, [c.remote_jid]: data.profilePictureUrl })); setCachedProfilePic(c.remote_jid, data.profilePictureUrl); }

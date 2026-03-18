@@ -363,6 +363,39 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, profilePictureUrl: null });
     }
 
+    // ── get_media (download media via Evolution API) ──
+    if (action === "get_media") {
+      const { messageId, remoteJid: mediaJid } = body as { messageId?: string; remoteJid?: string };
+      if (!instanceName || !messageId) return jsonResponse({ error: "instanceName and messageId are required" }, 400);
+
+      // Try getBase64FromMediaMessage endpoint
+      const mediaPayload = { message: { key: { id: messageId, remoteJid: mediaJid || "" } } };
+      const mediaPaths = [
+        `/chat/getBase64FromMediaMessage/${instanceName}`,
+        `/message/getBase64FromMediaMessage/${instanceName}`,
+      ];
+
+      for (const path of mediaPaths) {
+        try {
+          const evoData = await requestEvolution(path, { method: "POST", body: JSON.stringify(mediaPayload) }, "get_media");
+          const base64 = evoData?.base64 || evoData?.data?.base64 || null;
+          const mediaUrl = evoData?.mediaUrl || evoData?.data?.mediaUrl || evoData?.url || null;
+          const mimeType = evoData?.mimetype || evoData?.data?.mimetype || evoData?.mimeType || null;
+
+          if (base64) {
+            const prefix = mimeType ? `data:${mimeType};base64,` : "data:application/octet-stream;base64,";
+            return jsonResponse({ success: true, mediaData: `${prefix}${base64}`, mediaUrl, mimeType });
+          }
+          if (mediaUrl) {
+            return jsonResponse({ success: true, mediaData: null, mediaUrl, mimeType });
+          }
+        } catch (error) {
+          console.warn("Media download warning:", error);
+        }
+      }
+      return jsonResponse({ success: true, mediaData: null, mediaUrl: null });
+    }
+
     // ── get_contact ──
     if (action === "get_contact") {
       const { contactId } = body as { contactId?: string };
