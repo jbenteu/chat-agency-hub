@@ -4,26 +4,33 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, X, Check } from "lucide-react";
+import { Plus, Check } from "lucide-react";
 
 const TAG_COLORS = [
-  { name: "Azul", bg: "bg-blue-100 dark:bg-blue-900/40", text: "text-blue-700 dark:text-blue-300", dot: "bg-blue-500" },
-  { name: "Verde", bg: "bg-emerald-100 dark:bg-emerald-900/40", text: "text-emerald-700 dark:text-emerald-300", dot: "bg-emerald-500" },
-  { name: "Roxo", bg: "bg-purple-100 dark:bg-purple-900/40", text: "text-purple-700 dark:text-purple-300", dot: "bg-purple-500" },
-  { name: "Laranja", bg: "bg-orange-100 dark:bg-orange-900/40", text: "text-orange-700 dark:text-orange-300", dot: "bg-orange-500" },
-  { name: "Rosa", bg: "bg-pink-100 dark:bg-pink-900/40", text: "text-pink-700 dark:text-pink-300", dot: "bg-pink-500" },
-  { name: "Amarelo", bg: "bg-yellow-100 dark:bg-yellow-900/40", text: "text-yellow-700 dark:text-yellow-300", dot: "bg-yellow-500" },
-  { name: "Vermelho", bg: "bg-red-100 dark:bg-red-900/40", text: "text-red-700 dark:text-red-300", dot: "bg-red-500" },
-  { name: "Cinza", bg: "bg-gray-100 dark:bg-gray-800/40", text: "text-gray-700 dark:text-gray-300", dot: "bg-gray-500" },
+  { name: "Azul", bg: "bg-blue-100 dark:bg-blue-900/40", text: "text-blue-700 dark:text-blue-300", dot: "bg-blue-500", hex: "#3b82f6" },
+  { name: "Verde", bg: "bg-emerald-100 dark:bg-emerald-900/40", text: "text-emerald-700 dark:text-emerald-300", dot: "bg-emerald-500", hex: "#10b981" },
+  { name: "Roxo", bg: "bg-purple-100 dark:bg-purple-900/40", text: "text-purple-700 dark:text-purple-300", dot: "bg-purple-500", hex: "#8b5cf6" },
+  { name: "Laranja", bg: "bg-orange-100 dark:bg-orange-900/40", text: "text-orange-700 dark:text-orange-300", dot: "bg-orange-500", hex: "#f97316" },
+  { name: "Rosa", bg: "bg-pink-100 dark:bg-pink-900/40", text: "text-pink-700 dark:text-pink-300", dot: "bg-pink-500", hex: "#ec4899" },
+  { name: "Amarelo", bg: "bg-yellow-100 dark:bg-yellow-900/40", text: "text-yellow-700 dark:text-yellow-300", dot: "bg-yellow-500", hex: "#eab308" },
+  { name: "Vermelho", bg: "bg-red-100 dark:bg-red-900/40", text: "text-red-700 dark:text-red-300", dot: "bg-red-500", hex: "#ef4444" },
+  { name: "Cinza", bg: "bg-gray-100 dark:bg-gray-800/40", text: "text-gray-700 dark:text-gray-300", dot: "bg-gray-500", hex: "#6b7280" },
 ];
 
-// Module-level cache for global tags
-let globalTagsCache: { name: string; color: number }[] | null = null;
+interface TagRecord {
+  name: string;
+  color: string;
+}
 
-function getTagColor(tag: string, index: number) {
+// Module-level cache
+let globalTagsCache: TagRecord[] | null = null;
+
+function getTagColorStyle(tag: string): typeof TAG_COLORS[number] {
   const cached = globalTagsCache?.find((t) => t.name === tag);
-  if (cached) return TAG_COLORS[cached.color % TAG_COLORS.length];
-  // Hash-based color for uncached tags
+  if (cached?.color) {
+    const match = TAG_COLORS.find((c) => c.hex === cached.color);
+    if (match) return match;
+  }
   let hash = 0;
   for (let i = 0; i < tag.length; i++) hash = ((hash << 5) - hash + tag.charCodeAt(i)) | 0;
   return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
@@ -33,11 +40,12 @@ interface TagSelectorProps {
   tags: string[];
   onChange: (tags: string[]) => void;
   readOnly?: boolean;
+  onCreateTag?: (name: string, color: string) => Promise<void>;
 }
 
-export function TagSelector({ tags, onChange, readOnly = false }: TagSelectorProps) {
+export function TagSelector({ tags, onChange, readOnly = false, onCreateTag }: TagSelectorProps) {
   const [open, setOpen] = useState(false);
-  const [globalTags, setGlobalTags] = useState<{ name: string; color: number }[]>(globalTagsCache || []);
+  const [globalTags, setGlobalTags] = useState<TagRecord[]>(globalTagsCache || []);
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState(0);
   const [creating, setCreating] = useState(false);
@@ -46,15 +54,14 @@ export function TagSelector({ tags, onChange, readOnly = false }: TagSelectorPro
     try {
       const { data } = await supabase.from("tags").select("name, color").order("name");
       if (data) {
-        const mapped = data.map((t: any) => ({ name: t.name, color: typeof t.color === "number" ? t.color : 0 }));
-        globalTagsCache = mapped;
-        setGlobalTags(mapped);
+        globalTagsCache = data;
+        setGlobalTags(data);
       }
     } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
-    if (open && !globalTagsCache) loadGlobalTags();
+    if (open) loadGlobalTags();
   }, [open, loadGlobalTags]);
 
   const toggleTag = (tagName: string) => {
@@ -70,26 +77,28 @@ export function TagSelector({ tags, onChange, readOnly = false }: TagSelectorPro
     if (!name) return;
     setCreating(true);
     try {
-      await supabase.from("tags").insert({ name, color: newTagColor });
-      const newTag = { name, color: newTagColor };
+      const hex = TAG_COLORS[newTagColor].hex;
+      if (onCreateTag) {
+        await onCreateTag(name, hex);
+      }
+      const newTag = { name, color: hex };
       setGlobalTags((prev) => [...prev, newTag]);
       globalTagsCache = [...(globalTagsCache || []), newTag];
       if (!tags.includes(name)) onChange([...tags, name]);
       setNewTagName("");
       setNewTagColor(0);
-    } catch { /* ignore - may already exist */ }
+    } catch { /* ignore */ }
     finally { setCreating(false); }
   };
 
-  // Available tags = global tags + current tags (deduped)
   const allTagNames = Array.from(new Set([...globalTags.map((t) => t.name), ...tags]));
 
   if (readOnly) {
     return (
       <div className="flex flex-wrap gap-1">
         {tags.length === 0 && <span className="text-xs text-muted-foreground">Nenhuma tag</span>}
-        {tags.map((t, i) => {
-          const color = getTagColor(t, i);
+        {tags.map((t) => {
+          const color = getTagColorStyle(t);
           return (
             <Badge key={t} variant="secondary" className={`text-[10px] h-4 ${color.bg} ${color.text} border-0`}>
               <span className={`mr-1 h-1.5 w-1.5 rounded-full inline-block ${color.dot}`} />
@@ -106,8 +115,8 @@ export function TagSelector({ tags, onChange, readOnly = false }: TagSelectorPro
       <PopoverTrigger asChild>
         <button className="flex flex-wrap gap-1 items-center min-h-[24px] w-full text-left">
           {tags.length === 0 && <span className="text-xs text-muted-foreground">Selecionar tags…</span>}
-          {tags.map((t, i) => {
-            const color = getTagColor(t, i);
+          {tags.map((t) => {
+            const color = getTagColorStyle(t);
             return (
               <Badge key={t} variant="secondary" className={`text-[10px] h-4 ${color.bg} ${color.text} border-0`}>
                 <span className={`mr-1 h-1.5 w-1.5 rounded-full inline-block ${color.dot}`} />
@@ -123,7 +132,7 @@ export function TagSelector({ tags, onChange, readOnly = false }: TagSelectorPro
           <div className="max-h-32 overflow-y-auto space-y-0.5">
             {allTagNames.map((name) => {
               const isSelected = tags.includes(name);
-              const color = getTagColor(name, 0);
+              const color = getTagColorStyle(name);
               return (
                 <button
                   key={name}
@@ -172,4 +181,4 @@ export function TagSelector({ tags, onChange, readOnly = false }: TagSelectorPro
   );
 }
 
-export { getTagColor, TAG_COLORS };
+export { getTagColorStyle, TAG_COLORS };
