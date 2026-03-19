@@ -110,7 +110,7 @@ const WhatsApp = () => {
 
     try {
       const data = await createInstance(internalName, label);
-      toast({ title: "Instância criada!", description: "Escaneie o QR Code para conectar." });
+      toast({ title: "Conexão criada!", description: "Escaneie o QR Code para conectar." });
 
       if (data.qrcode?.base64) {
         setQrCodeData({
