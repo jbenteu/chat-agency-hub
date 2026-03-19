@@ -63,9 +63,9 @@ export function useEvolutionApi() {
   const callEvolution = useCallback(
     async (
       body: Record<string, unknown>,
-      options: { trackLoading?: boolean; trackError?: boolean } = {}
+      options: { trackLoading?: boolean; trackError?: boolean; maxRetries?: number } = {}
     ) => {
-      const { trackLoading = true, trackError = true } = options;
+      const { trackLoading = true, trackError = true, maxRetries = 2 } = options;
       if (trackLoading) setLoading(true);
       if (trackError) setError(null);
 
@@ -74,15 +74,38 @@ export function useEvolutionApi() {
         const token = sessionData?.session?.access_token;
         if (!token) throw new Error("Não autenticado");
 
-        const { data, error: fnError } = await supabase.functions.invoke("evolution-api", {
-          body,
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        let lastError: Error | null = null;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            const { data, error: fnError } = await supabase.functions.invoke("evolution-api", {
+              body,
+              headers: { Authorization: `Bearer ${token}` },
+            });
 
-        if (fnError) throw new Error(fnError.message);
-        if (data?.error) throw new Error(data.error);
-
-        return data;
+            if (fnError) {
+              const msg = fnError.message || "";
+              const isRetryable = /non-2xx|timeout|boot|503|504|fetch/i.test(msg);
+              if (isRetryable && attempt < maxRetries) {
+                lastError = new Error(msg);
+                await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+                continue;
+              }
+              throw new Error(msg);
+            }
+            if (data?.error) throw new Error(data.error);
+            return data;
+          } catch (err: any) {
+            const msg = err.message || "";
+            const isRetryable = /non-2xx|timeout|boot|503|504|fetch/i.test(msg);
+            if (isRetryable && attempt < maxRetries) {
+              lastError = err;
+              await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+              continue;
+            }
+            throw err;
+          }
+        }
+        throw lastError || new Error("Erro desconhecido");
       } catch (err: any) {
         const msg = err.message || "Erro desconhecido";
         if (trackError) setError(msg);
