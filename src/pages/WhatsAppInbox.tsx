@@ -117,7 +117,7 @@ const WhatsAppInbox = () => {
   const bootstrapCompletedRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
   const [showBootstrapLoading, setShowBootstrapLoading] = useState(!bootstrapCompletedRef.current);
   const [bootstrapProgress, setBootstrapProgress] = useState(bootstrapCompletedRef.current ? 100 : 12);
-  const [bootstrapLabel, setBootstrapLabel] = useState("Conectando instâncias…");
+  const [bootstrapLabel, setBootstrapLabel] = useState("Conectando…");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
