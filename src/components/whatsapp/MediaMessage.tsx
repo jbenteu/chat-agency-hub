@@ -118,7 +118,7 @@ function AudioPlayer({ src, isOutbound }: { src: string; isOutbound: boolean }) 
   );
 }
 
-export function MediaMessage({ messageId, mediaUrl, mediaType, content, instanceName, remoteJid, isOutbound, mediaThumbnail, mediaWidth, mediaHeight }: MediaMessageProps) {
+export function MediaMessage({ messageId, mediaUrl, mediaType, content, instanceName, remoteJid, isOutbound, mediaThumbnail, mediaWidth, mediaHeight, metadataMimeType }: MediaMessageProps) {
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);

@@ -891,6 +891,8 @@ const WhatsAppInbox = () => {
   const getSenderName = (msg: WhatsAppMessage): string | null => {
     const meta = msg.metadata as Record<string, any> | null;
     if (!meta?.isGroup) return null;
+    // Never use pushName from outbound messages as contact name source
+    if (msg.direction === "outbound") return null;
     return meta?.pushName || meta?.senderPhone || null;
   };
 
