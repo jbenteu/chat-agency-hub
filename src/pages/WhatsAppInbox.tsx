@@ -685,7 +685,7 @@ const WhatsAppInbox = () => {
   const handleSendText = async () => {
     if (!selectedConv || !messageText.trim()) return;
     const inst = instances.find((i) => i.id === selectedConv.instance_id);
-    if (!inst) { toast({ title: "Erro", description: "Instância não encontrada", variant: "destructive" }); return; }
+    if (!inst) { toast({ title: "Erro", description: "Conexão não encontrada", variant: "destructive" }); return; }
     const payloadText = messageText.trim();
     const now = new Date().toISOString();
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
