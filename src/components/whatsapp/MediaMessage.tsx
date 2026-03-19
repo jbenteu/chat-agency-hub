@@ -151,7 +151,7 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
     }
 
     if (mediaUrl && !isExpirableUrl(mediaUrl)) {
-      setResolvedUrl(mediaUrl);
+      setResolvedUrl(fixMinioUrl(mediaUrl));
       return;
     }
 

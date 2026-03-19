@@ -76,10 +76,15 @@ const isExpirableWhatsAppUrl = (url: string | null | undefined): boolean => {
   if (!url) return false;
   return (
     url.includes("mmg.whatsapp.net") ||
-    url.includes("media.whatsapp") ||
-    url.includes("media-") ||
+    url.includes("media.whatsapp.net") ||
     url.includes(".enc?")
   );
+};
+
+/** Converte hostname interno do Docker para o IP público do MinIO */
+const fixMinioUrl = (url: string | null): string | null => {
+  if (!url) return url;
+  return url.replace(/^http:\/\/minio:9000\//, "http://82.25.70.124:9000/");
 };
 
 /**
