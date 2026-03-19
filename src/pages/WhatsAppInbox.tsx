@@ -841,6 +841,29 @@ const WhatsAppInbox = () => {
   // Phone editing state
   const [phoneCountryCode, setPhoneCountryCode] = useState("+55");
   const [phoneCountryOpen, setPhoneCountryOpen] = useState(false);
+
+  // Inline contact rename state
+  const [inlineEditingName, setInlineEditingName] = useState(false);
+  const [inlineNameValue, setInlineNameValue] = useState("");
+  const inlineNameInputRef = useRef<HTMLInputElement>(null);
+
+  const startInlineRename = () => {
+    if (!selectedConv) return;
+    setInlineNameValue(selectedConv.contact_name || "");
+    setInlineEditingName(true);
+    setTimeout(() => inlineNameInputRef.current?.focus(), 50);
+  };
+
+  const saveInlineRename = async () => {
+    if (!selectedConv || !inlineNameValue.trim()) { setInlineEditingName(false); return; }
+    try {
+      await supabase.from("whatsapp_conversations").update({ contact_name: inlineNameValue.trim() }).eq("id", selectedConv.id);
+      setSelectedConv({ ...selectedConv, contact_name: inlineNameValue.trim() });
+      setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, contact_name: inlineNameValue.trim() } : c));
+      toast({ title: "Nome atualizado" });
+    } catch { toast({ title: "Erro ao renomear", variant: "destructive" }); }
+    setInlineEditingName(false);
+  };
   
   // Tag create handler via edge function
   const handleCreateTag = async (name: string, color: string) => {
