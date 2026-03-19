@@ -27,7 +27,7 @@ import logo from "@/assets/logo.png";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { title: "CRM", icon: Users, path: "/crm" },
+  { title: "Advanced Marketing", icon: null, path: "/crm" },
   { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp" },
   { title: "Configurações", icon: Settings, path: "/settings" },
   { title: "Admin", icon: Shield, path: "/admin" },
