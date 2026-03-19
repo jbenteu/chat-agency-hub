@@ -1269,7 +1269,18 @@ const WhatsAppInbox = () => {
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="text-sm font-medium">{selectedConv.contact_name || selectedConv.contact_phone || "Desconhecido"}</p>
+                      {inlineEditingName ? (
+                        <div className="flex items-center gap-1">
+                          <Input ref={inlineNameInputRef} className="h-6 w-40 text-sm" value={inlineNameValue} onChange={(e) => setInlineNameValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") saveInlineRename(); if (e.key === "Escape") setInlineEditingName(false); }}
+                            onBlur={saveInlineRename} />
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 group/name">
+                          <p className="text-sm font-medium cursor-pointer" onDoubleClick={startInlineRename}>{selectedConv.contact_name || selectedConv.contact_phone || "Desconhecido"}</p>
+                          <button onClick={startInlineRename} className="opacity-0 group-hover/name:opacity-100 transition-opacity" title="Renomear"><Edit2 className="h-3 w-3 text-muted-foreground" /></button>
+                        </div>
+                      )}
                       <p className="text-[11px] text-muted-foreground">
                         {isGroupJid(selectedConv.remote_jid) ? `Grupo · ${currentGroupInfo?.size || "…"} participantes` : formatPhoneWhatsApp(selectedConv.contact_phone)}
                       </p>
