@@ -149,7 +149,7 @@ const WhatsApp = () => {
     try {
       const data = await getConnectionStatus(instanceName);
       const label =
-        instances.find((i) => i.instance_name === instanceName)?.display_name || "Instância";
+        instances.find((i) => i.instance_name === instanceName)?.display_name || "Conexão";
       toast({
         title: data.connected ? "Conectado!" : "Aguardando conexão",
         description: data.connected
