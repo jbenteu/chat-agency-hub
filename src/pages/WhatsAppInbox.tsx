@@ -1318,16 +1318,42 @@ const WhatsAppInbox = () => {
                     </div>
                   ) : (
                     <div className="space-y-1.5">
-                      {messages.map((msg) => {
+                      {messages
+                        .filter((msg) => {
+                          // Filter out reaction messages (they're now on parent bubble)
+                          if (msg.media_type === "reaction") return false;
+                          if (msg.content === "[Reação]") return false;
+                          return true;
+                        })
+                        .map((msg) => {
                         const isOutbound = msg.direction === "outbound";
                         const isGrp = isGroupJid(selectedConv.remote_jid);
                         const senderName = getSenderName(msg);
                         const senderPhone = getSenderPhone(msg);
                         const quoted = getQuotedInfo(msg);
                         const currentInstName = instances.find((i) => i.id === selectedConv.instance_id)?.instance_name || "";
+                        const meta = msg.metadata as Record<string, any> | null;
+                        const metadataMimeType = meta?.mimeType || null;
+                        const reactions = meta?.reactions as Record<string, string> | null;
+                        const reactionEntries = reactions ? Object.entries(reactions) : [];
+                        // Group reactions by emoji
+                        const reactionCounts: Record<string, number> = {};
+                        for (const [, emoji] of reactionEntries) {
+                          reactionCounts[emoji] = (reactionCounts[emoji] || 0) + 1;
+                        }
+
+                        const scrollToQuoted = () => {
+                          if (!quoted) return;
+                          const el = document.querySelector(`[data-message-id="${quoted.id}"]`);
+                          if (el) {
+                            el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            el.classList.add("ring-2", "ring-primary/40");
+                            setTimeout(() => el.classList.remove("ring-2", "ring-primary/40"), 2000);
+                          }
+                        };
 
                         return (
-                          <div key={msg.id} className={`group flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+                          <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group flex ${isOutbound ? "justify-end" : "justify-start"}`}>
                             {/* Sender avatar for group inbound */}
                             {isGrp && !isOutbound && (
                               <Avatar className="mr-2 mt-1 h-7 w-7 shrink-0">
@@ -1342,7 +1368,10 @@ const WhatsAppInbox = () => {
                                 <p className={`text-xs font-semibold mb-0.5 ${getSenderColor(senderName)}`}>{senderName}</p>
                               )}
                               {quoted && (
-                                <div className={`mb-1.5 rounded-md border-l-2 px-2 py-1 text-[11px] ${isOutbound ? "border-primary-foreground/40 bg-primary-foreground/10 text-primary-foreground/80" : "border-primary/40 bg-primary/5 text-muted-foreground"}`}>
+                                <div
+                                  onClick={scrollToQuoted}
+                                  className={`mb-1.5 rounded-md border-l-2 px-2 py-1 text-[11px] cursor-pointer hover:opacity-80 ${isOutbound ? "border-primary-foreground/40 bg-primary-foreground/10 text-primary-foreground/80" : "border-primary/40 bg-primary/5 text-muted-foreground"}`}
+                                >
                                   <p className="truncate">{quoted.content}</p>
                                 </div>
                               )}
@@ -1358,6 +1387,7 @@ const WhatsAppInbox = () => {
                                   mediaThumbnail={msg.media_thumbnail}
                                   mediaWidth={msg.media_width}
                                   mediaHeight={msg.media_height}
+                                  metadataMimeType={metadataMimeType}
                                 />
                               )}
                               {msg.media_type === "document" && (msg.media_url || msg.message_id) && (
@@ -1369,6 +1399,7 @@ const WhatsAppInbox = () => {
                                   instanceName={currentInstName}
                                   remoteJid={selectedConv.remote_jid}
                                   isOutbound={isOutbound}
+                                  metadataMimeType={metadataMimeType}
                                 />
                               )}
                               {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
@@ -1397,6 +1428,16 @@ const WhatsAppInbox = () => {
                                   </span>
                                 )}
                               </div>
+                              {/* Reactions */}
+                              {reactionEntries.length > 0 && (
+                                <div className={`mt-1 flex flex-wrap gap-1 ${isOutbound ? "-mr-1" : "-ml-1"}`}>
+                                  {Object.entries(reactionCounts).map(([emoji, count]) => (
+                                    <span key={emoji} className="inline-flex items-center gap-0.5 rounded-full bg-background/80 border border-border/50 px-1.5 py-0.5 text-xs shadow-sm" title={reactionEntries.filter(([, e]) => e === emoji).map(([phone]) => phone === "me" ? "Você" : phone).join(", ")}>
+                                      {emoji}{count > 1 && <span className="text-[10px] text-muted-foreground">{count}</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                               <button className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-1 hover:bg-muted"
                                 onClick={() => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") })}
                                 title="Responder"><Reply className="h-3.5 w-3.5 text-muted-foreground" /></button>
