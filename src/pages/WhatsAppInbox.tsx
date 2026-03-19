@@ -1625,7 +1625,7 @@ const WhatsAppInbox = () => {
 
                   <Separator />
                   <div>
-                    <p className="mb-1 text-xs font-medium">Instância</p>
+                    <p className="mb-1 text-xs font-medium">Conexão</p>
                     <p className="text-xs text-muted-foreground">
                       {instances.find((i) => i.id === selectedConv.instance_id)?.display_name || instances.find((i) => i.id === selectedConv.instance_id)?.phone_number || "—"}
                     </p>

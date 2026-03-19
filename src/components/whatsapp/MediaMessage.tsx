@@ -286,7 +286,7 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
 
   if (mediaType === "video") {
     return (
-      <video controls className="mb-1 max-w-full rounded-lg" preload="metadata">
+      <video controls className="mb-1 rounded-lg" style={{ maxWidth: 280, maxHeight: 300 }} preload="metadata">
         <source src={resolvedUrl} />
       </video>
     );
