@@ -233,12 +233,12 @@ const WhatsApp = () => {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">WhatsApp</h1>
             <p className="text-sm text-muted-foreground">
-              Gerencie suas instâncias e conversas do WhatsApp
+              Gerencie suas conexões e conversas do WhatsApp
             </p>
           </div>
           <Button onClick={() => setShowCreateDialog(true)} size="sm" disabled={loading}>
             <Plus className="mr-1.5 h-4 w-4" />
-            Nova Instância
+            Nova Conexão
           </Button>
         </div>
 
