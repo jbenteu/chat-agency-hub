@@ -32,7 +32,7 @@ import {
   MessageCircle, Send, Image, Paperclip, Search, Phone, User, Tag, X, Loader2,
   ChevronRight, LayoutDashboard, Users, Settings, Shield, LogOut, Reply, Crown,
   ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, ChevronUp,
-  Copy, Edit2, Check, ChevronDown,
+  Copy, Edit2, Check, ChevronDown, RefreshCw, QrCode,
 } from "lucide-react";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -77,6 +77,8 @@ const WhatsAppInbox = () => {
     getProfilePicture, fetchGroupInfo, getContact, updateContact,
     getGroupInviteLink, removeGroupParticipant, promoteGroupParticipant,
     demoteGroupParticipant,
+    createInstance, getQrCode, getConnectionStatus,
+    loading: evoLoading,
   } = useEvolutionApi();
 
   // Initialize state from cache
@@ -104,6 +106,14 @@ const WhatsAppInbox = () => {
   const [savingContact, setSavingContact] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [loadingInvite, setLoadingInvite] = useState(false);
+  // Setup flow state (no instances)
+  const [setupDisplayName, setSetupDisplayName] = useState("");
+  const [setupQrCode, setSetupQrCode] = useState<string | null>(null);
+  const [setupInstanceName, setSetupInstanceName] = useState<string | null>(null);
+  const [setupCreating, setSetupCreating] = useState(false);
+  const setupPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [hasNoInstances, setHasNoInstances] = useState(false);
+
   const bootstrapCompletedRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
   const [showBootstrapLoading, setShowBootstrapLoading] = useState(!bootstrapCompletedRef.current);
   const [bootstrapProgress, setBootstrapProgress] = useState(bootstrapCompletedRef.current ? 100 : 12);
@@ -151,6 +161,18 @@ const WhatsAppInbox = () => {
       const connected = allInstances.filter((i) => i.status === "connected");
       setInstances(connected);
       setCachedInstances(connected);
+
+      if (connected.length === 0 && allInstances.length === 0) {
+        setHasNoInstances(true);
+        setSelectedInstanceId("");
+        setCachedSelectedInstance("");
+        setConversations([]);
+        setSelectedConv(null);
+        completeBootstrap();
+        return;
+      }
+
+      setHasNoInstances(false);
 
       if (connected.length === 0) {
         setSelectedInstanceId("");
@@ -958,6 +980,126 @@ const WhatsAppInbox = () => {
       toast({ title: "Admin removido do participante" });
     } catch (err: any) { toast({ title: "Erro", description: err?.message, variant: "destructive" }); }
   };
+
+  // ── Setup flow handlers ──
+  const handleSetupCreate = async () => {
+    const internalName = `inst-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const label = setupDisplayName.trim() || undefined;
+    setSetupCreating(true);
+    try {
+      const data = await createInstance(internalName, label);
+      toast({ title: "Instância criada!", description: "Escaneie o QR Code para conectar." });
+      const qr = data.qrcode?.base64;
+      if (qr) {
+        const normalized = qr.startsWith("data:image") ? qr : `data:image/png;base64,${qr}`;
+        setSetupQrCode(normalized);
+        setSetupInstanceName(internalName);
+      }
+      setSetupDisplayName("");
+    } catch (err: any) {
+      toast({ title: "Erro ao criar instância", description: err.message, variant: "destructive" });
+    } finally {
+      setSetupCreating(false);
+    }
+  };
+
+  const handleSetupRefreshQr = async () => {
+    if (!setupInstanceName) return;
+    try {
+      const data = await getQrCode(setupInstanceName);
+      const qr = data.qrcode?.base64 || data.qrcode?.code;
+      if (qr) {
+        const normalized = qr.startsWith("data:image") ? qr : `data:image/png;base64,${qr}`;
+        setSetupQrCode(normalized);
+      }
+    } catch (err: any) {
+      toast({ title: "Erro ao atualizar QR", description: err.message, variant: "destructive" });
+    }
+  };
+
+  // Poll for connection while setup QR is shown
+  useEffect(() => {
+    if (!setupInstanceName) {
+      if (setupPollRef.current) clearInterval(setupPollRef.current);
+      return;
+    }
+    setupPollRef.current = setInterval(async () => {
+      try {
+        const data = await getConnectionStatus(setupInstanceName);
+        if (data.connected) {
+          if (setupPollRef.current) clearInterval(setupPollRef.current);
+          setSetupQrCode(null);
+          setSetupInstanceName(null);
+          setHasNoInstances(false);
+          toast({ title: "WhatsApp conectado!", description: "Suas conversas serão carregadas." });
+          loadInstances();
+        }
+      } catch {}
+    }, 5000);
+    return () => { if (setupPollRef.current) clearInterval(setupPollRef.current); };
+  }, [setupInstanceName]);
+
+  // ── Setup view (no instances) ──
+  if (hasNoInstances && !showBootstrapLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="w-full max-w-md space-y-6">
+          <div className="text-center space-y-2">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+              <MessageCircle className="h-8 w-8 text-primary" />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">Conectar WhatsApp</h1>
+            <p className="text-sm text-muted-foreground">
+              Crie uma instância e escaneie o QR Code para começar a receber mensagens.
+            </p>
+          </div>
+
+          {setupQrCode ? (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-border bg-card p-6 flex flex-col items-center gap-4">
+                <p className="text-sm font-medium">Escaneie o QR Code com o WhatsApp</p>
+                <p className="text-xs text-muted-foreground">
+                  Abra o WhatsApp → Menu (⋮) → Aparelhos conectados → Conectar aparelho
+                </p>
+                <div className="rounded-xl border-2 border-border bg-white p-4">
+                  <img src={setupQrCode} alt="QR Code WhatsApp" className="h-64 w-64 object-contain" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button variant="outline" size="sm" onClick={handleSetupRefreshQr} disabled={evoLoading}>
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                    Atualizar QR
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Aguardando leitura do QR Code…
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Nome da instância (opcional)</label>
+                <Input
+                  placeholder="Ex: Atendimento, Vendas, Suporte…"
+                  value={setupDisplayName}
+                  onChange={(e) => setSetupDisplayName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSetupCreate()}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Um nome amigável para identificar esta conexão.
+                </p>
+              </div>
+              <Button className="w-full" onClick={handleSetupCreate} disabled={setupCreating || evoLoading}>
+                {setupCreating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <QrCode className="mr-1.5 h-4 w-4" />}
+                {setupCreating ? "Criando…" : "Criar e gerar QR Code"}
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <SidebarProvider>
