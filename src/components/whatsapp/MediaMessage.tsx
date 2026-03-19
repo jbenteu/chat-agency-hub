@@ -24,7 +24,7 @@ function isExpirableUrl(url: string): boolean {
 }
 
 // ── WhatsApp-style Audio Player ──
-function AudioPlayer({ src, isOutbound }: { src: string; isOutbound: boolean }) {
+function AudioPlayer({ src, isOutbound, mimeType }: { src: string; isOutbound: boolean; mimeType?: string | null }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
