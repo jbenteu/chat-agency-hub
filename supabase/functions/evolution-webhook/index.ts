@@ -102,9 +102,11 @@ const resolveMediaUrl = (
     entry?.media_url,
     entry?.fileUrl,
     entry?.file_url,
+    entry?.url,
     data?.mediaUrl,
     data?.media_url,
     data?.fileUrl,
+    data?.url,
     entry?.message?.mediaUrl,
     entry?.message?.fileUrl,
     entry?.message?.media_url,
@@ -133,6 +135,25 @@ const resolveMediaUrl = (
   return null;
 };
 
+// Tipos internos do protocolo WhatsApp que devem ser ignorados silenciosamente
+const SILENT_SKIP_TYPES = new Set([
+  "messageContextInfo",
+  "appStateSyncKeyShare",
+  "appStateSyncKeyFingerprint",
+  "appStateSyncKeyId",
+  "appStateSyncKeyRequest",
+  "e2eNotification",
+  "deviceSentMessage",
+  "bcallMessage",
+  "callLogMesssage",
+  "encReactionMessage",
+  "keepInChatMessage",
+  "secretMessage",
+  "pinInChatMessage",
+  "ptvMessage",
+  "newsletterAdminInviteMessage",
+]);
+
 const parseMessagePayload = (entry: Record<string, any>, data: Record<string, any>) => {
   const message = entry?.message || data?.message || {};
   const contentNode = unwrapMessageContent(message);
@@ -154,10 +175,16 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
 
   if (contextInfo?.stanzaId) {
     quotedMessageId = contextInfo.stanzaId;
+    const qm = contextInfo.quotedMessage;
     quotedContent =
-      contextInfo.quotedMessage?.conversation ||
-      contextInfo.quotedMessage?.extendedTextMessage?.text ||
-      contextInfo.quotedMessage?.imageMessage?.caption ||
+      qm?.conversation ||
+      qm?.extendedTextMessage?.text ||
+      qm?.imageMessage?.caption ||
+      qm?.videoMessage?.caption ||
+      qm?.documentMessage?.fileName ||
+      (qm?.audioMessage ? "[Áudio]" : null) ||
+      (qm?.stickerMessage ? "[Sticker]" : null) ||
+      (qm?.locationMessage || qm?.liveLocationMessage ? "[Localização]" : null) ||
       "[Mensagem]";
   }
 
@@ -166,11 +193,11 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
   } else if (contentNode.extendedTextMessage?.text) {
     content = contentNode.extendedTextMessage.text;
   } else if (contentNode.imageMessage) {
-    content = contentNode.imageMessage.caption || "[Imagem]";
+    content = contentNode.imageMessage.caption || "";
     mediaType = "image";
     mediaUrl = resolveMediaUrl(entry, data, contentNode.imageMessage);
   } else if (contentNode.videoMessage) {
-    content = contentNode.videoMessage.caption || "[Vídeo]";
+    content = contentNode.videoMessage.caption || "";
     mediaType = "video";
     mediaUrl = resolveMediaUrl(entry, data, contentNode.videoMessage);
   } else if (contentNode.audioMessage) {
@@ -197,6 +224,10 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
     return { skip: true, reason: "protocol_message" } as const;
   } else {
     const keys = Object.keys(contentNode);
+    // Ignorar silenciosamente tipos internos do protocolo
+    if (keys.length > 0 && keys.every((k) => SILENT_SKIP_TYPES.has(k))) {
+      return { skip: true, reason: "silent_skip" } as const;
+    }
     content = keys.length > 0 ? `[${keys[0]}]` : "[Mensagem]";
   }
 
@@ -528,7 +559,16 @@ Deno.serve(async (req) => {
 
           if (!isGroup) {
             updatePayload.contact_id = contactId;
-            updatePayload.contact_name = resolvedContactName;
+            // Só atualiza contact_name se o valor atual é numérico/placeholder
+            // e o novo é genuinamente melhor — evita sobrescrever com o pushName
+            // da própria instância em mensagens de saída
+            const currentIsNumeric = !conversation.contact_name || /^\d+$/.test(conversation.contact_name);
+            const newIsNumeric = /^\d+$/.test(resolvedContactName);
+            if (currentIsNumeric && !newIsNumeric) {
+              updatePayload.contact_name = resolvedContactName;
+            } else if (!fromMe && !newIsNumeric && resolvedContactName !== conversation.contact_name) {
+              updatePayload.contact_name = resolvedContactName;
+            }
           } else if (
             !isPlaceholderGroupName(resolvedContactName) &&
             isPlaceholderGroupName(conversation.contact_name)
