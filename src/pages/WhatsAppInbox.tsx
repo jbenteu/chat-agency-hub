@@ -777,16 +777,18 @@ const WhatsAppInbox = () => {
         media_width: null,
         media_height: null,
         status: "pending",
-        metadata: { optimistic: true, fileName: file.name },
+        metadata: { optimistic: true, fileName: file.name, quotedMessageId: replyTarget?.messageId || null, quotedContent: replyTarget?.content || null },
         created_at: now,
       };
 
+      const currentReplyForMedia = replyTarget;
       addOptimisticMessage(optimisticMessage);
       updateConversationPreview(selectedConv.id, previewText, now);
+      setReplyTarget(null);
       setSendingCount((c) => c + 1);
 
       try {
-        await withSingleRetry(() => sendMedia(inst.instance_name, selectedConv.remote_jid, mediatype, mediaPayload, undefined, file.name));
+        await withSingleRetry(() => sendMedia(inst.instance_name, selectedConv.remote_jid, mediatype, mediaPayload, undefined, file.name, currentReplyForMedia?.messageId));
       } catch (err: any) {
         removeOptimisticMessage(tempId);
         toast({ title: "Erro ao enviar mídia", description: err?.message || "Falha no envio", variant: "destructive" });
