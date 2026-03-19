@@ -77,7 +77,7 @@ function AudioPlayer({ src, isOutbound }: { src: string; isOutbound: boolean }) 
     <div className={`mb-1 flex items-center gap-2 rounded-xl px-3 py-2 min-w-[220px] max-w-[280px] ${
       isOutbound ? "bg-primary-foreground/10" : "bg-primary/10"
     }`}>
-      <audio ref={audioRef} src={src} preload="metadata" />
+      <audio ref={audioRef} src={src} preload="metadata" type={metadataMimeType || undefined} />
       <button
         onClick={togglePlay}
         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
