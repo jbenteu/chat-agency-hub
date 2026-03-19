@@ -1328,8 +1328,21 @@ const WhatsAppInbox = () => {
                               {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
                                 <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
                               )}
-                              {msg.content && msg.media_type !== "document" && !isMediaPlaceholder(msg.content) && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
-                              <p className={`mt-1 text-right text-[10px] ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{formatDate(msg.created_at)}</p>
+                              {msg.content && !isMediaPlaceholder(msg.content) && !(msg.media_type === "document" && (msg.media_url || msg.message_id)) && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
+                              <div className={`mt-1 flex items-center justify-end gap-1 ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
+                                <span className="text-[10px]">{formatDate(msg.created_at)}</span>
+                                {isOutbound && (
+                                  <span className="inline-flex items-center">
+                                    {msg.id.startsWith("temp-") || msg.status === "pending" ? (
+                                      <Clock className="h-3 w-3" />
+                                    ) : msg.status === "delivered" || msg.status === "played" || msg.status === "read" ? (
+                                      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="inline"><path d="M11.07 0.73a.5.5 0 01.76.65l-.06.07L6.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L6.08 6.26l5-5.53z" fill="currentColor"/><path d="M14.07 0.73a.5.5 0 01.76.65l-.06.07L9.43 7.32a.5.5 0 01-.63.06l-.07-.06-.53-.53.7-.72.18.18 4.99-5.52z" fill="currentColor"/></svg>
+                                    ) : (
+                                      <svg width="12" height="11" viewBox="0 0 12 11" fill="none" className="inline"><path d="M9.07 0.73a.5.5 0 01.76.65l-.06.07L4.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L4.08 6.26l5-5.53z" fill="currentColor"/></svg>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
                               <button className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-1 hover:bg-muted"
                                 onClick={() => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") })}
                                 title="Responder"><Reply className="h-3.5 w-3.5 text-muted-foreground" /></button>
