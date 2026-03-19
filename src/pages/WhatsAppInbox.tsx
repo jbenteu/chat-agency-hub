@@ -1291,7 +1291,7 @@ const WhatsAppInbox = () => {
                                 </AvatarFallback>
                               </Avatar>
                             )}
-                            <div className={`relative max-w-[70%] rounded-2xl px-3.5 py-2 text-sm ${isOutbound ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted"} ${msg.id.startsWith("temp-") ? "opacity-70" : ""}`}>
+                            <div className={`relative max-w-[70%] rounded-2xl px-3.5 py-2 text-sm ${isOutbound ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted"}`}>
                               {isGrp && !isOutbound && senderName && (
                                 <p className={`text-xs font-semibold mb-0.5 ${getSenderColor(senderName)}`}>{senderName}</p>
                               )}
