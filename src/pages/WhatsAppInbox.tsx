@@ -456,6 +456,13 @@ const WhatsAppInbox = () => {
           pollDelay = 1800;
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${convId}` },
+        (payload) => {
+          mergeNewMessages([payload.new as WhatsAppMessage]);
+        }
+      )
       .subscribe();
 
     pollTimer = setTimeout(pollForMissedMessages, pollDelay);
@@ -828,7 +835,7 @@ const WhatsAppInbox = () => {
 
   const isMediaPlaceholder = (content: string | null) => {
     if (!content) return false;
-    const placeholders = ["[Imagem]", "[Áudio]", "[Vídeo]", "[Sticker]", "[Documento]", "[Mídia]"];
+    const placeholders = ["[Imagem]", "[Áudio]", "[Vídeo]", "[Sticker]", "[Documento]", "[Mídia]", "[Localização]"];
     if (placeholders.includes(content)) return true;
     const colonIdx = content.lastIndexOf(": ");
     if (colonIdx > 0) {
@@ -1364,17 +1371,25 @@ const WhatsAppInbox = () => {
                               {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
                                 <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
                               )}
-                              {msg.content && !isMediaPlaceholder(msg.content) && !(msg.media_type === "document" && (msg.media_url || msg.message_id)) && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
+                              {(() => {
+                                if (!msg.content || !msg.content.trim()) return null;
+                                if (isMediaPlaceholder(msg.content)) return null;
+                                if (msg.media_type === "document" && (msg.media_url || msg.message_id)) return null;
+                                if (msg.media_type === "audio") return null;
+                                return <p className="whitespace-pre-wrap break-words">{msg.content}</p>;
+                              })()}
                               <div className={`mt-1 flex items-center justify-end gap-1 ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
                                 <span className="text-[10px]">{formatDate(msg.created_at)}</span>
                                 {isOutbound && (
                                   <span className="inline-flex items-center">
                                     {msg.id.startsWith("temp-") || msg.status === "pending" ? (
                                       <Clock className="h-3 w-3" />
-                                    ) : msg.status === "delivered" || msg.status === "played" || msg.status === "read" ? (
-                                      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="inline"><path d="M11.07 0.73a.5.5 0 01.76.65l-.06.07L6.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L6.08 6.26l5-5.53z" fill="currentColor"/><path d="M14.07 0.73a.5.5 0 01.76.65l-.06.07L9.43 7.32a.5.5 0 01-.63.06l-.07-.06-.53-.53.7-.72.18.18 4.99-5.52z" fill="currentColor"/></svg>
+                                    ) : msg.status === "read" || msg.status === "played" ? (
+                                      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="inline"><path d="M11.07 0.73a.5.5 0 01.76.65l-.06.07L6.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L6.08 6.26l5-5.53z" fill="#53BDEB"/><path d="M14.07 0.73a.5.5 0 01.76.65l-.06.07L9.43 7.32a.5.5 0 01-.63.06l-.07-.06-.53-.53.7-.72.18.18 4.99-5.52z" fill="#53BDEB"/></svg>
+                                    ) : msg.status === "delivered" ? (
+                                      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="inline"><path d="M11.07 0.73a.5.5 0 01.76.65l-.06.07L6.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L6.08 6.26l5-5.53z" fill="#8696A0"/><path d="M14.07 0.73a.5.5 0 01.76.65l-.06.07L9.43 7.32a.5.5 0 01-.63.06l-.07-.06-.53-.53.7-.72.18.18 4.99-5.52z" fill="#8696A0"/></svg>
                                     ) : (
-                                      <svg width="12" height="11" viewBox="0 0 12 11" fill="none" className="inline"><path d="M9.07 0.73a.5.5 0 01.76.65l-.06.07L4.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L4.08 6.26l5-5.53z" fill="currentColor"/></svg>
+                                      <svg width="12" height="11" viewBox="0 0 12 11" fill="none" className="inline"><path d="M9.07 0.73a.5.5 0 01.76.65l-.06.07L4.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L4.08 6.26l5-5.53z" fill="#8696A0"/></svg>
                                     )}
                                   </span>
                                 )}
