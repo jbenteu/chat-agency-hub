@@ -106,6 +106,14 @@ const WhatsAppInbox = () => {
   const [savingContact, setSavingContact] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [loadingInvite, setLoadingInvite] = useState(false);
+  // Setup flow state (no instances)
+  const [setupDisplayName, setSetupDisplayName] = useState("");
+  const [setupQrCode, setSetupQrCode] = useState<string | null>(null);
+  const [setupInstanceName, setSetupInstanceName] = useState<string | null>(null);
+  const [setupCreating, setSetupCreating] = useState(false);
+  const setupPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [hasNoInstances, setHasNoInstances] = useState(false);
+
   const bootstrapCompletedRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
   const [showBootstrapLoading, setShowBootstrapLoading] = useState(!bootstrapCompletedRef.current);
   const [bootstrapProgress, setBootstrapProgress] = useState(bootstrapCompletedRef.current ? 100 : 12);
