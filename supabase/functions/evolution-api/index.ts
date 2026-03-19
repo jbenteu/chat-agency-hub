@@ -266,10 +266,24 @@ Deno.serve(async (req) => {
     // ── create_instance ──────────────────────────────────────────────────────
     if (action === "create_instance") {
       if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
+
+      // Build webhook URL for this Supabase project
+      const webhookUrl = `${SUPABASE_URL}/functions/v1/evolution-webhook`;
+
       const createPayload = JSON.stringify({
         instanceName,
         integration: "WHATSAPP-BAILEYS",
         qrcode: true,
+        webhook: {
+          url: webhookUrl,
+          byEvents: false,
+          base64: false,
+          events: [
+            "MESSAGES_UPSERT",
+            "MESSAGES_UPDATE",
+            "CONNECTION_UPDATE",
+          ],
+        },
       });
       const createPaths = ["/instance/create", "/api/instance/create", "/manager/api/instance/create"];
       let evoData: any = null;
@@ -284,6 +298,31 @@ Deno.serve(async (req) => {
         }
       }
       if (!evoData) throw lastErr instanceof Error ? lastErr : new Error("create_instance failed");
+
+      // Also try to set webhook via dedicated endpoint (some Evolution versions need this)
+      try {
+        await requestEvolution(
+          `/webhook/set/${instanceName}`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              url: webhookUrl,
+              webhook_by_events: false,
+              webhook_base64: false,
+              events: [
+                "MESSAGES_UPSERT",
+                "MESSAGES_UPDATE",
+                "CONNECTION_UPDATE",
+              ],
+              enabled: true,
+            }),
+          },
+          "set_webhook",
+        );
+      } catch (whErr) {
+        console.warn("Could not set webhook via dedicated endpoint, relying on create payload:", whErr);
+      }
+
       const phoneNumber = extractPhoneNumber(evoData);
       const { error: dbError } = await supabaseAdmin.from("whatsapp_instances").insert({
         tenant_id: tenantId,
@@ -393,6 +432,28 @@ Deno.serve(async (req) => {
         }),
       );
       return jsonResponse({ success: true, instances: synced.filter(Boolean) });
+    }
+
+    // ── set_webhook (configure webhook for an existing instance) ─────────────
+    if (action === "set_webhook") {
+      if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
+      await getInstanceRow(instanceName); // ensures tenant ownership
+      const webhookUrl = `${SUPABASE_URL}/functions/v1/evolution-webhook`;
+      const result = await requestEvolution(
+        `/webhook/set/${instanceName}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            url: webhookUrl,
+            webhook_by_events: false,
+            webhook_base64: false,
+            events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
+            enabled: true,
+          }),
+        },
+        "set_webhook",
+      );
+      return jsonResponse({ success: true, result });
     }
 
     // ── delete_instance ───────────────────────────────────────────────────────

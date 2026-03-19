@@ -1,0 +1,1 @@
+DELETE FROM public.whatsapp_instances WHERE instance_name = 'inst-1773928438263-923x';
