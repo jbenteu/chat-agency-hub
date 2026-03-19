@@ -102,7 +102,7 @@ const WhatsApp = () => {
   }, [qrCodeData?.instanceName]);
 
   const getDisplayLabel = (inst: EvolutionInstance) =>
-    inst.display_name || inst.phone_number || "Instância WhatsApp";
+    inst.display_name || inst.phone_number || "Conexão WhatsApp";
 
   const handleCreate = async () => {
     const internalName = `inst-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
