@@ -38,6 +38,7 @@ import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatPhoneWhatsApp, formatPhoneEdit, maskPhoneInput, detectCountryCode, COUNTRY_CODES } from "@/data/country-codes";
 import { BRAZIL_STATES, BRAZIL_CITIES } from "@/data/brazil-locations";
+import logo from "@/assets/logo.png";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/" },
