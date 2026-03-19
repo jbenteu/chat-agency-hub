@@ -155,7 +155,7 @@ const WhatsAppInbox = () => {
 
   // ── Load instances (direct DB query) ──
   const loadInstances = useCallback(async () => {
-    updateBootstrapProgress(20, "Conectando instâncias…");
+    updateBootstrapProgress(20, "Conectando…");
     try {
       const allInstances = await queryInstances();
       const connected = allInstances.filter((i) => i.status === "connected");
