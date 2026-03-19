@@ -456,6 +456,13 @@ const WhatsAppInbox = () => {
           pollDelay = 1800;
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${convId}` },
+        (payload) => {
+          mergeNewMessages([payload.new as WhatsAppMessage]);
+        }
+      )
       .subscribe();
 
     pollTimer = setTimeout(pollForMissedMessages, pollDelay);
