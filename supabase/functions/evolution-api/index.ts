@@ -870,9 +870,11 @@ Deno.serve(async (req) => {
 
       const isExpirableUrl = (url: string) =>
         url.includes("mmg.whatsapp.net") ||
-        url.includes("media.whatsapp") ||
-        url.includes("media-") ||
+        url.includes("media.whatsapp.net") ||
         url.includes(".enc?");
+
+      const fixMinioUrl = (url: string) =>
+        url.replace(/^http:\/\/minio:9000\//, "http://82.25.70.124:9000/");
 
       // Busca a mensagem com escopo de tenant (+ conversa se disponível)
       let msgQuery = supabaseAdmin

@@ -118,7 +118,7 @@ const resolveMediaUrl = (
   ];
 
   for (const c of topLevelCandidates) {
-    if (c && typeof c === "string" && c.trim() && !isExpirableWhatsAppUrl(c)) return c;
+    if (c && typeof c === "string" && c.trim() && !isExpirableWhatsAppUrl(c)) return fixMinioUrl(c);
   }
 
   // 2. URL dentro do nó da mensagem (imageMessage, videoMessage, etc.)
@@ -126,7 +126,7 @@ const resolveMediaUrl = (
     const nodeUrl =
       msgNode.url || msgNode.mediaUrl || msgNode.fileUrl || msgNode.media_url || null;
     if (nodeUrl && typeof nodeUrl === "string" && !isExpirableWhatsAppUrl(nodeUrl)) {
-      return nodeUrl;
+      return fixMinioUrl(nodeUrl);
     }
     // 3. Fallback: CDN do WhatsApp — expira, mas melhor do que nulo
     return nodeUrl || msgNode.directPath || null;
@@ -134,7 +134,7 @@ const resolveMediaUrl = (
 
   // 4. Última chance: qualquer top-level, mesmo que seja CDN
   for (const c of topLevelCandidates) {
-    if (c && typeof c === "string") return c;
+    if (c && typeof c === "string") return fixMinioUrl(c);
   }
 
   return null;
