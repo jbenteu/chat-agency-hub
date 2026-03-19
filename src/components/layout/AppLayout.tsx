@@ -58,7 +58,11 @@ const AppSidebar: React.FC = () => {
                     tooltip={item.title}
                   >
                     <NavLink to={item.path}>
-                      <item.icon className="h-4 w-4" />
+                      {item.icon ? (
+                        <item.icon className="h-4 w-4" />
+                      ) : (
+                        <img src={logo} alt="" className="h-4 w-4 object-contain" />
+                      )}
                       <span>{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
