@@ -988,7 +988,7 @@ const WhatsAppInbox = () => {
     setSetupCreating(true);
     try {
       const data = await createInstance(internalName, label);
-      toast({ title: "Instância criada!", description: "Escaneie o QR Code para conectar." });
+      toast({ title: "Conexão criada!", description: "Escaneie o QR Code para conectar." });
       const qr = data.qrcode?.base64;
       if (qr) {
         const normalized = qr.startsWith("data:image") ? qr : `data:image/png;base64,${qr}`;
