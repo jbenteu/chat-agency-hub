@@ -294,7 +294,7 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   }
 
   if (mediaType === "audio") {
-    return <AudioPlayer src={resolvedUrl} isOutbound={isOutbound} />;
+    return <AudioPlayer src={resolvedUrl} isOutbound={isOutbound} mimeType={metadataMimeType} />;
   }
 
   if (mediaType === "document") {
