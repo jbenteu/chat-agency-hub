@@ -835,7 +835,7 @@ const WhatsAppInbox = () => {
 
   const isMediaPlaceholder = (content: string | null) => {
     if (!content) return false;
-    const placeholders = ["[Imagem]", "[Áudio]", "[Vídeo]", "[Sticker]", "[Documento]", "[Mídia]"];
+    const placeholders = ["[Imagem]", "[Áudio]", "[Vídeo]", "[Sticker]", "[Documento]", "[Mídia]", "[Localização]"];
     if (placeholders.includes(content)) return true;
     const colonIdx = content.lastIndexOf(": ");
     if (colonIdx > 0) {
