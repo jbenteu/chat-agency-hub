@@ -1041,6 +1041,28 @@ const WhatsAppInbox = () => {
 
   // ── Setup view (no instances) ──
   if (hasNoInstances && !showBootstrapLoading) {
+    const handleCancelSetup = async () => {
+      if (setupInstanceName) {
+        try {
+          const { deleteInstance } = await import("@/hooks/use-evolution-api").then(() => ({ deleteInstance: async (name: string) => {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData?.session?.access_token;
+            if (!token) return;
+            await supabase.functions.invoke("evolution-api", {
+              body: { action: "delete_instance", instanceName: name },
+              headers: { Authorization: `Bearer ${token}` },
+            });
+          }}));
+          await deleteInstance(setupInstanceName);
+        } catch {}
+      }
+      if (setupPollRef.current) clearInterval(setupPollRef.current);
+      setSetupQrCode(null);
+      setSetupInstanceName(null);
+      setSetupCreating(false);
+      setSetupDisplayName("");
+    };
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="w-full max-w-md space-y-6">
@@ -1050,7 +1072,7 @@ const WhatsAppInbox = () => {
             </div>
             <h1 className="text-2xl font-semibold tracking-tight">Conectar WhatsApp</h1>
             <p className="text-sm text-muted-foreground">
-              Crie uma instância e escaneie o QR Code para começar a receber mensagens.
+              Crie uma conexão e escaneie o QR Code para começar a receber mensagens.
             </p>
           </div>
 
@@ -1069,6 +1091,10 @@ const WhatsAppInbox = () => {
                     <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
                     Atualizar QR
                   </Button>
+                  <Button variant="ghost" size="sm" onClick={handleCancelSetup}>
+                    <X className="mr-1.5 h-3.5 w-3.5" />
+                    Cancelar
+                  </Button>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -1079,7 +1105,7 @@ const WhatsAppInbox = () => {
           ) : (
             <div className="rounded-xl border border-border bg-card p-6 space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Nome da instância (opcional)</label>
+                <label className="text-sm font-medium">Nome da conexão (opcional)</label>
                 <Input
                   placeholder="Ex: Atendimento, Vendas, Suporte…"
                   value={setupDisplayName}
@@ -1096,6 +1122,12 @@ const WhatsAppInbox = () => {
               </Button>
             </div>
           )}
+
+          <div className="text-center">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="text-muted-foreground">
+              ← Voltar ao painel
+            </Button>
+          </div>
         </div>
       </div>
     );

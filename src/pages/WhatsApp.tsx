@@ -417,7 +417,7 @@ const WhatsApp = () => {
       <Dialog open={!!renameInstance} onOpenChange={(open) => !open && setRenameInstance(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Renomear Instância</DialogTitle>
+            <DialogTitle>Renomear Conexão</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <Input
