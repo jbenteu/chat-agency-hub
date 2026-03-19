@@ -1163,8 +1163,8 @@ const WhatsAppInbox = () => {
         <Sidebar collapsible="icon">
           <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-bold">C</div>
-              <span className="text-sm font-semibold text-sidebar-accent-foreground group-data-[collapsible=icon]:hidden">CRM</span>
+              <img src={logo} alt="Advanced Marketing" className="h-8 w-auto" />
+              <span className="text-sm font-semibold text-sidebar-accent-foreground group-data-[collapsible=icon]:hidden">Advanced Marketing</span>
             </div>
           </SidebarHeader>
           <SidebarContent>
