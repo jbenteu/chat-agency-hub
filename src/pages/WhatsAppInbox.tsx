@@ -353,12 +353,15 @@ const WhatsAppInbox = () => {
 
       setMessages((prev) => {
         const map = new Map<string, WhatsAppMessage>();
-        // Index by message_id or id
+        // Preserve insertion order via index for stable sorting
+        const orderMap = new Map<string, number>();
+        let idx = 0;
         for (const msg of prev) {
-          map.set(msg.message_id || msg.id, msg);
+          const key = msg.message_id || msg.id;
+          map.set(key, msg);
+          orderMap.set(key, idx++);
         }
 
-        // Build a list of optimistic messages for matching
         const optimisticMsgs = prev.filter(
           (m) => m.id.startsWith("temp-") && m.direction === "outbound"
         );
@@ -368,11 +371,9 @@ const WhatsAppInbox = () => {
           const existing = map.get(key);
 
           if (!existing) {
-            // Check if this incoming outbound message matches an optimistic one
-            // by content + direction + close timestamp (within 30s)
             if (msg.direction === "outbound" && msg.message_id) {
               const matchIdx = optimisticMsgs.findIndex((opt) => {
-                if (map.get(opt.id) === undefined) return false; // already removed
+                if (map.get(opt.id) === undefined) return false;
                 if (opt.content !== msg.content) return false;
                 const timeDiff = Math.abs(
                   new Date(msg.created_at).getTime() - new Date(opt.created_at).getTime()
@@ -382,28 +383,31 @@ const WhatsAppInbox = () => {
 
               if (matchIdx >= 0) {
                 const matched = optimisticMsgs[matchIdx];
-                map.delete(matched.id); // remove optimistic
+                const sortPos = orderMap.get(matched.id);
+                map.delete(matched.id);
+                orderMap.delete(matched.id);
                 optimisticMsgs.splice(matchIdx, 1);
-                map.set(key, msg); // add real
+                map.set(key, msg);
+                if (sortPos !== undefined) orderMap.set(key, sortPos);
+                else orderMap.set(key, idx++);
                 changed = true;
                 continue;
               }
             }
 
             map.set(key, msg);
+            orderMap.set(key, idx++);
             changed = true;
             continue;
           }
 
-          const shouldReplace =
-            existing.id.startsWith("temp-") ||
-            existing.status !== msg.status ||
-            existing.media_url !== msg.media_url ||
-            existing.content !== msg.content ||
-            existing.created_at !== msg.created_at ||
-            JSON.stringify(existing.metadata) !== JSON.stringify(msg.metadata);
+          const statusChanged = existing.status !== msg.status;
+          const mediaChanged = existing.media_url !== msg.media_url;
+          const contentChanged = existing.content !== msg.content;
+          const metaChanged = JSON.stringify(existing.metadata) !== JSON.stringify(msg.metadata);
+          const isTemp = existing.id.startsWith("temp-");
 
-          if (shouldReplace) {
+          if (isTemp || statusChanged || mediaChanged || contentChanged || metaChanged) {
             map.set(key, { ...existing, ...msg });
             changed = true;
           }
@@ -411,9 +415,16 @@ const WhatsAppInbox = () => {
 
         if (!changed) return prev;
 
-        const next = Array.from(map.values()).sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
+        const next = Array.from(map.entries())
+          .sort(([keyA, a], [keyB, b]) => {
+            const orderA = orderMap.get(keyA);
+            const orderB = orderMap.get(keyB);
+            if (orderA !== undefined && orderB !== undefined) return orderA - orderB;
+            if (orderA !== undefined) return -1;
+            if (orderB !== undefined) return 1;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          })
+          .map(([, msg]) => msg);
         mergedCache = next;
         return next;
       });
