@@ -997,7 +997,7 @@ const WhatsAppInbox = () => {
       }
       setSetupDisplayName("");
     } catch (err: any) {
-      toast({ title: "Erro ao criar instância", description: err.message, variant: "destructive" });
+      toast({ title: "Erro ao criar conexão", description: err.message, variant: "destructive" });
     } finally {
       setSetupCreating(false);
     }
