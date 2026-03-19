@@ -1362,7 +1362,7 @@ const WhatsAppInbox = () => {
                               {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
                                 <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
                               )}
-                              {msg.content && !isMediaPlaceholder(msg.content) && !(msg.media_type === "document" && (msg.media_url || msg.message_id)) && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
+                              {msg.content && !isMediaPlaceholder(msg.content) && !(msg.media_type && msg.media_type !== "document" && (msg.media_url || msg.message_id)) && !(msg.media_type === "document" && (msg.media_url || msg.message_id)) && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
                               <div className={`mt-1 flex items-center justify-end gap-1 ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
                                 <span className="text-[10px]">{formatDate(msg.created_at)}</span>
                                 {isOutbound && (
