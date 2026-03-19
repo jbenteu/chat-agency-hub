@@ -1043,18 +1043,7 @@ const WhatsAppInbox = () => {
   if (hasNoInstances && !showBootstrapLoading) {
     const handleCancelSetup = async () => {
       if (setupInstanceName) {
-        try {
-          const { deleteInstance } = await import("@/hooks/use-evolution-api").then(() => ({ deleteInstance: async (name: string) => {
-            const { data: sessionData } = await supabase.auth.getSession();
-            const token = sessionData?.session?.access_token;
-            if (!token) return;
-            await supabase.functions.invoke("evolution-api", {
-              body: { action: "delete_instance", instanceName: name },
-              headers: { Authorization: `Bearer ${token}` },
-            });
-          }}));
-          await deleteInstance(setupInstanceName);
-        } catch {}
+        try { await deleteInstance(setupInstanceName); } catch {}
       }
       if (setupPollRef.current) clearInterval(setupPollRef.current);
       setSetupQrCode(null);
