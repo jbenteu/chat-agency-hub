@@ -136,7 +136,7 @@ const WhatsApp = () => {
       if (!qr) {
         toast({
           title: "QR Code",
-          description: "Nenhum QR Code disponível. A instância já pode estar conectada.",
+          description: "Nenhum QR Code disponível. O WhatsApp já pode estar conectado.",
         });
       }
     } catch (err: any) {
