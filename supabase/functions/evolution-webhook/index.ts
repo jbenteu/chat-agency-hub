@@ -557,7 +557,16 @@ Deno.serve(async (req) => {
 
           if (!isGroup) {
             updatePayload.contact_id = contactId;
-            updatePayload.contact_name = resolvedContactName;
+            // Só atualiza contact_name se o valor atual é numérico/placeholder
+            // e o novo é genuinamente melhor — evita sobrescrever com o pushName
+            // da própria instância em mensagens de saída
+            const currentIsNumeric = !conversation.contact_name || /^\d+$/.test(conversation.contact_name);
+            const newIsNumeric = /^\d+$/.test(resolvedContactName);
+            if (currentIsNumeric && !newIsNumeric) {
+              updatePayload.contact_name = resolvedContactName;
+            } else if (!fromMe && !newIsNumeric && resolvedContactName !== conversation.contact_name) {
+              updatePayload.contact_name = resolvedContactName;
+            }
           } else if (
             !isPlaceholderGroupName(resolvedContactName) &&
             isPlaceholderGroupName(conversation.contact_name)
