@@ -16,14 +16,15 @@ interface MediaMessageProps {
   mediaThumbnail?: string | null;
   mediaWidth?: number | null;
   mediaHeight?: number | null;
+  metadataMimeType?: string | null;
 }
 
 function isExpirableUrl(url: string): boolean {
-  return url.includes("mmg.whatsapp.net") || url.includes("media.whatsapp") || url.includes("enc.");
+  return url.includes("mmg.whatsapp.net") || url.includes("media.whatsapp.net") || url.includes(".enc?");
 }
 
 // ── WhatsApp-style Audio Player ──
-function AudioPlayer({ src, isOutbound }: { src: string; isOutbound: boolean }) {
+function AudioPlayer({ src, isOutbound, mimeType }: { src: string; isOutbound: boolean; mimeType?: string | null }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -117,7 +118,7 @@ function AudioPlayer({ src, isOutbound }: { src: string; isOutbound: boolean }) 
   );
 }
 
-export function MediaMessage({ messageId, mediaUrl, mediaType, content, instanceName, remoteJid, isOutbound, mediaThumbnail, mediaWidth, mediaHeight }: MediaMessageProps) {
+export function MediaMessage({ messageId, mediaUrl, mediaType, content, instanceName, remoteJid, isOutbound, mediaThumbnail, mediaWidth, mediaHeight, metadataMimeType }: MediaMessageProps) {
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -287,13 +288,13 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   if (mediaType === "video") {
     return (
       <video controls className="mb-1 rounded-lg" style={{ maxWidth: 280, maxHeight: 300 }} preload="metadata">
-        <source src={resolvedUrl} />
+        <source src={resolvedUrl} type={metadataMimeType || undefined} />
       </video>
     );
   }
 
   if (mediaType === "audio") {
-    return <AudioPlayer src={resolvedUrl} isOutbound={isOutbound} />;
+    return <AudioPlayer src={resolvedUrl} isOutbound={isOutbound} mimeType={metadataMimeType} />;
   }
 
   if (mediaType === "document") {
