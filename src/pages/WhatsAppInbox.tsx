@@ -77,7 +77,7 @@ const WhatsAppInbox = () => {
     getProfilePicture, fetchGroupInfo, getContact, updateContact,
     getGroupInviteLink, removeGroupParticipant, promoteGroupParticipant,
     demoteGroupParticipant,
-    createInstance, getQrCode, getConnectionStatus,
+    createInstance, getQrCode, getConnectionStatus, deleteInstance,
     loading: evoLoading,
   } = useEvolutionApi();
 
@@ -117,7 +117,7 @@ const WhatsAppInbox = () => {
   const bootstrapCompletedRef = useRef(isCacheFresh(inboxCache.selectedInstanceId));
   const [showBootstrapLoading, setShowBootstrapLoading] = useState(!bootstrapCompletedRef.current);
   const [bootstrapProgress, setBootstrapProgress] = useState(bootstrapCompletedRef.current ? 100 : 12);
-  const [bootstrapLabel, setBootstrapLabel] = useState("Conectando instâncias…");
+  const [bootstrapLabel, setBootstrapLabel] = useState("Conectando…");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,7 +155,7 @@ const WhatsAppInbox = () => {
 
   // ── Load instances (direct DB query) ──
   const loadInstances = useCallback(async () => {
-    updateBootstrapProgress(20, "Conectando instâncias…");
+    updateBootstrapProgress(20, "Conectando…");
     try {
       const allInstances = await queryInstances();
       const connected = allInstances.filter((i) => i.status === "connected");
@@ -685,7 +685,7 @@ const WhatsAppInbox = () => {
   const handleSendText = async () => {
     if (!selectedConv || !messageText.trim()) return;
     const inst = instances.find((i) => i.id === selectedConv.instance_id);
-    if (!inst) { toast({ title: "Erro", description: "Instância não encontrada", variant: "destructive" }); return; }
+    if (!inst) { toast({ title: "Erro", description: "Conexão não encontrada", variant: "destructive" }); return; }
     const payloadText = messageText.trim();
     const now = new Date().toISOString();
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -988,7 +988,7 @@ const WhatsAppInbox = () => {
     setSetupCreating(true);
     try {
       const data = await createInstance(internalName, label);
-      toast({ title: "Instância criada!", description: "Escaneie o QR Code para conectar." });
+      toast({ title: "Conexão criada!", description: "Escaneie o QR Code para conectar." });
       const qr = data.qrcode?.base64;
       if (qr) {
         const normalized = qr.startsWith("data:image") ? qr : `data:image/png;base64,${qr}`;
@@ -997,7 +997,7 @@ const WhatsAppInbox = () => {
       }
       setSetupDisplayName("");
     } catch (err: any) {
-      toast({ title: "Erro ao criar instância", description: err.message, variant: "destructive" });
+      toast({ title: "Erro ao criar conexão", description: err.message, variant: "destructive" });
     } finally {
       setSetupCreating(false);
     }
@@ -1041,6 +1041,17 @@ const WhatsAppInbox = () => {
 
   // ── Setup view (no instances) ──
   if (hasNoInstances && !showBootstrapLoading) {
+    const handleCancelSetup = async () => {
+      if (setupInstanceName) {
+        try { await deleteInstance(setupInstanceName); } catch {}
+      }
+      if (setupPollRef.current) clearInterval(setupPollRef.current);
+      setSetupQrCode(null);
+      setSetupInstanceName(null);
+      setSetupCreating(false);
+      setSetupDisplayName("");
+    };
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="w-full max-w-md space-y-6">
@@ -1050,7 +1061,7 @@ const WhatsAppInbox = () => {
             </div>
             <h1 className="text-2xl font-semibold tracking-tight">Conectar WhatsApp</h1>
             <p className="text-sm text-muted-foreground">
-              Crie uma instância e escaneie o QR Code para começar a receber mensagens.
+              Crie uma conexão e escaneie o QR Code para começar a receber mensagens.
             </p>
           </div>
 
@@ -1069,6 +1080,10 @@ const WhatsAppInbox = () => {
                     <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
                     Atualizar QR
                   </Button>
+                  <Button variant="ghost" size="sm" onClick={handleCancelSetup}>
+                    <X className="mr-1.5 h-3.5 w-3.5" />
+                    Cancelar
+                  </Button>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -1079,7 +1094,7 @@ const WhatsAppInbox = () => {
           ) : (
             <div className="rounded-xl border border-border bg-card p-6 space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Nome da instância (opcional)</label>
+                <label className="text-sm font-medium">Nome da conexão (opcional)</label>
                 <Input
                   placeholder="Ex: Atendimento, Vendas, Suporte…"
                   value={setupDisplayName}
@@ -1096,6 +1111,12 @@ const WhatsAppInbox = () => {
               </Button>
             </div>
           )}
+
+          <div className="text-center">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="text-muted-foreground">
+              ← Voltar ao painel
+            </Button>
+          </div>
         </div>
       </div>
     );

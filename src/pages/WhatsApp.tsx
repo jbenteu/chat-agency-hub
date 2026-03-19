@@ -102,7 +102,7 @@ const WhatsApp = () => {
   }, [qrCodeData?.instanceName]);
 
   const getDisplayLabel = (inst: EvolutionInstance) =>
-    inst.display_name || inst.phone_number || "Instância WhatsApp";
+    inst.display_name || inst.phone_number || "Conexão WhatsApp";
 
   const handleCreate = async () => {
     const internalName = `inst-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -110,7 +110,7 @@ const WhatsApp = () => {
 
     try {
       const data = await createInstance(internalName, label);
-      toast({ title: "Instância criada!", description: "Escaneie o QR Code para conectar." });
+      toast({ title: "Conexão criada!", description: "Escaneie o QR Code para conectar." });
 
       if (data.qrcode?.base64) {
         setQrCodeData({
@@ -124,7 +124,7 @@ const WhatsApp = () => {
       setNewDisplayName("");
       await fetchInstances();
     } catch (err: any) {
-      toast({ title: "Erro ao criar instância", description: err.message, variant: "destructive" });
+      toast({ title: "Erro ao criar conexão", description: err.message, variant: "destructive" });
     }
   };
 
@@ -136,7 +136,7 @@ const WhatsApp = () => {
       if (!qr) {
         toast({
           title: "QR Code",
-          description: "Nenhum QR Code disponível. A instância já pode estar conectada.",
+          description: "Nenhum QR Code disponível. O WhatsApp já pode estar conectado.",
         });
       }
     } catch (err: any) {
@@ -149,7 +149,7 @@ const WhatsApp = () => {
     try {
       const data = await getConnectionStatus(instanceName);
       const label =
-        instances.find((i) => i.instance_name === instanceName)?.display_name || "Instância";
+        instances.find((i) => i.instance_name === instanceName)?.display_name || "Conexão";
       toast({
         title: data.connected ? "Conectado!" : "Aguardando conexão",
         description: data.connected
@@ -171,8 +171,8 @@ const WhatsApp = () => {
     try {
       await deleteInstance(instanceName);
       const label =
-        instances.find((i) => i.instance_name === instanceName)?.display_name || "Instância";
-      toast({ title: "Instância removida", description: `"${label}" foi removida.` });
+        instances.find((i) => i.instance_name === instanceName)?.display_name || "Conexão";
+      toast({ title: "Conexão removida", description: `"${label}" foi removida.` });
       if (qrCodeData?.instanceName === instanceName) setQrCodeData(null);
       await fetchInstances();
     } catch (err: any) {
@@ -233,12 +233,12 @@ const WhatsApp = () => {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">WhatsApp</h1>
             <p className="text-sm text-muted-foreground">
-              Gerencie suas instâncias e conversas do WhatsApp
+              Gerencie suas conexões e conversas do WhatsApp
             </p>
           </div>
           <Button onClick={() => setShowCreateDialog(true)} size="sm" disabled={loading}>
             <Plus className="mr-1.5 h-4 w-4" />
-            Nova Instância
+            Nova Conexão
           </Button>
         </div>
 
@@ -296,10 +296,10 @@ const WhatsApp = () => {
             <CardContent className="flex flex-col items-center justify-center py-16">
               <MessageCircle className="mb-4 h-12 w-12 text-muted-foreground/50" />
               <p className="text-sm font-medium text-muted-foreground">
-                Nenhuma instância conectada
+                Nenhuma conexão WhatsApp
               </p>
               <p className="text-xs text-muted-foreground/70 mt-1 mb-4">
-                Crie uma instância e escaneie o QR Code para começar
+                Crie uma conexão e escaneie o QR Code para começar
               </p>
               <Button
                 onClick={() => setShowCreateDialog(true)}
@@ -308,14 +308,14 @@ const WhatsApp = () => {
                 disabled={loading}
               >
                 <Plus className="mr-1.5 h-4 w-4" />
-                Criar Instância
+                Nova Conexão
               </Button>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-3">
             <h2 className="text-sm font-medium text-muted-foreground">
-              Instâncias ({instances.length})
+              Conexões ({instances.length})
             </h2>
             {instances.map((inst) => (
               <Card key={inst.id}>
@@ -387,10 +387,10 @@ const WhatsApp = () => {
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Nova Instância WhatsApp</DialogTitle>
+            <DialogTitle>Nova Conexão WhatsApp</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <label className="text-sm font-medium">Nome da instância (opcional)</label>
+            <label className="text-sm font-medium">Nome da conexão (opcional)</label>
             <Input
               placeholder="Ex: Atendimento, Vendas, Suporte…"
               value={newDisplayName}
@@ -417,7 +417,7 @@ const WhatsApp = () => {
       <Dialog open={!!renameInstance} onOpenChange={(open) => !open && setRenameInstance(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Renomear Instância</DialogTitle>
+            <DialogTitle>Renomear Conexão</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <Input
