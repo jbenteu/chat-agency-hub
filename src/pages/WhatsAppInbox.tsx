@@ -400,7 +400,8 @@ const WhatsAppInbox = () => {
             existing.status !== msg.status ||
             existing.media_url !== msg.media_url ||
             existing.content !== msg.content ||
-            existing.created_at !== msg.created_at;
+            existing.created_at !== msg.created_at ||
+            JSON.stringify(existing.metadata) !== JSON.stringify(msg.metadata);
 
           if (shouldReplace) {
             map.set(key, { ...existing, ...msg });
