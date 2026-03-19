@@ -1205,7 +1205,7 @@ const WhatsAppInbox = () => {
                 <Select value={selectedInstanceId} onValueChange={(v) => { setSelectedInstanceId(v); setCachedSelectedInstance(v); setSelectedConv(null); setMessages([]); const cached = getCachedConversations(v); if (cached) setConversations(cached); }}>
                   <SelectTrigger className="h-7 w-[130px] text-xs"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{i.display_name || i.phone_number || "Instância"}</SelectItem>))}
+                    {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{i.display_name || i.phone_number || "Conexão"}</SelectItem>))}
                   </SelectContent>
                 </Select>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate("/whatsapp/settings")} title="Gerenciar instâncias"><Settings className="h-3.5 w-3.5" /></Button>
