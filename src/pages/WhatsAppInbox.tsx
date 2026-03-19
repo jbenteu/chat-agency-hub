@@ -162,6 +162,18 @@ const WhatsAppInbox = () => {
       setInstances(connected);
       setCachedInstances(connected);
 
+      if (connected.length === 0 && allInstances.length === 0) {
+        setHasNoInstances(true);
+        setSelectedInstanceId("");
+        setCachedSelectedInstance("");
+        setConversations([]);
+        setSelectedConv(null);
+        completeBootstrap();
+        return;
+      }
+
+      setHasNoInstances(false);
+
       if (connected.length === 0) {
         setSelectedInstanceId("");
         setCachedSelectedInstance("");
