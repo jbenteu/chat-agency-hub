@@ -296,10 +296,10 @@ const WhatsApp = () => {
             <CardContent className="flex flex-col items-center justify-center py-16">
               <MessageCircle className="mb-4 h-12 w-12 text-muted-foreground/50" />
               <p className="text-sm font-medium text-muted-foreground">
-                Nenhuma instância conectada
+                Nenhuma conexão WhatsApp
               </p>
               <p className="text-xs text-muted-foreground/70 mt-1 mb-4">
-                Crie uma instância e escaneie o QR Code para começar
+                Crie uma conexão e escaneie o QR Code para começar
               </p>
               <Button
                 onClick={() => setShowCreateDialog(true)}
@@ -308,7 +308,7 @@ const WhatsApp = () => {
                 disabled={loading}
               >
                 <Plus className="mr-1.5 h-4 w-4" />
-                Criar Instância
+                Nova Conexão
               </Button>
             </CardContent>
           </Card>
