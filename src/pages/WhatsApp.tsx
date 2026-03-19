@@ -387,10 +387,10 @@ const WhatsApp = () => {
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Nova Instância WhatsApp</DialogTitle>
+            <DialogTitle>Nova Conexão WhatsApp</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <label className="text-sm font-medium">Nome da instância (opcional)</label>
+            <label className="text-sm font-medium">Nome da conexão (opcional)</label>
             <Input
               placeholder="Ex: Atendimento, Vendas, Suporte…"
               value={newDisplayName}
