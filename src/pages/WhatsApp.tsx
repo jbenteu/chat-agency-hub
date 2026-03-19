@@ -171,8 +171,8 @@ const WhatsApp = () => {
     try {
       await deleteInstance(instanceName);
       const label =
-        instances.find((i) => i.instance_name === instanceName)?.display_name || "Instância";
-      toast({ title: "Instância removida", description: `"${label}" foi removida.` });
+        instances.find((i) => i.instance_name === instanceName)?.display_name || "Conexão";
+      toast({ title: "Conexão removida", description: `"${label}" foi removida.` });
       if (qrCodeData?.instanceName === instanceName) setQrCodeData(null);
       await fetchInstances();
     } catch (err: any) {
