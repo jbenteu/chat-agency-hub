@@ -19,7 +19,7 @@ interface MediaMessageProps {
 }
 
 function isExpirableUrl(url: string): boolean {
-  return url.includes("mmg.whatsapp.net") || url.includes("media.whatsapp") || url.includes("enc.");
+  return url.includes("mmg.whatsapp.net") || url.includes("media.whatsapp.net") || url.includes(".enc?");
 }
 
 // ── WhatsApp-style Audio Player ──
