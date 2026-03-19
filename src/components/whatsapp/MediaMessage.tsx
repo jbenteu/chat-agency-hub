@@ -16,6 +16,7 @@ interface MediaMessageProps {
   mediaThumbnail?: string | null;
   mediaWidth?: number | null;
   mediaHeight?: number | null;
+  metadataMimeType?: string | null;
 }
 
 function isExpirableUrl(url: string): boolean {
