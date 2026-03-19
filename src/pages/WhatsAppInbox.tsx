@@ -835,6 +835,8 @@ const WhatsAppInbox = () => {
       const afterColon = content.substring(colonIdx + 2);
       if (placeholders.includes(afterColon)) return true;
     }
+    // Detect filenames (e.g., "photo.png", "doc.pdf")
+    if (/^[^\s]+\.\w{2,5}$/.test(content.trim())) return true;
     return false;
   };
   
