@@ -168,8 +168,8 @@ export function useEvolutionApi() {
   );
 
   const sendMedia = useCallback(
-    (instanceName: string, remoteJid: string, mediatype: string, media: string, caption?: string, fileName?: string) =>
-      callEvolution({ action: "send_media", instanceName, remoteJid, mediatype, media, caption, fileName }),
+    (instanceName: string, remoteJid: string, mediatype: string, media: string, caption?: string, fileName?: string, quotedMessageId?: string) =>
+      callEvolution({ action: "send_media", instanceName, remoteJid, mediatype, media, caption, fileName, quotedMessageId }),
     [callEvolution]
   );
 
