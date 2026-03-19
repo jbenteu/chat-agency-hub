@@ -77,6 +77,8 @@ const WhatsAppInbox = () => {
     getProfilePicture, fetchGroupInfo, getContact, updateContact,
     getGroupInviteLink, removeGroupParticipant, promoteGroupParticipant,
     demoteGroupParticipant,
+    createInstance, getQrCode, getConnectionStatus,
+    loading: evoLoading,
   } = useEvolutionApi();
 
   // Initialize state from cache
