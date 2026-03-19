@@ -315,7 +315,7 @@ const WhatsApp = () => {
         ) : (
           <div className="space-y-3">
             <h2 className="text-sm font-medium text-muted-foreground">
-              Instâncias ({instances.length})
+              Conexões ({instances.length})
             </h2>
             {instances.map((inst) => (
               <Card key={inst.id}>
