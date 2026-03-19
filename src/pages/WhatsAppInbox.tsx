@@ -446,9 +446,9 @@ const WhatsAppInbox = () => {
     const pollForMissedMessages = async () => {
       try {
         pollCount++;
-        // Every 3rd poll, do a FULL re-fetch to catch status updates
+        // Every 2nd poll, do a FULL re-fetch to catch status updates
         // (status changes don't update created_at, so "since" queries miss them)
-        const useFullRefresh = pollCount % 3 === 0;
+        const useFullRefresh = pollCount % 2 === 0;
         const since = lastMessageAtRef.current;
 
         const delta = (!since || useFullRefresh)
@@ -456,9 +456,9 @@ const WhatsAppInbox = () => {
           : await queryMessagesSince(convId, since, 150);
 
         const hasChanges = mergeNewMessages(delta);
-        pollDelay = hasChanges ? 1800 : Math.min(pollDelay + 1200, 15000);
+        pollDelay = hasChanges ? 1500 : Math.min(pollDelay + 800, 8000);
       } catch {
-        pollDelay = Math.min(pollDelay + 1500, 15000);
+        pollDelay = Math.min(pollDelay + 1500, 10000);
       } finally {
         if (!cancelled) {
           pollTimer = setTimeout(pollForMissedMessages, pollDelay);
