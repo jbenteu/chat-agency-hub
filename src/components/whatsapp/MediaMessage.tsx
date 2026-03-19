@@ -23,6 +23,12 @@ function isExpirableUrl(url: string): boolean {
   return url.includes("mmg.whatsapp.net") || url.includes("media.whatsapp.net") || url.includes(".enc?");
 }
 
+/** Transform internal Docker MinIO URLs to public-facing URLs */
+function fixMinioUrl(url: string): string {
+  // Internal Docker hostname → public IP
+  return url.replace(/^http:\/\/minio:9000\//, "http://82.25.70.124:9000/");
+}
+
 // ── WhatsApp-style Audio Player ──
 function AudioPlayer({ src, isOutbound, mimeType }: { src: string; isOutbound: boolean; mimeType?: string | null }) {
   const audioRef = useRef<HTMLAudioElement>(null);
