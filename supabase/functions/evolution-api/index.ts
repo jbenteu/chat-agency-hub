@@ -434,6 +434,28 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, instances: synced.filter(Boolean) });
     }
 
+    // ── set_webhook (configure webhook for an existing instance) ─────────────
+    if (action === "set_webhook") {
+      if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
+      await getInstanceRow(instanceName); // ensures tenant ownership
+      const webhookUrl = `${SUPABASE_URL}/functions/v1/evolution-webhook`;
+      const result = await requestEvolution(
+        `/webhook/set/${instanceName}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            url: webhookUrl,
+            webhook_by_events: false,
+            webhook_base64: false,
+            events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
+            enabled: true,
+          }),
+        },
+        "set_webhook",
+      );
+      return jsonResponse({ success: true, result });
+    }
+
     // ── delete_instance ───────────────────────────────────────────────────────
     if (action === "delete_instance") {
       if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
