@@ -27,7 +27,7 @@ import logo from "@/assets/logo.png";
 
 const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { title: "Advanced Marketing", icon: null, path: "/crm" },
+  { title: "CRM", icon: Users, path: "/crm" },
   { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp" },
   { title: "Configurações", icon: Settings, path: "/settings" },
   { title: "Admin", icon: Shield, path: "/admin" },
@@ -58,11 +58,7 @@ const AppSidebar: React.FC = () => {
                     tooltip={item.title}
                   >
                     <NavLink to={item.path}>
-                      {item.icon ? (
-                        <item.icon className="h-4 w-4" />
-                      ) : (
-                        <img src={logo} alt="" className="h-4 w-4 object-contain" />
-                      )}
+                      <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
