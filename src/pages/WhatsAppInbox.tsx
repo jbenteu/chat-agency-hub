@@ -841,6 +841,29 @@ const WhatsAppInbox = () => {
   // Phone editing state
   const [phoneCountryCode, setPhoneCountryCode] = useState("+55");
   const [phoneCountryOpen, setPhoneCountryOpen] = useState(false);
+
+  // Inline contact rename state
+  const [inlineEditingName, setInlineEditingName] = useState(false);
+  const [inlineNameValue, setInlineNameValue] = useState("");
+  const inlineNameInputRef = useRef<HTMLInputElement>(null);
+
+  const startInlineRename = () => {
+    if (!selectedConv) return;
+    setInlineNameValue(selectedConv.contact_name || "");
+    setInlineEditingName(true);
+    setTimeout(() => inlineNameInputRef.current?.focus(), 50);
+  };
+
+  const saveInlineRename = async () => {
+    if (!selectedConv || !inlineNameValue.trim()) { setInlineEditingName(false); return; }
+    try {
+      await supabase.from("whatsapp_conversations").update({ contact_name: inlineNameValue.trim() }).eq("id", selectedConv.id);
+      setSelectedConv({ ...selectedConv, contact_name: inlineNameValue.trim() });
+      setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, contact_name: inlineNameValue.trim() } : c));
+      toast({ title: "Nome atualizado" });
+    } catch { toast({ title: "Erro ao renomear", variant: "destructive" }); }
+    setInlineEditingName(false);
+  };
   
   // Tag create handler via edge function
   const handleCreateTag = async (name: string, color: string) => {
@@ -1182,7 +1205,7 @@ const WhatsAppInbox = () => {
                 <Select value={selectedInstanceId} onValueChange={(v) => { setSelectedInstanceId(v); setCachedSelectedInstance(v); setSelectedConv(null); setMessages([]); const cached = getCachedConversations(v); if (cached) setConversations(cached); }}>
                   <SelectTrigger className="h-7 w-[130px] text-xs"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{i.display_name || i.phone_number || "Instância"}</SelectItem>))}
+                    {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{i.display_name || i.phone_number || "Conexão"}</SelectItem>))}
                   </SelectContent>
                 </Select>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate("/whatsapp/settings")} title="Gerenciar instâncias"><Settings className="h-3.5 w-3.5" /></Button>
@@ -1246,7 +1269,18 @@ const WhatsAppInbox = () => {
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="text-sm font-medium">{selectedConv.contact_name || selectedConv.contact_phone || "Desconhecido"}</p>
+                      {inlineEditingName ? (
+                        <div className="flex items-center gap-1">
+                          <Input ref={inlineNameInputRef} className="h-6 w-40 text-sm" value={inlineNameValue} onChange={(e) => setInlineNameValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") saveInlineRename(); if (e.key === "Escape") setInlineEditingName(false); }}
+                            onBlur={saveInlineRename} />
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 group/name">
+                          <p className="text-sm font-medium cursor-pointer" onDoubleClick={startInlineRename}>{selectedConv.contact_name || selectedConv.contact_phone || "Desconhecido"}</p>
+                          <button onClick={startInlineRename} className="opacity-0 group-hover/name:opacity-100 transition-opacity" title="Renomear"><Edit2 className="h-3 w-3 text-muted-foreground" /></button>
+                        </div>
+                      )}
                       <p className="text-[11px] text-muted-foreground">
                         {isGroupJid(selectedConv.remote_jid) ? `Grupo · ${currentGroupInfo?.size || "…"} participantes` : formatPhoneWhatsApp(selectedConv.contact_phone)}
                       </p>
@@ -1291,7 +1325,7 @@ const WhatsAppInbox = () => {
                                 </AvatarFallback>
                               </Avatar>
                             )}
-                            <div className={`relative max-w-[70%] rounded-2xl px-3.5 py-2 text-sm ${isOutbound ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted"} ${msg.id.startsWith("temp-") ? "opacity-70" : ""}`}>
+                            <div className={`relative max-w-[70%] rounded-2xl px-3.5 py-2 text-sm ${isOutbound ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted"}`}>
                               {isGrp && !isOutbound && senderName && (
                                 <p className={`text-xs font-semibold mb-0.5 ${getSenderColor(senderName)}`}>{senderName}</p>
                               )}
@@ -1328,8 +1362,21 @@ const WhatsAppInbox = () => {
                               {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
                                 <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
                               )}
-                              {msg.content && msg.media_type !== "document" && !isMediaPlaceholder(msg.content) && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
-                              <p className={`mt-1 text-right text-[10px] ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{formatDate(msg.created_at)}</p>
+                              {msg.content && !isMediaPlaceholder(msg.content) && !(msg.media_type === "document" && (msg.media_url || msg.message_id)) && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
+                              <div className={`mt-1 flex items-center justify-end gap-1 ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
+                                <span className="text-[10px]">{formatDate(msg.created_at)}</span>
+                                {isOutbound && (
+                                  <span className="inline-flex items-center">
+                                    {msg.id.startsWith("temp-") || msg.status === "pending" ? (
+                                      <Clock className="h-3 w-3" />
+                                    ) : msg.status === "delivered" || msg.status === "played" || msg.status === "read" ? (
+                                      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="inline"><path d="M11.07 0.73a.5.5 0 01.76.65l-.06.07L6.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L6.08 6.26l5-5.53z" fill="currentColor"/><path d="M14.07 0.73a.5.5 0 01.76.65l-.06.07L9.43 7.32a.5.5 0 01-.63.06l-.07-.06-.53-.53.7-.72.18.18 4.99-5.52z" fill="currentColor"/></svg>
+                                    ) : (
+                                      <svg width="12" height="11" viewBox="0 0 12 11" fill="none" className="inline"><path d="M9.07 0.73a.5.5 0 01.76.65l-.06.07L4.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L4.08 6.26l5-5.53z" fill="currentColor"/></svg>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
                               <button className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-1 hover:bg-muted"
                                 onClick={() => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") })}
                                 title="Responder"><Reply className="h-3.5 w-3.5 text-muted-foreground" /></button>
@@ -1477,7 +1524,6 @@ const WhatsAppInbox = () => {
                       <div className="flex items-center justify-center gap-3">
                         <button title="Mensagem" className="flex h-8 w-8 items-center justify-center rounded-md bg-muted hover:bg-accent transition-colors"><MessageCircle className="h-4 w-4 text-muted-foreground" /></button>
                         <button title="Editar" onClick={startEditingContact} className="flex h-8 w-8 items-center justify-center rounded-md bg-muted hover:bg-accent transition-colors"><Edit2 className="h-4 w-4 text-muted-foreground" /></button>
-                        <button title="Ligar" className="flex h-8 w-8 items-center justify-center rounded-md bg-muted hover:bg-accent transition-colors"><Phone className="h-4 w-4 text-muted-foreground" /></button>
                       </div>
 
                       <Separator />
@@ -1613,7 +1659,7 @@ const WhatsAppInbox = () => {
 
                   <Separator />
                   <div>
-                    <p className="mb-1 text-xs font-medium">Instância</p>
+                    <p className="mb-1 text-xs font-medium">Conexão</p>
                     <p className="text-xs text-muted-foreground">
                       {instances.find((i) => i.id === selectedConv.instance_id)?.display_name || instances.find((i) => i.id === selectedConv.instance_id)?.phone_number || "—"}
                     </p>

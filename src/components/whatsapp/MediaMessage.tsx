@@ -263,7 +263,8 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
         <img
           src={resolvedUrl}
           alt="Imagem"
-          className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+          className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+          style={{ maxWidth: 280, maxHeight: 300, width: "auto", height: "auto" }}
           loading="lazy"
           onError={handleImageError}
         />
@@ -285,7 +286,7 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
 
   if (mediaType === "video") {
     return (
-      <video controls className="mb-1 max-w-full rounded-lg" preload="metadata">
+      <video controls className="mb-1 rounded-lg" style={{ maxWidth: 280, maxHeight: 300 }} preload="metadata">
         <source src={resolvedUrl} />
       </video>
     );
