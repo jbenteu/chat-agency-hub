@@ -20,7 +20,13 @@ interface MediaMessageProps {
 }
 
 function isExpirableUrl(url: string): boolean {
-  return url.includes("mmg.whatsapp.net") || url.includes("media.whatsapp.net") || url.includes(".enc?");
+  // URLs do MinIO sem assinatura AWS são permanentes — usar diretamente
+  if (!url.includes("X-Amz-")) return false;
+  return (
+    url.includes("mmg.whatsapp.net") ||
+    url.includes("media.whatsapp.net") ||
+    url.includes(".enc?")
+  );
 }
 
 /** Transform internal Docker MinIO URLs to public-facing URLs */
