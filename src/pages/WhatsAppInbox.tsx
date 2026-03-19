@@ -1490,7 +1490,6 @@ const WhatsAppInbox = () => {
                       <div className="flex items-center justify-center gap-3">
                         <button title="Mensagem" className="flex h-8 w-8 items-center justify-center rounded-md bg-muted hover:bg-accent transition-colors"><MessageCircle className="h-4 w-4 text-muted-foreground" /></button>
                         <button title="Editar" onClick={startEditingContact} className="flex h-8 w-8 items-center justify-center rounded-md bg-muted hover:bg-accent transition-colors"><Edit2 className="h-4 w-4 text-muted-foreground" /></button>
-                        <button title="Ligar" className="flex h-8 w-8 items-center justify-center rounded-md bg-muted hover:bg-accent transition-colors"><Phone className="h-4 w-4 text-muted-foreground" /></button>
                       </div>
 
                       <Separator />
