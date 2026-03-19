@@ -742,7 +742,7 @@ const WhatsAppInbox = () => {
       else if (file.type.startsWith("video/")) mediatype = "video";
 
       const labelMap: Record<string, string> = {
-        image: file.name,
+        image: "[Imagem]",
         audio: "[Áudio]",
         video: "[Vídeo]",
         document: file.name || "[Documento]",
