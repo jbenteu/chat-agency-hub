@@ -1494,6 +1494,21 @@ const WhatsAppInbox = () => {
             />
           )}
         </div>
+
+        {/* New conversation dialog */}
+        <NewConversationDialog
+          open={showNewConvDialog}
+          onOpenChange={setShowNewConvDialog}
+          instances={instances}
+          selectedInstanceId={selectedInstanceId}
+          onSend={async (instanceName, phone, message) => {
+            const jid = `${phone}@s.whatsapp.net`;
+            await sendText(instanceName, jid, message);
+            toast({ title: "Mensagem enviada!" });
+            // Refresh conversations to show the new one
+            setTimeout(() => fetchConversations(true), 1500);
+          }}
+        />
       </div>
     </SidebarProvider>
   );
