@@ -1,56 +1,59 @@
 import React, { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useAIAnalysis, type AIDashboardData } from "@/hooks/use-ai-analysis";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { RefreshCw, Copy, MessageCircle, Sparkles, Send } from "lucide-react";
+import {
+  RefreshCw, Copy, Sparkles, Check,
+  LayoutDashboard, AlertCircle, BarChart2, Star,
+  MessageSquareWarning, TrendingUp, MessageSquare, Flame,
+  ArrowUpRight, MessageSquarePlus, Loader2, Tag, AlertTriangle,
+  ChevronDown, Wand2, CheckCircle,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const statusColors: Record<string, string> = {
-  quente: "bg-emerald-500/15 text-emerald-700 border-emerald-200",
-  morno: "bg-amber-500/15 text-amber-700 border-amber-200",
-  frio: "bg-slate-400/15 text-slate-600 border-slate-200",
-  perdido: "bg-red-500/15 text-red-700 border-red-200",
+  quente: "bg-emerald-400/10 border-emerald-400/20 text-emerald-400",
+  morno: "bg-amber-400/10 border-amber-400/20 text-amber-400",
+  frio: "bg-zinc-700/50 border-zinc-600/30 text-zinc-400",
+  perdido: "bg-red-400/10 border-red-400/20 text-red-400",
 };
 
 const sentimentoColors: Record<string, string> = {
-  positivo: "bg-emerald-500/15 text-emerald-700",
-  neutro: "bg-slate-400/15 text-slate-600",
-  frustrado: "bg-red-500/15 text-red-700",
+  positivo: "bg-emerald-400/10 border-emerald-400/20 text-emerald-400",
+  neutro: "bg-zinc-700/50 border-zinc-600/30 text-zinc-400",
+  frustrado: "bg-red-400/10 border-red-400/20 text-red-400",
 };
 
-const scoreColor = (v: number | null) => {
-  if (v === null) return "bg-muted";
+const scoreBarColor = (v: number | null) => {
+  if (v === null) return "bg-zinc-700";
   if (v >= 7) return "bg-emerald-500";
-  if (v >= 5) return "bg-amber-400";
+  if (v >= 5) return "bg-amber-500";
   return "bg-red-500";
 };
 
 const scoreTextColor = (v: number | null) => {
-  if (v === null) return "text-muted-foreground";
-  if (v >= 7) return "text-emerald-700";
-  if (v >= 5) return "text-amber-600";
-  return "text-red-600";
+  if (v === null) return "text-zinc-600";
+  if (v >= 7) return "text-emerald-400";
+  if (v >= 5) return "text-amber-400";
+  return "text-red-400";
 };
 
 const formatHours = (h: number) => {
   if (h < 24) return `${Math.round(h)}h`;
-  return `${Math.round(h / 24)} dias`;
+  const d = Math.floor(h / 24);
+  const rem = Math.round(h % 24);
+  return rem > 0 ? `${d}d ${rem}h` : `${d}d`;
 };
 
 const scoreLabels: Record<string, string> = {
   empatia: "Empatia e cordialidade",
   clareza: "Clareza na oferta",
   velocidade: "Velocidade de resposta",
-  followup: "Follow-up após orçamento",
+  followup: "Follow-up pós-orçamento",
   contorno_objecao: "Contorno de objeções",
   cta: "CTA para fechamento",
   personalizacao: "Personalização",
@@ -62,6 +65,15 @@ const quickQuestions = [
   "Como está a qualidade geral do atendimento?",
   "Quais produtos têm mais interesse este mês?",
   "O que estamos fazendo bem e o que melhorar?",
+];
+
+const tabItems = [
+  { value: "visao-geral", label: "Visão Geral", icon: LayoutDashboard },
+  { value: "leads-perdidos", label: "Leads Perdidos", icon: AlertCircle },
+  { value: "scores", label: "Scores", icon: BarChart2 },
+  { value: "melhores", label: "Melhores Abordagens", icon: Star },
+  { value: "objecoes", label: "Objeções", icon: MessageSquareWarning },
+  { value: "perguntar", label: "Perguntar à IA", icon: Sparkles },
 ];
 
 interface ScoresRow {
@@ -101,6 +113,8 @@ const AIAnalysis: React.FC = () => {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [objectionScripts, setObjectionScripts] = useState<string[]>([]);
   const [objectionLoading, setObjectionLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("visao-geral");
+  const [copied, setCopied] = useState(false);
 
   const loadDashboard = async (force = false) => {
     try {
@@ -163,6 +177,11 @@ const AIAnalysis: React.FC = () => {
     loadDashboard();
   }, []);
 
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    if (value === "scores") loadScores();
+  };
+
   const handleAsk = async () => {
     if (!askQuestion.trim()) return;
     try {
@@ -209,6 +228,8 @@ const AIAnalysis: React.FC = () => {
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
     toast({ title: "Copiado!", description: "Texto copiado para a área de transferência" });
   };
 
@@ -242,453 +263,670 @@ const AIAnalysis: React.FC = () => {
       !dashboardData.score_medio &&
       dashboardData.leads_sem_resposta_lista.length === 0);
 
+  const allScoresNull = dashboardData && dashboardData.total_conversas_mes > 0 && !dashboardData.score_medio &&
+    dashboardData.media_scores && Object.values(dashboardData.media_scores).every(v => v === null);
+
+  const leadsCount = dashboardData?.leads_sem_resposta ?? 0;
+
+  const getInitials = (name: string | null) => {
+    if (!name) return "?";
+    return name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  };
+
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 bg-zinc-950 min-h-screen -m-6 p-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex justify-between items-start pb-6 border-b border-zinc-800">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Análise de IA</h1>
-            <p className="text-sm text-muted-foreground">
+            <h1 className="text-2xl font-semibold text-zinc-100">Análise de IA</h1>
+            <p className="text-sm text-zinc-500 flex items-center gap-1.5 mt-1">
+              <Sparkles className="text-violet-400" size={12} />
               Powered by Claude · Atualizado automaticamente
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => loadDashboard(true)}
-            disabled={loading}
-          >
-            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
-            Atualizar dados
-          </Button>
+          <div className="flex items-center gap-3">
+            {dashboardData && (
+              <span className="text-xs bg-zinc-800 border border-zinc-700 rounded-full px-3 py-1 text-zinc-400">
+                Atualizado: {new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadDashboard(true)}
+              disabled={loading}
+              className="border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 hover:border-violet-500 transition-all bg-transparent"
+            >
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+              Atualizar dados
+            </Button>
+          </div>
         </div>
 
         {isEmpty && !loading ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Sparkles className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-              <p className="text-muted-foreground">
-                Ainda não há conversas analisadas. As análises são geradas automaticamente conforme
-                novas mensagens chegam.
-              </p>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <Sparkles className="text-violet-400" size={40} />
+            <p className="text-zinc-300 font-medium">Nenhuma conversa analisada ainda</p>
+            <p className="text-zinc-600 text-sm">As análises são geradas automaticamente conforme novas mensagens chegam.</p>
+          </div>
         ) : (
-          <Tabs defaultValue="visao-geral" onValueChange={(v) => { if (v === "scores") loadScores(); }}>
-            <TabsList className="flex-wrap h-auto gap-1">
-              <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
-              <TabsTrigger value="leads-perdidos">Leads Perdidos</TabsTrigger>
-              <TabsTrigger value="scores">Scores</TabsTrigger>
-              <TabsTrigger value="melhores">Melhores Abordagens</TabsTrigger>
-              <TabsTrigger value="objecoes">Objeções</TabsTrigger>
-              <TabsTrigger value="perguntar">Perguntar à IA</TabsTrigger>
-            </TabsList>
+          <>
+            {/* Tabs Navigation */}
+            <div className="bg-zinc-900 rounded-xl p-1 flex gap-1 flex-wrap">
+              {tabItems.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.value;
+                return (
+                  <button
+                    key={tab.value}
+                    onClick={() => handleTabChange(tab.value)}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm transition-all cursor-pointer ${
+                      isActive
+                        ? "bg-zinc-800 text-zinc-100 font-medium border border-zinc-700"
+                        : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 border border-transparent"
+                    }`}
+                  >
+                    <Icon size={14} />
+                    {tab.label}
+                    {tab.value === "leads-perdidos" && leadsCount > 0 && (
+                      <span className="bg-red-400/20 text-red-400 text-xs rounded-full px-1.5 py-0.5 min-w-[18px] text-center font-medium">
+                        {leadsCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
 
             {/* ── Visão Geral ── */}
-            <TabsContent value="visao-geral" className="space-y-6">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {loading ? (
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <Card key={i}><CardContent className="pt-6"><Skeleton className="h-8 w-20 mb-2" /><Skeleton className="h-4 w-32" /></CardContent></Card>
-                  ))
-                ) : (
-                  <>
-                    <MetricCard
-                      title="Score de qualidade"
-                      value={dashboardData?.score_medio ? `${dashboardData.score_medio.toFixed(1)}/10` : "—"}
-                      color={dashboardData?.score_medio ? (dashboardData.score_medio > 7 ? "text-emerald-600" : dashboardData.score_medio >= 5 ? "text-amber-600" : "text-red-600") : undefined}
-                    />
-                    <MetricCard
-                      title="Leads sem resposta"
-                      value={String(dashboardData?.leads_sem_resposta ?? 0)}
-                      color={(dashboardData?.leads_sem_resposta ?? 0) > 10 ? "text-red-600" : (dashboardData?.leads_sem_resposta ?? 0) >= 5 ? "text-amber-600" : "text-emerald-600"}
-                    />
-                    <MetricCard title="Conversas este mês" value={String(dashboardData?.total_conversas_mes ?? 0)} />
-                    <MetricCard
-                      title="Lead mais quente"
-                      value={String(dashboardData?.leads_por_status?.quente ?? 0)}
-                      color="text-emerald-600"
-                    />
-                  </>
+            {activeTab === "visao-geral" && (
+              <div className="space-y-6">
+                {allScoresNull && (
+                  <div className="flex items-start gap-3 bg-violet-500/5 border border-violet-500/20 rounded-xl p-4">
+                    <Sparkles className="text-violet-400 mt-0.5 flex-shrink-0" size={20} />
+                    <div>
+                      <p className="text-sm font-medium text-violet-300">Análises em processamento</p>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        O sistema detectou {dashboardData?.total_conversas_mes} conversas. As análises de IA são geradas
+                        automaticamente conforme novas mensagens chegam.
+                        Você pode forçar uma análise clicando em "Atualizar dados".
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Metric Cards */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  {loading ? (
+                    Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 animate-pulse">
+                        <div className="h-3 w-24 bg-zinc-800 rounded mb-4" />
+                        <div className="h-8 w-16 bg-zinc-800 rounded" />
+                      </div>
+                    ))
+                  ) : (
+                    <>
+                      {/* Score de qualidade */}
+                      <div className={`bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-zinc-700 transition-all border-l-2 ${
+                        dashboardData?.score_medio == null ? "border-l-zinc-700" :
+                        dashboardData.score_medio >= 7 ? "border-l-emerald-400" :
+                        dashboardData.score_medio >= 5 ? "border-l-amber-400" : "border-l-red-400"
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-zinc-500 uppercase tracking-wider">Score de qualidade</span>
+                          <TrendingUp size={14} className="text-zinc-600" />
+                        </div>
+                        <p className={`text-3xl font-bold mt-2 ${
+                          dashboardData?.score_medio == null ? "text-zinc-600" : scoreTextColor(dashboardData.score_medio)
+                        }`}>
+                          {dashboardData?.score_medio ? `${dashboardData.score_medio.toFixed(1)}/10` : "—"}
+                        </p>
+                        <p className="text-xs text-zinc-500 mt-1">Média dos últimos 30 dias</p>
+                      </div>
+
+                      {/* Leads sem resposta */}
+                      <div className={`bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-zinc-700 transition-all border-l-2 ${
+                        leadsCount >= 10 ? "border-l-red-400" : leadsCount >= 5 ? "border-l-amber-400" : "border-l-emerald-400"
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-zinc-500 uppercase tracking-wider">Leads sem resposta</span>
+                          <AlertCircle size={14} className="text-zinc-600" />
+                        </div>
+                        <p className={`text-3xl font-bold mt-2 ${
+                          leadsCount >= 10 ? "text-red-400" : leadsCount >= 5 ? "text-amber-400" : "text-emerald-400"
+                        }`}>
+                          {leadsCount}
+                        </p>
+                        {leadsCount > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs text-red-400 bg-red-400/10 rounded-full px-2 py-0.5 border border-red-400/20 mt-1">
+                            <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />
+                            Requer atenção
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Conversas este mês */}
+                      <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-zinc-700 transition-all border-l-2 border-l-blue-400">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-zinc-500 uppercase tracking-wider">Conversas este mês</span>
+                          <MessageSquare size={14} className="text-zinc-600" />
+                        </div>
+                        <p className="text-3xl font-bold mt-2 text-blue-400">
+                          {dashboardData?.total_conversas_mes ?? 0}
+                        </p>
+                        <p className="text-xs text-zinc-500 mt-1">conversas ativas</p>
+                      </div>
+
+                      {/* Leads quentes */}
+                      <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-zinc-700 transition-all border-l-2 border-l-emerald-400">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-zinc-500 uppercase tracking-wider">Leads quentes</span>
+                          <Flame size={14} className="text-zinc-600" />
+                        </div>
+                        <p className={`text-3xl font-bold mt-2 ${
+                          (dashboardData?.leads_por_status?.quente ?? 0) > 0 ? "text-emerald-400" : "text-zinc-600"
+                        }`}>
+                          {dashboardData?.leads_por_status?.quente ?? 0}
+                        </p>
+                        <p className="text-xs text-zinc-500 mt-1">prontos para fechar</p>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Score Bars */}
+                {!loading && dashboardData?.media_scores && (
+                  loading ? (
+                    <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 animate-pulse">
+                      {Array.from({ length: 7 }).map((_, i) => (
+                        <div key={i} className="h-4 bg-zinc-800 rounded mb-4 last:mb-0" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6">
+                      <div className="mb-4">
+                        <h3 className="text-sm font-medium text-zinc-300">Scores médios (30 dias)</h3>
+                        <p className="text-xs text-zinc-600">Baseado em análise de IA das conversas</p>
+                      </div>
+                      {Object.entries(scoreLabels).map(([key, label], idx) => {
+                        const val = dashboardData.media_scores[key as keyof typeof dashboardData.media_scores];
+                        const pct = val ? (val / 10) * 100 : 0;
+                        return (
+                          <div
+                            key={key}
+                            className={`flex items-center gap-4 py-2.5 ${
+                              idx < Object.keys(scoreLabels).length - 1 ? "border-b border-zinc-800/50" : ""
+                            }`}
+                          >
+                            <span className="text-sm text-zinc-400 w-48 shrink-0">{label}</span>
+                            <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-700 ${scoreBarColor(val)}`}
+                                style={{ width: val ? `${pct}%` : "0%" }}
+                              />
+                            </div>
+                            <span className={`text-sm font-medium w-12 text-right ${scoreTextColor(val)}`}>
+                              {val?.toFixed(1) ?? "—"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
                 )}
               </div>
-
-              {/* Score bars */}
-              {!loading && dashboardData?.media_scores && (
-                <Card>
-                  <CardHeader><CardTitle className="text-base">Scores Médios (30 dias)</CardTitle></CardHeader>
-                  <CardContent className="space-y-3">
-                    {Object.entries(scoreLabels).map(([key, label]) => {
-                      const val = dashboardData.media_scores[key as keyof typeof dashboardData.media_scores];
-                      const pct = val ? (val / 10) * 100 : 0;
-                      return (
-                        <div key={key} className="flex items-center gap-3">
-                          <span className="text-sm w-48 shrink-0 text-muted-foreground">{label}</span>
-                          <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${scoreColor(val)}`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <span className={`text-sm font-medium w-10 text-right ${scoreTextColor(val)}`}>
-                            {val?.toFixed(1) ?? "—"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
+            )}
 
             {/* ── Leads Perdidos ── */}
-            <TabsContent value="leads-perdidos" className="space-y-3">
-              {loading ? (
-                Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full" />)
-              ) : !dashboardData?.leads_sem_resposta_lista?.length ? (
-                <Card><CardContent className="py-8 text-center text-muted-foreground">Nenhum lead sem resposta no momento 🎉</CardContent></Card>
-              ) : (
-                dashboardData.leads_sem_resposta_lista.map((lead) => (
-                  <Card key={lead.id}>
-                    <CardContent className="pt-4 pb-4 space-y-2">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{lead.contact_name || lead.contact_phone || "Desconhecido"}</span>
-                          {lead.status_lead && (
-                            <Badge variant="outline" className={statusColors[lead.status_lead] || ""}>
-                              {lead.status_lead}
-                            </Badge>
-                          )}
+            {activeTab === "leads-perdidos" && (
+              <div className="space-y-3">
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 animate-pulse">
+                      <div className="h-4 w-40 bg-zinc-800 rounded mb-3" />
+                      <div className="h-3 w-64 bg-zinc-800 rounded" />
+                    </div>
+                  ))
+                ) : !dashboardData?.leads_sem_resposta_lista?.length ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3">
+                    <CheckCircle className="text-emerald-400" size={40} />
+                    <p className="text-zinc-300 font-medium">Nenhum lead perdido no momento</p>
+                    <p className="text-zinc-600 text-sm">Todos os leads foram respondidos nas últimas 2 horas</p>
+                  </div>
+                ) : (
+                  dashboardData.leads_sem_resposta_lista.map((lead) => {
+                    const hoursColor = lead.horas_sem_resposta > 48 ? "text-red-400" : lead.horas_sem_resposta > 24 ? "text-amber-400" : "text-zinc-500";
+                    return (
+                      <div
+                        key={lead.id}
+                        className="bg-zinc-900 rounded-xl border border-zinc-800 p-4 hover:border-zinc-700 transition-all group"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-zinc-200">
+                                {lead.contact_name || lead.contact_phone || "Desconhecido"}
+                              </span>
+                              {lead.status_lead && (
+                                <span className={`text-xs rounded-full px-2.5 py-0.5 border font-medium inline-flex items-center gap-1 ${statusColors[lead.status_lead] || ""}`}>
+                                  {lead.status_lead === "quente" && <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />}
+                                  {lead.status_lead}
+                                </span>
+                              )}
+                            </div>
+                            <p className={`text-xs mt-1 ${hoursColor}`}>
+                              Sem resposta há {formatHours(lead.horas_sem_resposta)}
+                            </p>
+                            {lead.last_message && (
+                              <p className="text-xs text-zinc-600 mt-1 italic line-clamp-1 max-w-md">
+                                {lead.last_message}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => navigate("/whatsapp")}
+                              className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 transition-all"
+                            >
+                              <ArrowUpRight size={14} />
+                              Ver conversa
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleGenerateScript(
+                                  lead.id,
+                                  lead.contact_name || "Cliente",
+                                  lead.produto_interesse || "produto",
+                                  lead.horas_sem_resposta,
+                                  lead.last_message || "",
+                                  lead.objecao_detectada || undefined,
+                                )
+                              }
+                              disabled={generatingScript[lead.id]}
+                              className="flex items-center gap-1 text-xs bg-violet-500/10 border border-violet-500/30 text-violet-400 hover:bg-violet-500/20 hover:border-violet-500/50 px-2.5 py-1.5 rounded-lg transition-all disabled:opacity-50"
+                            >
+                              {generatingScript[lead.id] ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <MessageSquarePlus size={14} />
+                              )}
+                              Reengajar
+                            </button>
+                          </div>
                         </div>
-                        <span className="text-xs text-muted-foreground">
-                          Sem resposta há {formatHours(lead.horas_sem_resposta)}
-                        </span>
-                      </div>
-                      {lead.last_message && (
-                        <p className="text-sm text-muted-foreground line-clamp-2">
-                          {lead.last_message.substring(0, 80)}
-                          {lead.last_message.length > 80 ? "…" : ""}
-                        </p>
-                      )}
-                      <div className="flex flex-wrap gap-1">
-                        {lead.produto_interesse && (
-                          <Badge variant="secondary" className="text-xs">Interesse: {lead.produto_interesse}</Badge>
-                        )}
-                        {lead.objecao_detectada && (
-                          <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
-                            Objeção: {lead.objecao_detectada}
-                          </Badge>
+                        {(lead.produto_interesse || lead.objecao_detectada) && (
+                          <div className="mt-3 flex gap-2 flex-wrap">
+                            {lead.produto_interesse && (
+                              <span className="bg-blue-400/10 border border-blue-400/20 text-blue-400 text-xs rounded-full px-2.5 py-0.5 inline-flex items-center gap-1">
+                                <Tag size={10} />
+                                {lead.produto_interesse}
+                              </span>
+                            )}
+                            {lead.objecao_detectada && (
+                              <span className="bg-amber-400/10 border border-amber-400/20 text-amber-400 text-xs rounded-full px-2.5 py-0.5 inline-flex items-center gap-1">
+                                <AlertTriangle size={10} />
+                                {lead.objecao_detectada}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
-                      <div className="flex gap-2 pt-1">
-                        <Button size="sm" variant="outline" onClick={() => navigate("/whatsapp")}>
-                          <MessageCircle className="h-3 w-3 mr-1" /> Ver conversa
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() =>
-                            handleGenerateScript(
-                              lead.id,
-                              lead.contact_name || "Cliente",
-                              lead.produto_interesse || "produto",
-                              lead.horas_sem_resposta,
-                              lead.last_message || "",
-                              lead.objecao_detectada || undefined,
-                            )
-                          }
-                          disabled={generatingScript[lead.id]}
-                        >
-                          {generatingScript[lead.id] ? (
-                            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-3 w-3 mr-1" />
-                          )}
-                          Gerar reengajamento
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </TabsContent>
+                    );
+                  })
+                )}
+              </div>
+            )}
 
             {/* ── Scores ── */}
-            <TabsContent value="scores">
-              {scoresLoading ? (
-                <Skeleton className="h-64 w-full" />
-              ) : scoresData.length === 0 ? (
-                <Card><CardContent className="py-8 text-center text-muted-foreground">Nenhuma análise disponível ainda.</CardContent></Card>
-              ) : (
-                <Card>
-                  <CardContent className="pt-4 overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Contato</TableHead>
-                          <TableHead>Sentimento</TableHead>
-                          <TableHead>Produto</TableHead>
-                          <TableHead>Score</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Analisado em</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {scoresData.map((row) => (
-                          <React.Fragment key={row.id}>
-                            <TableRow
-                              className="cursor-pointer hover:bg-muted/50"
-                              onClick={() => setExpandedRow(expandedRow === row.id ? null : row.id)}
-                            >
-                              <TableCell className="font-medium">{row.contact_name || row.contact_phone || "—"}</TableCell>
-                              <TableCell>
-                                {row.sentimento && (
-                                  <Badge variant="outline" className={sentimentoColors[row.sentimento] || ""}>
-                                    {row.sentimento}
-                                  </Badge>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-sm">{row.produto_interesse || "—"}</TableCell>
-                              <TableCell>
-                                <span className={`font-semibold ${scoreTextColor(row.score_qualidade)}`}>
-                                  {row.score_qualidade ?? "—"}
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                {row.status_lead && (
-                                  <Badge variant="outline" className={statusColors[row.status_lead] || ""}>{row.status_lead}</Badge>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                {new Date(row.analyzed_at).toLocaleDateString("pt-BR")}
-                              </TableCell>
-                            </TableRow>
-                            {expandedRow === row.id && (
-                              <TableRow>
-                                <TableCell colSpan={6} className="bg-muted/30">
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 py-2">
-                                    {Object.entries(scoreLabels).map(([key, label]) => {
-                                      const scoreKey = `score_${key}` as keyof typeof row;
-                                      const val = row[scoreKey] as number | null;
-                                      return (
-                                        <div key={key} className="text-sm">
-                                          <span className="text-muted-foreground">{label}: </span>
-                                          <span className={`font-semibold ${scoreTextColor(val)}`}>{val ?? "—"}</span>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
+            {activeTab === "scores" && (
+              <div className="space-y-3">
+                {scoresLoading ? (
+                  <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 animate-pulse">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="h-10 bg-zinc-800 rounded-xl mb-3 last:mb-0" />
+                    ))}
+                  </div>
+                ) : scoresData.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3">
+                    <BarChart2 className="text-zinc-600" size={40} />
+                    <p className="text-zinc-300 font-medium">Nenhuma análise disponível ainda</p>
+                    <p className="text-zinc-600 text-sm">As análises serão exibidas aqui após o processamento</p>
+                  </div>
+                ) : (
+                  scoresData.map((row) => (
+                    <div key={row.id}>
+                      <div
+                        className="bg-zinc-900 rounded-xl border border-zinc-800 px-4 py-3 hover:border-zinc-700 cursor-pointer transition-all flex items-center gap-4"
+                        onClick={() => setExpandedRow(expandedRow === row.id ? null : row.id)}
+                      >
+                        <div className="w-8 h-8 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center text-xs font-medium text-zinc-400 shrink-0">
+                          {getInitials(row.contact_name)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-zinc-200 truncate">{row.contact_name || "—"}</p>
+                          <p className="text-xs text-zinc-600 truncate">{row.contact_phone || ""}</p>
+                        </div>
+                        {row.sentimento && (
+                          <span className={`text-xs rounded-full px-2.5 py-0.5 border font-medium shrink-0 ${sentimentoColors[row.sentimento] || ""}`}>
+                            {row.sentimento}
+                          </span>
+                        )}
+                        <span className="text-xs text-zinc-500 truncate max-w-32 hidden md:block">{row.produto_interesse || "—"}</span>
+                        <span className={`text-lg font-bold shrink-0 ${scoreTextColor(row.score_qualidade)}`}>
+                          {row.score_qualidade ?? "—"}
+                        </span>
+                        <span className="text-xs text-zinc-600 shrink-0 hidden sm:block">
+                          {new Date(row.analyzed_at).toLocaleDateString("pt-BR")}
+                        </span>
+                        <ChevronDown size={16} className={`text-zinc-600 ml-auto shrink-0 transition-transform duration-200 ${expandedRow === row.id ? "rotate-180" : ""}`} />
+                      </div>
+                      {expandedRow === row.id && (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4">
+                          {Object.entries(scoreLabels).map(([key, label]) => {
+                            const scoreKey = `score_${key}` as keyof typeof row;
+                            const val = row[scoreKey] as number | null;
+                            return (
+                              <div key={key} className="text-center bg-zinc-800/50 rounded-lg p-3">
+                                <p className={`text-xl font-bold ${scoreTextColor(val)}`}>{val ?? "—"}</p>
+                                <p className="text-xs text-zinc-500 mt-1">{label}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
 
             {/* ── Melhores Abordagens ── */}
-            <TabsContent value="melhores">
-              {loading ? (
-                <Skeleton className="h-48 w-full" />
-              ) : !dashboardData?.melhores_abordagens?.length ? (
-                <Card><CardContent className="py-8 text-center text-muted-foreground">Nenhuma abordagem com score alto ainda.</CardContent></Card>
-              ) : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {dashboardData.melhores_abordagens.map((item, i) => (
-                    <Card key={i}>
-                      <CardContent className="pt-4 pb-4 space-y-2 relative">
-                        <Badge className="absolute top-3 right-3 bg-emerald-500 text-white">
-                          {item.score_qualidade}/10
-                        </Badge>
-                        <p className="font-medium text-sm">{item.contact_name || "Contato"}</p>
-                        {item.produto_interesse && (
-                          <Badge variant="secondary" className="text-xs">{item.produto_interesse}</Badge>
-                        )}
-                        <p className="text-sm text-muted-foreground">{item.resumo || "Sem resumo"}</p>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            handleGenerateScript(
-                              `best-${i}`,
-                              item.contact_name || "Cliente",
-                              item.produto_interesse || "produto",
-                              0,
-                              item.resumo || "",
-                            )
-                          }
-                          disabled={generatingScript[`best-${i}`]}
-                        >
-                          {generatingScript[`best-${i}`] ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
-                          Usar como modelo
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
+            {activeTab === "melhores" && (
+              <div>
+                {loading ? (
+                  <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 animate-pulse">
+                    <div className="h-6 w-48 bg-zinc-800 rounded mb-4" />
+                    <div className="h-20 bg-zinc-800 rounded" />
+                  </div>
+                ) : !dashboardData?.melhores_abordagens?.length ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3">
+                    <Star className="text-zinc-600" size={40} />
+                    <p className="text-zinc-300 font-medium">Nenhuma abordagem com score alto ainda</p>
+                    <p className="text-zinc-600 text-sm">Abordagens de destaque aparecerão aqui</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {dashboardData.melhores_abordagens.map((item, i) => (
+                      <div
+                        key={i}
+                        className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-violet-500/30 transition-all group"
+                      >
+                        <div className="flex justify-between items-start">
+                          <span className="bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 font-bold text-sm rounded-lg px-2.5 py-1">
+                            ★ {item.score_qualidade}/10
+                          </span>
+                          {item.produto_interesse && (
+                            <span className="text-xs text-blue-400 bg-blue-400/10 border border-blue-400/20 rounded-full px-2.5 py-0.5">
+                              {item.produto_interesse}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-zinc-300 leading-relaxed mt-3">
+                          {item.resumo || "Sem resumo"}
+                        </p>
+                        <div className="border-t border-zinc-800 my-3" />
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-zinc-600">Conversa de {item.contact_name || "Contato"}</span>
+                          <button
+                            onClick={() =>
+                              handleGenerateScript(
+                                `best-${i}`,
+                                item.contact_name || "Cliente",
+                                item.produto_interesse || "produto",
+                                0,
+                                item.resumo || "",
+                              )
+                            }
+                            disabled={generatingScript[`best-${i}`]}
+                            className="text-xs text-violet-400 hover:text-violet-300 bg-violet-500/5 hover:bg-violet-500/10 border border-violet-500/20 hover:border-violet-500/30 rounded-lg px-3 py-1.5 transition-all disabled:opacity-50"
+                          >
+                            {generatingScript[`best-${i}`] ? <Loader2 size={12} className="animate-spin" /> : "Usar como modelo"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── Objeções ── */}
-            <TabsContent value="objecoes" className="space-y-6">
-              {loading ? (
-                <Skeleton className="h-48 w-full" />
-              ) : (
-                <>
-                  <div className="grid md:grid-cols-2 gap-6">
-                    <Card>
-                      <CardHeader><CardTitle className="text-base">Top Objeções</CardTitle></CardHeader>
-                      <CardContent className="space-y-3">
+            {activeTab === "objecoes" && (
+              <div className="space-y-6">
+                {loading ? (
+                  <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 animate-pulse">
+                    <div className="h-6 w-48 bg-zinc-800 rounded mb-4" />
+                    <div className="h-32 bg-zinc-800 rounded" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {/* Objeções */}
+                      <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-sm font-medium text-zinc-300">Objeções mais comuns</h3>
+                          <span className="text-xs bg-zinc-800 rounded-full px-2 py-0.5 text-zinc-500">
+                            {dashboardData?.top_objecoes?.length ?? 0}
+                          </span>
+                        </div>
                         {dashboardData?.top_objecoes?.length ? (
                           (() => {
                             const maxCount = dashboardData.top_objecoes[0]?.count || 1;
                             return dashboardData.top_objecoes.map((o, i) => (
-                              <div key={i} className="space-y-1">
-                                <div className="flex justify-between text-sm">
-                                  <span>{o.objecao_detectada}</span>
-                                  <span className="text-muted-foreground">{o.count}</span>
-                                </div>
-                                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                key={i}
+                                className={`flex items-center gap-3 py-2.5 ${
+                                  i < dashboardData.top_objecoes.length - 1 ? "border-b border-zinc-800/50" : ""
+                                }`}
+                              >
+                                <span className="text-xs text-zinc-600 w-4">{i + 1}</span>
+                                <span className="text-sm text-zinc-300 flex-1">{o.objecao_detectada}</span>
+                                <div className="h-1 bg-zinc-800 rounded w-24">
                                   <div
-                                    className="h-full bg-amber-400 rounded-full"
+                                    className="h-full bg-red-500/60 rounded"
                                     style={{ width: `${(o.count / maxCount) * 100}%` }}
                                   />
                                 </div>
+                                <span className="text-xs text-zinc-500 w-8 text-right">{o.count}</span>
                               </div>
                             ));
                           })()
                         ) : (
-                          <p className="text-sm text-muted-foreground">Sem dados</p>
+                          <p className="text-sm text-zinc-600">Sem dados</p>
                         )}
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader><CardTitle className="text-base">Top Produtos</CardTitle></CardHeader>
-                      <CardContent className="space-y-3">
+                      </div>
+
+                      {/* Produtos */}
+                      <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-sm font-medium text-zinc-300">Produtos com interesse</h3>
+                          <span className="text-xs bg-zinc-800 rounded-full px-2 py-0.5 text-zinc-500">
+                            {dashboardData?.top_produtos?.length ?? 0}
+                          </span>
+                        </div>
                         {dashboardData?.top_produtos?.length ? (
                           (() => {
                             const maxCount = dashboardData.top_produtos[0]?.count || 1;
                             return dashboardData.top_produtos.map((p, i) => (
-                              <div key={i} className="space-y-1">
-                                <div className="flex justify-between text-sm">
-                                  <span>{p.produto_interesse}</span>
-                                  <span className="text-muted-foreground">{p.count}</span>
-                                </div>
-                                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                key={i}
+                                className={`flex items-center gap-3 py-2.5 ${
+                                  i < dashboardData.top_produtos.length - 1 ? "border-b border-zinc-800/50" : ""
+                                }`}
+                              >
+                                <span className="text-xs text-zinc-600 w-4">{i + 1}</span>
+                                <span className="text-sm text-zinc-300 flex-1">{p.produto_interesse}</span>
+                                <div className="h-1 bg-zinc-800 rounded w-24">
                                   <div
-                                    className="h-full bg-primary rounded-full"
+                                    className="h-full bg-blue-500/60 rounded"
                                     style={{ width: `${(p.count / maxCount) * 100}%` }}
                                   />
                                 </div>
+                                <span className="text-xs text-zinc-500 w-8 text-right">{p.count}</span>
                               </div>
                             ));
                           })()
                         ) : (
-                          <p className="text-sm text-muted-foreground">Sem dados</p>
+                          <p className="text-sm text-zinc-600">Sem dados</p>
                         )}
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {dashboardData?.top_objecoes && dashboardData.top_objecoes.length > 0 && (
-                    <div className="space-y-4">
-                      <Button onClick={handleObjectionScripts} disabled={objectionLoading}>
-                        {objectionLoading ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1" />}
-                        Gerar scripts de contorno para as top 3 objeções
-                      </Button>
-                      {objectionScripts.length > 0 && (
-                        <div className="grid md:grid-cols-3 gap-4">
-                          {objectionScripts.map((script, i) => (
-                            <Card key={i}>
-                              <CardHeader className="pb-2">
-                                <CardDescription>
-                                  {dashboardData.top_objecoes[i]?.objecao_detectada || `Objeção ${i + 1}`}
-                                </CardDescription>
-                              </CardHeader>
-                              <CardContent className="space-y-2">
-                                <p className="text-sm whitespace-pre-wrap">{script}</p>
-                                <Button size="sm" variant="outline" onClick={() => handleCopy(script)}>
-                                  <Copy className="h-3 w-3 mr-1" /> Copiar
-                                </Button>
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
-                      )}
+                      </div>
                     </div>
-                  )}
-                </>
-              )}
-            </TabsContent>
+
+                    {/* Scripts de contorno */}
+                    {dashboardData?.top_objecoes && dashboardData.top_objecoes.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex justify-center">
+                          <button
+                            onClick={handleObjectionScripts}
+                            disabled={objectionLoading}
+                            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50"
+                          >
+                            {objectionLoading ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" />
+                                Gerando...
+                              </>
+                            ) : (
+                              <>
+                                <Wand2 size={16} />
+                                Gerar scripts para top 3 objeções
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        {objectionScripts.length > 0 && (
+                          <div className="grid md:grid-cols-3 gap-4">
+                            {objectionScripts.map((script, i) => (
+                              <div key={i} className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+                                <p className="text-xs text-zinc-500 mb-3 font-medium">
+                                  {dashboardData.top_objecoes[i]?.objecao_detectada || `Objeção ${i + 1}`}
+                                </p>
+                                <div className="text-sm text-zinc-300 bg-zinc-800/50 rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
+                                  {script}
+                                </div>
+                                <button
+                                  onClick={() => handleCopy(script)}
+                                  className="mt-3 flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 transition-all"
+                                >
+                                  <Copy size={12} />
+                                  Copiar
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* ── Perguntar à IA ── */}
-            <TabsContent value="perguntar" className="space-y-4">
-              <Card>
-                <CardContent className="pt-4 space-y-4">
-                  <div className="flex flex-wrap gap-2">
-                    {quickQuestions.map((q) => (
-                      <button
-                        key={q}
-                        onClick={() => { setAskQuestion(q); }}
-                        className="px-3 py-1.5 text-xs rounded-full bg-muted hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {q}
-                      </button>
-                    ))}
+            {activeTab === "perguntar" && (
+              <div className="max-w-2xl mx-auto space-y-4">
+                <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-4 focus-within:border-violet-500/50 transition-colors">
+                  <Textarea
+                    placeholder="Ex: Como melhorar a conversão dos leads de noivado?"
+                    value={askQuestion}
+                    onChange={(e) => setAskQuestion(e.target.value)}
+                    className="bg-transparent border-none outline-none resize-none text-sm text-zinc-200 placeholder:text-zinc-600 min-h-[80px] focus-visible:ring-0 focus-visible:ring-offset-0"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAsk(); }
+                    }}
+                  />
+                  <div className="flex justify-between items-center mt-3 pt-3 border-t border-zinc-800">
+                    <span className="text-xs text-zinc-600 flex items-center gap-1">
+                      <Sparkles size={10} className="text-violet-400" />
+                      Usando Claude Sonnet
+                    </span>
+                    <button
+                      onClick={handleAsk}
+                      disabled={askLoading || !askQuestion.trim()}
+                      className="bg-violet-600 hover:bg-violet-500 text-white rounded-xl px-4 py-2 text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    >
+                      {askLoading ? <Loader2 size={14} className="animate-spin" /> : "Perguntar"}
+                    </button>
                   </div>
-                  <div className="flex gap-2">
-                    <Textarea
-                      placeholder="Ex: Como melhorar a taxa de conversão de leads de noivado?"
-                      value={askQuestion}
-                      onChange={(e) => setAskQuestion(e.target.value)}
-                      className="min-h-[60px]"
-                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAsk(); } }}
-                    />
-                    <Button onClick={handleAsk} disabled={askLoading || !askQuestion.trim()} className="shrink-0">
-                      {askLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                  {aiAnswer && (
-                    <div className="rounded-lg bg-muted/50 p-4 whitespace-pre-wrap text-sm leading-relaxed">
+                </div>
+
+                <div className="flex gap-2 flex-wrap">
+                  {quickQuestions.map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => setAskQuestion(q)}
+                      className="bg-zinc-800/50 border border-zinc-700/50 hover:border-violet-500/30 hover:bg-violet-500/5 hover:text-violet-400 text-zinc-500 text-xs rounded-full px-3 py-1.5 transition-all"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+
+                {aiAnswer !== null && (
+                  <div className="bg-zinc-900 rounded-2xl border border-zinc-800 overflow-hidden">
+                    <div className="flex items-center gap-2 px-5 py-3 bg-zinc-800/50 border-b border-zinc-800">
+                      <Sparkles size={14} className="text-violet-400" />
+                      <span className="text-sm font-medium text-zinc-300">Resposta da IA</span>
+                    </div>
+                    <div className="p-5 text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">
                       {aiAnswer}
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {/* Script Modal */}
         <Dialog open={!!selectedScript} onOpenChange={() => setSelectedScript(null)}>
-          <DialogContent>
+          <DialogContent className="bg-zinc-900 border border-zinc-800 text-zinc-100 max-w-md rounded-2xl">
             <DialogHeader>
-              <DialogTitle>Script de Reengajamento</DialogTitle>
+              <DialogTitle className="flex items-center gap-2 text-zinc-100">
+                <MessageSquarePlus size={18} className="text-violet-400" />
+                Script gerado pela IA
+              </DialogTitle>
+              <DialogDescription className="text-zinc-500 text-sm">
+                Use este script para reengajar o lead via WhatsApp
+              </DialogDescription>
             </DialogHeader>
-            <div className="whitespace-pre-wrap text-sm bg-muted/50 rounded-lg p-4">
+            <div className="bg-zinc-800 rounded-xl p-4 text-sm text-zinc-200 leading-relaxed border border-zinc-700 whitespace-pre-wrap">
               {selectedScript}
             </div>
-            <Button onClick={() => selectedScript && handleCopy(selectedScript)}>
-              <Copy className="h-4 w-4 mr-1" /> Copiar
-            </Button>
+            <div className="flex gap-3 justify-end mt-4">
+              <button
+                onClick={() => selectedScript && handleCopy(selectedScript)}
+                className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 hover:border-violet-500/50 text-zinc-300 hover:text-violet-400 rounded-xl px-4 py-2 text-sm transition-all"
+              >
+                {copied ? (
+                  <>
+                    <Check size={14} />
+                    Copiado!
+                  </>
+                ) : (
+                  <>
+                    <Copy size={14} />
+                    Copiar texto
+                  </>
+                )}
+              </button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
     </AppLayout>
   );
 };
-
-const MetricCard: React.FC<{ title: string; value: string; color?: string }> = ({ title, value, color }) => (
-  <Card>
-    <CardContent className="pt-6">
-      <p className={`text-2xl font-semibold ${color || ""}`}>{value}</p>
-      <p className="text-sm text-muted-foreground mt-1">{title}</p>
-    </CardContent>
-  </Card>
-);
 
 export default AIAnalysis;
