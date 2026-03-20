@@ -22,6 +22,7 @@ import {
   Settings,
   Shield,
   LogOut,
+  Sparkles,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 
@@ -29,6 +30,7 @@ const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/" },
   { title: "CRM", icon: Users, path: "/crm" },
   { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp" },
+  { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis" },
   { title: "Configurações", icon: Settings, path: "/settings" },
   { title: "Admin", icon: Shield, path: "/admin" },
 ];

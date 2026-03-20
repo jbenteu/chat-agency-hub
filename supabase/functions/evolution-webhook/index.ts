@@ -681,6 +681,19 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Fire-and-forget: enfileira conversa para análise de IA
+        // Só enfileira mensagens INBOUND para não analisar as próprias respostas
+        if (!fromMe) {
+          supabase.from("ai_analysis_queue").upsert({
+            conversation_id: conversationId,
+            tenant_id: tenantId,
+            priority: 'high',
+            status: 'pending',
+          }, { onConflict: 'conversation_id', ignoreDuplicates: false })
+          .then(() => {})
+          .catch(() => {});
+        }
+
         processed++;
       }
 
