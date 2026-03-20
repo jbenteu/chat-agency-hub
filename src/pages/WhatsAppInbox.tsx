@@ -40,10 +40,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  MessageCircle, Send, Image, Paperclip, Search, Phone, User, Tag, X, Loader2,
-  ChevronRight, LayoutDashboard, Users, Settings, Shield, LogOut, Reply, Crown,
-  ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, ChevronUp,
-  Copy, Edit2, Check, ChevronDown, RefreshCw, QrCode,
+  MessageCircle, Send, Image, Paperclip, Search, X, Loader2,
+  LayoutDashboard, Users, Settings, Shield, LogOut, Reply,
+  ChevronDown, RefreshCw, QrCode,
 } from "lucide-react";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
