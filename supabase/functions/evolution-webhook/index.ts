@@ -218,8 +218,16 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
     mediaType = "sticker";
     mediaUrl = resolveMediaUrl(entry, data, contentNode.stickerMessage);
   } else if (contentNode.reactionMessage) {
-    content = contentNode.reactionMessage.text || "[Reação]";
-  } else if (contentNode.contactsArrayMessage || contentNode.contactMessage) {
+    // Reactions are handled separately — skip inserting as a new message
+    const reactionKey = contentNode.reactionMessage.key;
+    const reactionText = contentNode.reactionMessage.text || "";
+    return {
+      skip: true,
+      reason: "reaction",
+      reactionMessageId: reactionKey?.id || null,
+      reactionSender: entry?.key?.participant || entry?.key?.remoteJid || null,
+      reactionEmoji: reactionText,
+    } as const;
     content = "[Contato]";
   } else if (contentNode.locationMessage || contentNode.liveLocationMessage) {
     content = "[Localização]";
