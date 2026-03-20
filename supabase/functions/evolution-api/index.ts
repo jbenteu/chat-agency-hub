@@ -278,10 +278,14 @@ Deno.serve(async (req) => {
           url: webhookUrl,
           byEvents: false,
           base64: false,
-          events: [
+        events: [
             "MESSAGES_UPSERT",
             "MESSAGES_UPDATE",
             "CONNECTION_UPDATE",
+            "CHATS_UPDATE",
+            "PRESENCE_UPDATE",
+            "GROUPS_UPDATE",
+            "SEND_MESSAGE",
           ],
         },
       });
