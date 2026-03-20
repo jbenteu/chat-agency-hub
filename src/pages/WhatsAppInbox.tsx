@@ -7,6 +7,7 @@ import { ConversationFilters, type ConversationFilter } from "@/components/whats
 import { ConversationListItem } from "@/components/whatsapp/ConversationListItem";
 import { ChatHeader } from "@/components/whatsapp/ChatHeader";
 import { MessageStatusIcon } from "@/components/whatsapp/MessageStatusIcon";
+import type { UserRole } from "@/components/auth/AuthProvider";
 import { DateSeparator, getDateKey } from "@/components/whatsapp/DateSeparator";
 import { WhatsAppFormatted } from "@/components/whatsapp/WhatsAppFormatted";
 import { MessageContextMenu } from "@/components/whatsapp/MessageContextMenu";
@@ -51,13 +52,18 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { format } from "date-fns";
 import logo from "@/assets/logo.png";
 
-const navItems = [
-  { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { title: "CRM", icon: Users, path: "/crm" },
-  { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp" },
-  { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis" },
-  { title: "Configurações", icon: Settings, path: "/configuracoes" },
-  { title: "Admin", icon: Shield, path: "/admin" },
+import { UsersRound, UserCheck } from "lucide-react";
+
+interface InboxNavItem { title: string; icon: React.ElementType; path: string; roles: UserRole[]; }
+const navItems: InboxNavItem[] = [
+  { title: "Dashboard", icon: LayoutDashboard, path: "/", roles: ["admin","gerente","gestor","sucesso_cliente","cliente"] },
+  { title: "CRM", icon: Users, path: "/crm", roles: ["admin","gerente","gestor","sucesso_cliente","cliente"] },
+  { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp", roles: ["admin","gerente","gestor","sucesso_cliente","cliente"] },
+  { title: "Equipe", icon: UsersRound, path: "/equipe", roles: ["admin","gerente"] },
+  { title: "Clientes", icon: UserCheck, path: "/clientes", roles: ["admin","gerente","gestor","sucesso_cliente"] },
+  { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis", roles: ["admin","gerente","gestor","sucesso_cliente","cliente"] },
+  { title: "Painel Admin", icon: Shield, path: "/admin", roles: ["admin"] },
+  { title: "Configurações", icon: Settings, path: "/configuracoes", roles: ["admin","gerente","gestor","sucesso_cliente","cliente"] },
 ];
 
 const SENDER_COLORS = [
@@ -81,7 +87,8 @@ const WhatsAppInbox = () => {
   const navigate = useNavigate();
   const { analyzeConversation } = useAIAnalysis();
   const location = useLocation();
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
+  const userRole = profile?.role ?? "cliente";
   const {
     sendText, sendMedia, sendReaction, deleteMessage, archiveConversation, pinConversation,
     getProfilePicture, fetchGroupInfo,
@@ -1120,7 +1127,7 @@ const WhatsAppInbox = () => {
               <SidebarGroupLabel>Menu</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {navItems.map((item) => (
+                  {navItems.filter(item => item.roles.includes(userRole)).map((item) => (
                     <SidebarMenuItem key={item.path}>
                       <SidebarMenuButton asChild isActive={location.pathname === item.path} tooltip={item.title}>
                         <NavLink to={item.path}><item.icon className="h-4 w-4" /><span>{item.title}</span></NavLink>
