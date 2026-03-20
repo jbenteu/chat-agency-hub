@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import ReactMarkdown from "react-markdown";
 import { useAIAnalysis, type AIDashboardData } from "@/hooks/use-ai-analysis";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
