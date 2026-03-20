@@ -218,8 +218,16 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
     mediaType = "sticker";
     mediaUrl = resolveMediaUrl(entry, data, contentNode.stickerMessage);
   } else if (contentNode.reactionMessage) {
-    content = contentNode.reactionMessage.text || "[Reação]";
-  } else if (contentNode.contactsArrayMessage || contentNode.contactMessage) {
+    // Reactions are handled separately — skip inserting as a new message
+    const reactionKey = contentNode.reactionMessage.key;
+    const reactionText = contentNode.reactionMessage.text || "";
+    return {
+      skip: true,
+      reason: "reaction",
+      reactionMessageId: reactionKey?.id || null,
+      reactionSender: entry?.key?.participant || entry?.key?.remoteJid || null,
+      reactionEmoji: reactionText,
+    } as const;
     content = "[Contato]";
   } else if (contentNode.locationMessage || contentNode.liveLocationMessage) {
     content = "[Localização]";
@@ -379,7 +387,40 @@ Deno.serve(async (req) => {
         }
 
         const parsed = parseMessagePayload(entry, data);
-        if (parsed.skip) continue;
+        if (parsed.skip) {
+          // Handle reactions: update metadata on original message
+          if ("reason" in parsed && parsed.reason === "reaction" && "reactionMessageId" in parsed) {
+            const reactionMsgId = (parsed as any).reactionMessageId as string | null;
+            const reactionSender = (parsed as any).reactionSender as string | null;
+            const reactionEmoji = (parsed as any).reactionEmoji as string;
+            if (reactionMsgId && reactionSender) {
+              // Find the original message
+              const { data: origMsg } = await supabase
+                .from("whatsapp_messages")
+                .select("id, metadata")
+                .eq("tenant_id", tenantId)
+                .eq("message_id", reactionMsgId)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (origMsg) {
+                const meta = (origMsg.metadata || {}) as Record<string, unknown>;
+                const reactions = (meta.reactions || {}) as Record<string, string>;
+                if (reactionEmoji) {
+                  reactions[reactionSender] = reactionEmoji;
+                } else {
+                  delete reactions[reactionSender]; // empty = remove reaction
+                }
+                await supabase
+                  .from("whatsapp_messages")
+                  .update({ metadata: { ...meta, reactions } })
+                  .eq("tenant_id", tenantId)
+                  .eq("id", origMsg.id);
+              }
+            }
+          }
+          continue;
+        }
 
         const participantJid: string | null =
           key?.participant || entry?.participant || data?.participant || null;
@@ -689,6 +730,76 @@ Deno.serve(async (req) => {
       );
 
       return jsonResponse({ ok: true, event: "status_updated" });
+    }
+
+    // ─── chats.update ───────────────────────────────────────────────────────
+    if (event === "chats.update") {
+      // When user reads messages on their phone, zero the unread count
+      const chats = Array.isArray(data) ? data : [data];
+      for (const chat of chats) {
+        const chatJid = chat?.id || chat?.remoteJid || chat?.jid;
+        if (!chatJid) continue;
+        const unreadCount = chat?.unreadCount ?? chat?.unread_count;
+        if (typeof unreadCount === "number" && unreadCount === 0) {
+          await supabase
+            .from("whatsapp_conversations")
+            .update({ unread_count: 0 })
+            .eq("tenant_id", tenantId)
+            .eq("instance_id", instanceId)
+            .eq("remote_jid", chatJid);
+        }
+      }
+      return jsonResponse({ ok: true, event: "chats_updated" });
+    }
+
+    // ─── presence.update ────────────────────────────────────────────────────
+    if (event === "presence.update") {
+      const presenceJid = data?.id || data?.remoteJid || data?.jid;
+      const presences = data?.presences || data?.participants || {};
+      if (presenceJid) {
+        // Find if anyone is typing/recording
+        let typingState: string | null = null;
+        for (const [, pData] of Object.entries(presences)) {
+          const p = pData as Record<string, unknown>;
+          if (p?.lastKnownPresence === "composing" || p?.lastKnownPresence === "recording") {
+            typingState = p.lastKnownPresence as string;
+            break;
+          }
+        }
+        await supabase
+          .from("whatsapp_conversations")
+          .update({
+            typing_presence: typingState,
+            typing_updated_at: new Date().toISOString(),
+          })
+          .eq("tenant_id", tenantId)
+          .eq("instance_id", instanceId)
+          .eq("remote_jid", presenceJid);
+      }
+      return jsonResponse({ ok: true, event: "presence_updated" });
+    }
+
+    // ─── groups.update ──────────────────────────────────────────────────────
+    if (event === "groups.update") {
+      const groups = Array.isArray(data) ? data : [data];
+      for (const group of groups) {
+        const groupJid = group?.id || group?.jid;
+        if (!groupJid) continue;
+        const patch: Record<string, unknown> = {};
+        const subject = group?.subject || group?.name;
+        if (subject) patch.contact_name = subject;
+        const pictureUrl = group?.pictureUrl || group?.profilePictureUrl;
+        if (pictureUrl) patch.profile_picture_url = pictureUrl;
+        if (Object.keys(patch).length > 0) {
+          await supabase
+            .from("whatsapp_conversations")
+            .update(patch)
+            .eq("tenant_id", tenantId)
+            .eq("instance_id", instanceId)
+            .eq("remote_jid", groupJid);
+        }
+      }
+      return jsonResponse({ ok: true, event: "groups_updated" });
     }
 
     return jsonResponse({ ok: true, skipped: "unhandled event" });

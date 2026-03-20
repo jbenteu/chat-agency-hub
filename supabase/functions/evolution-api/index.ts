@@ -278,10 +278,14 @@ Deno.serve(async (req) => {
           url: webhookUrl,
           byEvents: false,
           base64: false,
-          events: [
+        events: [
             "MESSAGES_UPSERT",
             "MESSAGES_UPDATE",
             "CONNECTION_UPDATE",
+            "CHATS_UPDATE",
+            "PRESENCE_UPDATE",
+            "GROUPS_UPDATE",
+            "SEND_MESSAGE",
           ],
         },
       });
@@ -447,7 +451,10 @@ Deno.serve(async (req) => {
             url: webhookUrl,
             webhook_by_events: false,
             webhook_base64: false,
-            events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"],
+            events: [
+              "MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE",
+              "CHATS_UPDATE", "PRESENCE_UPDATE", "GROUPS_UPDATE", "SEND_MESSAGE",
+            ],
             enabled: true,
           }),
         },
@@ -1158,6 +1165,207 @@ Deno.serve(async (req) => {
         } catch { /* try next */ }
       }
       return jsonResponse({ error: "Failed to demote participant" }, 500);
+    }
+
+    // ── send_reaction ──────────────────────────────────────────────────────
+    if (action === "send_reaction") {
+      const { remoteJid, messageId, reaction } = body as {
+        remoteJid?: string; messageId?: string; reaction?: string;
+      };
+      if (!instanceName || !remoteJid || !messageId)
+        return jsonResponse({ error: "instanceName, remoteJid e messageId são obrigatórios" }, 400);
+      const evoData = await requestEvolution(
+        `/message/sendReaction/${instanceName}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            reactionMessage: {
+              key: { remoteJid, id: messageId },
+              reaction: reaction || "",
+            },
+          }),
+        },
+        "send_reaction",
+      );
+      return jsonResponse({ success: true, data: evoData });
+    }
+
+    // ── delete_message ──────────────────────────────────────────────────────
+    if (action === "delete_message") {
+      const { remoteJid, messageId } = body as {
+        remoteJid?: string; messageId?: string;
+      };
+      if (!instanceName || !remoteJid || !messageId)
+        return jsonResponse({ error: "instanceName, remoteJid e messageId são obrigatórios" }, 400);
+
+      // Revoke on WhatsApp
+      try {
+        await requestEvolution(
+          `/chat/deleteMessageForEveryone/${instanceName}`,
+          {
+            method: "DELETE",
+            body: JSON.stringify({ id: messageId, remoteJid, fromMe: true }),
+          },
+          "delete_message",
+        );
+      } catch (e) {
+        console.warn("delete_message Evolution API warning:", e);
+      }
+
+      // Mark as deleted in DB
+      await supabaseAdmin
+        .from("whatsapp_messages")
+        .update({
+          content: "🚫 Mensagem apagada",
+          metadata: { deleted: true, deletedAt: new Date().toISOString() },
+        })
+        .eq("tenant_id", tenantId)
+        .eq("message_id", messageId);
+
+      return jsonResponse({ success: true });
+    }
+
+    // ── mark_as_read ────────────────────────────────────────────────────────
+    if (action === "mark_as_read") {
+      const { conversationId, remoteJid } = body as {
+        conversationId?: string; remoteJid?: string;
+      };
+      if (!conversationId)
+        return jsonResponse({ error: "conversationId é obrigatório" }, 400);
+
+      await supabaseAdmin
+        .from("whatsapp_conversations")
+        .update({ unread_count: 0 })
+        .eq("tenant_id", tenantId)
+        .eq("id", conversationId);
+
+      // Inform Evolution API (best-effort)
+      if (instanceName && remoteJid) {
+        try {
+          await requestEvolution(
+            `/chat/markMessageAsRead/${instanceName}`,
+            {
+              method: "PUT",
+              body: JSON.stringify({ readMessages: [{ remoteJid, id: "all" }] }),
+            },
+            "mark_as_read",
+          );
+        } catch { /* best-effort */ }
+      }
+
+      return jsonResponse({ success: true });
+    }
+
+    // ── update_presence ─────────────────────────────────────────────────────
+    if (action === "update_presence") {
+      const { remoteJid, presence } = body as {
+        remoteJid?: string; presence?: string;
+      };
+      if (!instanceName || !remoteJid)
+        return jsonResponse({ error: "instanceName e remoteJid são obrigatórios" }, 400);
+      try {
+        await requestEvolution(
+          `/chat/updatePresence/${instanceName}`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              number: remoteJid,
+              presence: presence || "composing",
+            }),
+          },
+          "update_presence",
+        );
+      } catch { /* best-effort */ }
+      return jsonResponse({ success: true });
+    }
+
+    // ── archive_conversation ────────────────────────────────────────────────
+    if (action === "archive_conversation") {
+      const { conversationId, archived } = body as {
+        conversationId?: string; archived?: boolean;
+      };
+      if (!conversationId)
+        return jsonResponse({ error: "conversationId é obrigatório" }, 400);
+      await supabaseAdmin
+        .from("whatsapp_conversations")
+        .update({ archived: archived !== false })
+        .eq("tenant_id", tenantId)
+        .eq("id", conversationId);
+      return jsonResponse({ success: true });
+    }
+
+    // ── pin_conversation ────────────────────────────────────────────────────
+    if (action === "pin_conversation") {
+      const { conversationId, pinned } = body as {
+        conversationId?: string; pinned?: boolean;
+      };
+      if (!conversationId)
+        return jsonResponse({ error: "conversationId é obrigatório" }, 400);
+      await supabaseAdmin
+        .from("whatsapp_conversations")
+        .update({ pinned: pinned !== false })
+        .eq("tenant_id", tenantId)
+        .eq("id", conversationId);
+      return jsonResponse({ success: true });
+    }
+
+    // ── update_conversation_status ──────────────────────────────────────────
+    if (action === "update_conversation_status") {
+      const { conversationId, status } = body as {
+        conversationId?: string; status?: string;
+      };
+      if (!conversationId || !status)
+        return jsonResponse({ error: "conversationId e status são obrigatórios" }, 400);
+      const validStatuses = ["open", "pending", "resolved"];
+      if (!validStatuses.includes(status))
+        return jsonResponse({ error: `status deve ser: ${validStatuses.join(", ")}` }, 400);
+      await supabaseAdmin
+        .from("whatsapp_conversations")
+        .update({ status })
+        .eq("tenant_id", tenantId)
+        .eq("id", conversationId);
+      return jsonResponse({ success: true });
+    }
+
+    // ── search_messages ─────────────────────────────────────────────────────
+    if (action === "search_messages") {
+      const { conversationId, query: searchQuery, limit: searchLimit } = body as {
+        conversationId?: string; query?: string; limit?: number;
+      };
+      if (!conversationId || !searchQuery)
+        return jsonResponse({ error: "conversationId e query são obrigatórios" }, 400);
+
+      // Verify conversation belongs to tenant
+      const { data: convCheck } = await supabaseAdmin
+        .from("whatsapp_conversations")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("id", conversationId)
+        .limit(1)
+        .maybeSingle();
+      if (!convCheck) return jsonResponse({ error: "Conversa não encontrada" }, 404);
+
+      const effectiveLimit = Math.min(Number(searchLimit) || 30, 100);
+
+      // Use full-text search with Portuguese config
+      const tsQuery = searchQuery
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((w) => `${w}:*`)
+        .join(" & ");
+
+      const { data: messages, error } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("conversation_id", conversationId)
+        .textSearch("content", tsQuery, { config: "portuguese" })
+        .order("created_at", { ascending: false })
+        .limit(effectiveLimit);
+
+      if (error) throw new Error(`Search error: ${error.message}`);
+      return jsonResponse({ success: true, messages: (messages || []).reverse() });
     }
 
     return jsonResponse({ error: `Unknown action: ${action}` }, 400);
