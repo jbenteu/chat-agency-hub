@@ -14,6 +14,9 @@ import WhatsAppInbox from "./pages/WhatsAppInbox";
 import SettingsPage from "./pages/Settings";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
+import React, { Suspense } from "react";
+
+const AIAnalysis = React.lazy(() => import("./pages/AIAnalysis"));
 
 const queryClient = new QueryClient();
 
