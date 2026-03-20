@@ -18,6 +18,9 @@ interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  /** Role from user_roles table (app_role enum) */
+  appRole: string | null;
+  isSuperAdmin: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -27,6 +30,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   loading: true,
+  appRole: null,
+  isSuperAdmin: false,
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -36,6 +41,7 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [appRole, setAppRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const initializedRef = useRef(false);
 
@@ -55,9 +61,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const fetchAppRole = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .order("role", { ascending: true })
+        .limit(1)
+        .single();
+
+      if (!error && data) {
+        setAppRole(data.role as string);
+      } else {
+        setAppRole(null);
+      }
+    } catch {
+      setAppRole(null);
+    }
+  };
+
   const refreshProfile = async () => {
     if (session?.user?.id) {
-      await fetchProfile(session.user.id);
+      await Promise.all([fetchProfile(session.user.id), fetchAppRole(session.user.id)]);
     }
   };
 
@@ -69,14 +95,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(nextSession);
 
       if (nextSession?.user?.id) {
-        await fetchProfile(nextSession.user.id);
+        await Promise.all([fetchProfile(nextSession.user.id), fetchAppRole(nextSession.user.id)]);
       } else {
         setProfile(null);
+        setAppRole(null);
       }
 
       if (!initializedRef.current) {
         initializedRef.current = true;
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
@@ -87,14 +114,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(nextSession);
 
       if (nextSession?.user?.id) {
-        await fetchProfile(nextSession.user.id);
+        await Promise.all([fetchProfile(nextSession.user.id), fetchAppRole(nextSession.user.id)]);
       } else {
         setProfile(null);
+        setAppRole(null);
       }
 
       if (!initializedRef.current) {
         initializedRef.current = true;
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     });
 
@@ -127,10 +155,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
+    setAppRole(null);
   };
 
+  const isSuperAdmin = appRole === "super_admin" || appRole === "admin";
+
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, loading, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, loading, appRole, isSuperAdmin, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
