@@ -476,6 +476,7 @@ export type Database = {
       }
       whatsapp_conversations: {
         Row: {
+          archived: boolean
           assigned_to: string | null
           contact_id: string | null
           contact_name: string | null
@@ -485,14 +486,19 @@ export type Database = {
           instance_id: string
           last_message: string | null
           last_message_at: string | null
+          muted_until: string | null
+          pinned: boolean
           profile_picture_url: string | null
           remote_jid: string
           status: string | null
           tenant_id: string
+          typing_presence: string | null
+          typing_updated_at: string | null
           unread_count: number | null
           updated_at: string | null
         }
         Insert: {
+          archived?: boolean
           assigned_to?: string | null
           contact_id?: string | null
           contact_name?: string | null
@@ -502,14 +508,19 @@ export type Database = {
           instance_id: string
           last_message?: string | null
           last_message_at?: string | null
+          muted_until?: string | null
+          pinned?: boolean
           profile_picture_url?: string | null
           remote_jid: string
           status?: string | null
           tenant_id: string
+          typing_presence?: string | null
+          typing_updated_at?: string | null
           unread_count?: number | null
           updated_at?: string | null
         }
         Update: {
+          archived?: boolean
           assigned_to?: string | null
           contact_id?: string | null
           contact_name?: string | null
@@ -519,10 +530,14 @@ export type Database = {
           instance_id?: string
           last_message?: string | null
           last_message_at?: string | null
+          muted_until?: string | null
+          pinned?: boolean
           profile_picture_url?: string | null
           remote_jid?: string
           status?: string | null
           tenant_id?: string
+          typing_presence?: string | null
+          typing_updated_at?: string | null
           unread_count?: number | null
           updated_at?: string | null
         }
