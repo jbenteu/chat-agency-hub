@@ -138,6 +138,7 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   const [reloading, setReloading] = useState(false);
   const [triedDirectUrlFallback, setTriedDirectUrlFallback] = useState(false);
   const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const fetchedRef = useRef(false);
 
   const tryRedownload = async () => {
