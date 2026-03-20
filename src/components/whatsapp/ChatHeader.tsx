@@ -99,6 +99,19 @@ export function ChatHeader({
       </div>
 
       <div className="flex items-center gap-1">
+        {onAnalyze && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 text-xs text-violet-600 hover:text-violet-700 hover:bg-violet-50"
+            onClick={onAnalyze}
+            disabled={analyzing}
+            title="Analisar atendimento com IA"
+          >
+            <Sparkles className={`h-3.5 w-3.5 ${analyzing ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Analisar</span>
+          </Button>
+        )}
         {onSearchClick && (
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onSearchClick} title="Buscar na conversa">
             <Search className="h-4 w-4" />
