@@ -110,6 +110,7 @@ const WhatsAppInbox = () => {
   const [sendingCount, setSendingCount] = useState(0);
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [showNewConvDialog, setShowNewConvDialog] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const isMobile = useIsMobile();
   // (Contact details, editing, invite link now managed by InfoPanel)
   // Setup flow state (no instances)
