@@ -1098,8 +1098,6 @@ const WhatsAppInbox = () => {
               <span className="text-sm font-semibold text-sidebar-accent-foreground group-data-[collapsible=icon]:hidden">Advanced Marketing</span>
             </div>
           </SidebarHeader>
-            </div>
-          </SidebarHeader>
           <SidebarContent>
             <SidebarGroup>
               <SidebarGroupLabel>Menu</SidebarGroupLabel>
