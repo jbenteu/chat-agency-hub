@@ -109,6 +109,7 @@ const WhatsAppInbox = () => {
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("all");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [sendingCount, setSendingCount] = useState(0);
   const [contactDetails, setContactDetails] = useState<ContactDetails | null>(null);
   const [editingContact, setEditingContact] = useState(false);
   const [contactForm, setContactForm] = useState<Record<string, string>>({});
