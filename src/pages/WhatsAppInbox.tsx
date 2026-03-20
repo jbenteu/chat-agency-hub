@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
 import { MediaMessage } from "@/components/whatsapp/MediaMessage";
-import { TagSelector } from "@/components/whatsapp/TagSelector";
+
 import { ConversationFilters, type ConversationFilter } from "@/components/whatsapp/ConversationFilters";
 import { ConversationListItem } from "@/components/whatsapp/ConversationListItem";
 import { ChatHeader } from "@/components/whatsapp/ChatHeader";
@@ -10,6 +10,9 @@ import { DateSeparator, getDateKey } from "@/components/whatsapp/DateSeparator";
 import { WhatsAppFormatted } from "@/components/whatsapp/WhatsAppFormatted";
 import { MessageContextMenu } from "@/components/whatsapp/MessageContextMenu";
 import { ScrollToBottom } from "@/components/whatsapp/ScrollToBottom";
+import { EmojiPicker } from "@/components/whatsapp/EmojiPicker";
+import { AudioRecorder } from "@/components/whatsapp/AudioRecorder";
+import { InfoPanel } from "@/components/whatsapp/InfoPanel";
 import {
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
@@ -34,18 +37,14 @@ import {
   SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
   SidebarProvider, SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  MessageCircle, Send, Image, Paperclip, Search, Phone, User, Tag, X, Loader2,
-  ChevronRight, LayoutDashboard, Users, Settings, Shield, LogOut, Reply, Crown,
-  ShieldCheck, Mail, Building2, MapPin, Clock, Link2, UserMinus, ChevronUp,
-  Copy, Edit2, Check, ChevronDown, RefreshCw, QrCode,
+  MessageCircle, Send, Image, Paperclip, Search, X, Loader2,
+  LayoutDashboard, Users, Settings, Shield, LogOut, Reply,
+  ChevronDown, RefreshCw, QrCode,
 } from "lucide-react";
-import { format, isToday, isYesterday } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { formatPhoneWhatsApp, formatPhoneEdit, maskPhoneInput, detectCountryCode, COUNTRY_CODES } from "@/data/country-codes";
-import { BRAZIL_STATES, BRAZIL_CITIES } from "@/data/brazil-locations";
+import { format } from "date-fns";
 import logo from "@/assets/logo.png";
 
 const navItems = [
@@ -70,11 +69,7 @@ function getSenderColor(sender: string): string {
 
 interface ReplyTarget { messageId: string; content: string; senderName: string; }
 
-interface ContactDetails {
-  id: string; name: string; email: string | null; phone: string | null;
-  company: string | null; notes: string | null; tags: string[];
-  custom_fields: Record<string, string>; created_at: string;
-}
+// ContactDetails type moved to InfoPanel
 
 const WhatsAppInbox = () => {
   const { toast } = useToast();
@@ -83,9 +78,7 @@ const WhatsAppInbox = () => {
   const { user, signOut } = useAuth();
   const {
     sendText, sendMedia, sendReaction, deleteMessage, archiveConversation, pinConversation,
-    getProfilePicture, fetchGroupInfo, getContact, updateContact,
-    getGroupInviteLink, removeGroupParticipant, promoteGroupParticipant,
-    demoteGroupParticipant,
+    getProfilePicture, fetchGroupInfo,
     createInstance, getQrCode, getConnectionStatus, deleteInstance,
     loading: evoLoading,
   } = useEvolutionApi();
@@ -111,12 +104,7 @@ const WhatsAppInbox = () => {
   const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("all");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [sendingCount, setSendingCount] = useState(0);
-  const [contactDetails, setContactDetails] = useState<ContactDetails | null>(null);
-  const [editingContact, setEditingContact] = useState(false);
-  const [contactForm, setContactForm] = useState<Record<string, string>>({});
-  const [savingContact, setSavingContact] = useState(false);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
-  const [loadingInvite, setLoadingInvite] = useState(false);
+  // (Contact details, editing, invite link now managed by InfoPanel)
   // Setup flow state (no instances)
   const [setupDisplayName, setSetupDisplayName] = useState("");
   const [setupQrCode, setSetupQrCode] = useState<string | null>(null);
@@ -690,18 +678,7 @@ const WhatsAppInbox = () => {
     fetchGI();
   }, [selectedConv?.id, selectedConv?.remote_jid, groupInfoCache, instances, selectedInstanceId, fetchGroupInfo]);
 
-  // ── Load contact details when panel opens ──
-  useEffect(() => {
-    if (!showContactPanel || !selectedConv || isGroupJid(selectedConv.remote_jid)) { setContactDetails(null); return; }
-    if (!selectedConv.contact_id) { setContactDetails(null); return; }
-    const loadContact = async () => {
-      try {
-        const data = await getContact(selectedConv.contact_id!);
-        if (data?.contact) setContactDetails(data.contact);
-      } catch { /* ignore */ }
-    };
-    loadContact();
-  }, [showContactPanel, selectedConv?.contact_id, getContact]);
+  // Contact details loading moved to InfoPanel
 
   const isTransientEvolutionError = (err: unknown) => {
     const msg = String((err as { message?: string })?.message || err || "");
@@ -891,7 +868,7 @@ const WhatsAppInbox = () => {
     }
   };
   const formatDate = (d: string) => { try { const date = new Date(d); const today = new Date(); if (date.toDateString() === today.toDateString()) return formatTime(d); return format(date, "dd/MM/yyyy HH:mm"); } catch { return ""; } };
-  const formatFullDate = (d: string) => { try { return format(new Date(d), "dd/MM/yyyy 'às' HH:mm"); } catch { return ""; } };
+  
 
   const isMediaPlaceholder = (content: string | null) => {
     if (!content) return false;
@@ -907,9 +884,7 @@ const WhatsAppInbox = () => {
     return false;
   };
   
-  // Phone editing state
-  const [phoneCountryCode, setPhoneCountryCode] = useState("+55");
-  const [phoneCountryOpen, setPhoneCountryOpen] = useState(false);
+  // Phone editing state moved to InfoPanel
 
   // Inline contact rename state
   const [inlineEditingName, setInlineEditingName] = useState(false);
@@ -939,18 +914,7 @@ const WhatsAppInbox = () => {
     } catch { toast({ title: "Erro ao renomear", variant: "destructive" }); }
   };
   
-  // Tag create handler via edge function
-  const handleCreateTag = async (name: string, color: string) => {
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) return;
-      await supabase.functions.invoke("evolution-api", {
-        body: { action: "create_tag", name, color },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch { /* ignore */ }
-  };
+  // Tag create handler moved to InfoPanel
   const isGroupJid = (jid: string) => jid.endsWith("@g.us");
 
   const getSenderName = (msg: WhatsAppMessage): string | null => {
@@ -974,111 +938,7 @@ const WhatsAppInbox = () => {
 
   const currentGroupInfo = selectedConv ? groupInfoCache[selectedConv.remote_jid] : null;
 
-  // ── Contact editing ──
-  const startEditingContact = () => {
-    if (!contactDetails) return;
-    setPhoneCountryCode(detectCountryCode(contactDetails.phone));
-    setContactForm({
-      name: contactDetails.name || "",
-      email: contactDetails.email || "",
-      phone: formatPhoneEdit(contactDetails.phone),
-      company: contactDetails.company || "",
-      city: contactDetails.custom_fields?.city || "",
-      state: contactDetails.custom_fields?.state || "",
-      address: contactDetails.custom_fields?.address || "",
-      tags: (contactDetails.tags || []).join(","),
-    });
-    setEditingContact(true);
-  };
-
-  const saveContact = async () => {
-    if (!contactDetails) return;
-    setSavingContact(true);
-    try {
-      // Build full phone with country code
-      const phoneDigits = contactForm.phone.replace(/\D/g, "");
-      const countryDigits = phoneCountryCode.replace(/\D/g, "");
-      const fullPhone = phoneDigits ? `${countryDigits}${phoneDigits}` : null;
-      const tags = contactForm.tags ? contactForm.tags.split(",").filter(Boolean) : contactDetails.tags;
-      
-      await updateContact(contactDetails.id, {
-        name: contactForm.name || contactDetails.name,
-        email: contactForm.email || null,
-        phone: fullPhone,
-        company: contactForm.company || null,
-        tags,
-        custom_fields: {
-          ...contactDetails.custom_fields,
-          city: contactForm.city || "",
-          state: contactForm.state || "",
-          address: contactForm.address || "",
-        },
-      });
-      setContactDetails({ ...contactDetails, name: contactForm.name || contactDetails.name, email: contactForm.email || null, phone: fullPhone, company: contactForm.company || null, tags, custom_fields: { ...contactDetails.custom_fields, city: contactForm.city || "", state: contactForm.state || "", address: contactForm.address || "" } });
-      setEditingContact(false);
-      toast({ title: "Contato atualizado" });
-    } catch (err: any) { toast({ title: "Erro", description: err?.message, variant: "destructive" }); }
-    finally { setSavingContact(false); }
-  };
-
-  // ── Group actions ──
-  const handleGetInviteLink = async () => {
-    if (!selectedConv) return;
-    const inst = instances.find((i) => i.id === selectedInstanceId);
-    if (!inst) return;
-    setLoadingInvite(true);
-    try {
-      const data = await getGroupInviteLink(inst.instance_name, selectedConv.remote_jid);
-      if (data?.inviteLink) { setInviteLink(data.inviteLink); navigator.clipboard.writeText(data.inviteLink); toast({ title: "Link copiado!" }); }
-      else toast({ title: "Não foi possível gerar o link", variant: "destructive" });
-    } catch (err: any) { toast({ title: "Erro", description: err?.message, variant: "destructive" }); }
-    finally { setLoadingInvite(false); }
-  };
-
-  const handleRemoveParticipant = async (participantJid: string) => {
-    if (!selectedConv) return;
-    const inst = instances.find((i) => i.id === selectedInstanceId);
-    if (!inst) return;
-    try {
-      await removeGroupParticipant(inst.instance_name, selectedConv.remote_jid, participantJid);
-      setGroupInfoCache((prev) => {
-        const gi = prev[selectedConv.remote_jid];
-        if (!gi) return prev;
-        return { ...prev, [selectedConv.remote_jid]: { ...gi, participants: gi.participants.filter((p) => p.id !== participantJid), size: (gi.size || 1) - 1 } };
-      });
-      toast({ title: "Participante removido" });
-    } catch (err: any) { toast({ title: "Erro", description: err?.message, variant: "destructive" }); }
-  };
-
-  const handlePromoteParticipant = async (participantJid: string) => {
-    if (!selectedConv) return;
-    const inst = instances.find((i) => i.id === selectedInstanceId);
-    if (!inst) return;
-    try {
-      await promoteGroupParticipant(inst.instance_name, selectedConv.remote_jid, participantJid);
-      setGroupInfoCache((prev) => {
-        const gi = prev[selectedConv.remote_jid];
-        if (!gi) return prev;
-        return { ...prev, [selectedConv.remote_jid]: { ...gi, participants: gi.participants.map((p) => p.id === participantJid ? { ...p, admin: "admin" } : p) } };
-      });
-      toast({ title: "Participante promovido a admin" });
-    } catch (err: any) { toast({ title: "Erro", description: err?.message, variant: "destructive" }); }
-  };
-
-  const handleDemoteParticipant = async (participantJid: string) => {
-    if (!selectedConv) return;
-    const inst = instances.find((i) => i.id === selectedInstanceId);
-    if (!inst) return;
-    try {
-      await demoteGroupParticipant(inst.instance_name, selectedConv.remote_jid, participantJid);
-      setGroupInfoCache((prev) => {
-        const gi = prev[selectedConv.remote_jid];
-        if (!gi) return prev;
-        return { ...prev, [selectedConv.remote_jid]: { ...gi, participants: gi.participants.map((p) => p.id === participantJid ? { ...p, admin: null } : p) } };
-      });
-      toast({ title: "Admin removido do participante" });
-    } catch (err: any) { toast({ title: "Erro", description: err?.message, variant: "destructive" }); }
-  };
+  // Contact editing and group actions moved to InfoPanel
 
   // ── Setup flow handlers ──
   const handleSetupCreate = async () => {
@@ -1334,7 +1194,7 @@ const WhatsAppInbox = () => {
                         isSelected={selectedConv?.id === c.id}
                         profilePicUrl={profilePics[c.remote_jid] || c.profile_picture_url || undefined}
                         isTyping={!!isTyping}
-                        onClick={() => { setSelectedConv(c); setShowContactPanel(false); setReplyTarget(null); setContactDetails(null); setEditingContact(false); setInviteLink(null); }}
+                        onClick={() => { setSelectedConv(c); setShowContactPanel(false); setReplyTarget(null); }}
                         formatTime={formatConvTime}
                       />
                     </div>
@@ -1546,12 +1406,41 @@ const WhatsAppInbox = () => {
                 <div className="border-t border-border px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     <input type="file" ref={fileInputRef} className="hidden" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" onChange={handleFileUpload} />
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => fileInputRef.current?.click()}><Paperclip className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => { if (!fileInputRef.current) return; fileInputRef.current.accept = "image/*"; fileInputRef.current.click(); fileInputRef.current.accept = "image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"; }}><Image className="h-4 w-4" /></Button>
+                    <EmojiPicker onSelect={(emoji) => setMessageText((prev) => prev + emoji)} />
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => fileInputRef.current?.click()} title="Anexar arquivo"><Paperclip className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => { if (!fileInputRef.current) return; fileInputRef.current.accept = "image/*"; fileInputRef.current.click(); fileInputRef.current.accept = "image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"; }} title="Enviar imagem"><Image className="h-4 w-4" /></Button>
                     <Input placeholder="Digite uma mensagem…" className="flex-1 h-8" value={messageText} onChange={(e) => setMessageText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); } }} />
-                    <Button size="icon" className="h-8 w-8 shrink-0" onClick={handleSendText} disabled={!messageText.trim()}>
-                      {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    </Button>
+                    {messageText.trim() ? (
+                      <Button size="icon" className="h-8 w-8 shrink-0" onClick={handleSendText} disabled={isSending}>
+                        {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      </Button>
+                    ) : (
+                      <AudioRecorder onSend={(base64, mimeType, _duration) => {
+                        const inst = instances.find((i) => i.id === selectedConv?.instance_id);
+                        if (!inst || !selectedConv) return;
+                        const now = new Date().toISOString();
+                        const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                        const optimisticMessage: WhatsAppMessage = {
+                          id: tempId, tenant_id: selectedConv.tenant_id, conversation_id: selectedConv.id,
+                          message_id: null, direction: "outbound", content: "[Áudio]", media_url: null,
+                          media_type: "audio", media_mime_type: mimeType, media_thumbnail: null,
+                          media_width: null, media_height: null, status: "pending",
+                          metadata: { optimistic: true }, created_at: now,
+                        };
+                        addOptimisticMessage(optimisticMessage);
+                        updateConversationPreview(selectedConv.id, "[Áudio]", now);
+                        setSendingCount((c) => c + 1);
+                        sendMedia(inst.instance_name, selectedConv.remote_jid, "audio", base64, undefined, "audio.ogg")
+                          .catch((err: any) => {
+                            removeOptimisticMessage(tempId);
+                            toast({ title: "Erro ao enviar áudio", description: err?.message, variant: "destructive" });
+                          })
+                          .finally(() => setSendingCount((c) => Math.max(0, c - 1)));
+                      }} />
+                    )}
+                    {messageText.length > 500 && (
+                      <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{messageText.length}</span>
+                    )}
                   </div>
                 </div>
               </>
@@ -1566,248 +1455,15 @@ const WhatsAppInbox = () => {
 
           {/* Detail panel */}
           {showContactPanel && selectedConv && (
-            <div className="w-80 border-l border-border overflow-hidden flex flex-col bg-background">
-              <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-                <h3 className="text-sm font-semibold">
-                  {isGroupJid(selectedConv.remote_jid) ? "Detalhes do grupo" : "Contatos"}
-                </h3>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowContactPanel(false)}><X className="h-3.5 w-3.5" /></Button>
-              </div>
-
-              <ScrollArea className="flex-1">
-                <div className="space-y-4 p-4">
-                  {/* Avatar & Name */}
-                  <div className="flex flex-col items-center text-center">
-                    <Avatar className="mb-2 h-16 w-16">
-                      {profilePics[selectedConv.remote_jid] && <AvatarImage src={profilePics[selectedConv.remote_jid]} alt={selectedConv.contact_name || ""} />}
-                      <AvatarFallback className="bg-primary/10 text-lg text-primary">
-                        {isGroupJid(selectedConv.remote_jid) ? <Users className="h-7 w-7" /> : getInitials(selectedConv.contact_name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <p className="text-sm font-semibold">{selectedConv.contact_name || "Desconhecido"}</p>
-                    {/* Created at with icon */}
-                    <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      <span>Criado {formatFullDate(selectedConv.created_at)}</span>
-                    </div>
-                  </div>
-
-                  {/* ── GROUP PANEL ── */}
-                  {isGroupJid(selectedConv.remote_jid) ? (
-                    <>
-                      {currentGroupInfo?.description && (
-                        <>
-                          <Separator />
-                          <div>
-                            <p className="mb-1 text-xs font-medium">Descrição</p>
-                            <p className="text-xs text-muted-foreground whitespace-pre-wrap">{currentGroupInfo.description}</p>
-                          </div>
-                        </>
-                      )}
-
-                      <Separator />
-
-                      {/* Invite link */}
-                      <div>
-                        <Button variant="outline" size="sm" className="w-full text-xs" onClick={handleGetInviteLink} disabled={loadingInvite}>
-                          {loadingInvite ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Link2 className="mr-1.5 h-3 w-3" />}
-                          Gerar link de convite
-                        </Button>
-                        {inviteLink && (
-                          <div className="mt-2 flex items-center gap-1 rounded bg-muted p-2">
-                            <p className="flex-1 truncate text-[10px] text-muted-foreground">{inviteLink}</p>
-                            <button onClick={() => { navigator.clipboard.writeText(inviteLink); toast({ title: "Copiado!" }); }} className="shrink-0 p-1 hover:bg-accent rounded"><Copy className="h-3 w-3" /></button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Participants */}
-                      {currentGroupInfo?.participants && currentGroupInfo.participants.length > 0 && (
-                        <>
-                          <Separator />
-                          <div>
-                            <p className="mb-2 text-xs font-medium">{currentGroupInfo.participants.length} participantes</p>
-                            <div className="space-y-1 max-h-[400px] overflow-y-auto">
-                              {currentGroupInfo.participants.map((p, idx) => (
-                                <div key={p.id || idx} className="group/p flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-muted/50">
-                                  <Avatar className="h-7 w-7 shrink-0">
-                                    {p.phone && profilePics[`${p.phone}@s.whatsapp.net`] && <AvatarImage src={profilePics[`${p.phone}@s.whatsapp.net`]} />}
-                                    <AvatarFallback className="bg-muted text-[10px]">{(p.phone || "?").slice(-2)}</AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex-1 overflow-hidden">
-                                    <p className="text-xs truncate">{p.phone || p.id}</p>
-                                  </div>
-                                  {p.admin === "admin" && <span title="Admin"><ShieldCheck className="h-3 w-3 text-primary shrink-0" /></span>}
-                                  {p.admin === "superadmin" && <span title="Super Admin"><Crown className="h-3 w-3 text-primary shrink-0" /></span>}
-                                  {/* Admin actions */}
-                                  <div className="hidden group-hover/p:flex items-center gap-0.5 shrink-0">
-                                    {!p.admin && (
-                                      <button title="Promover a admin" onClick={() => handlePromoteParticipant(p.id)} className="p-0.5 rounded hover:bg-accent"><ChevronUp className="h-3 w-3 text-muted-foreground" /></button>
-                                    )}
-                                    {p.admin === "admin" && (
-                                      <button title="Remover admin" onClick={() => handleDemoteParticipant(p.id)} className="p-0.5 rounded hover:bg-accent"><ChevronUp className="h-3 w-3 text-muted-foreground rotate-180" /></button>
-                                    )}
-                                    <button title="Remover do grupo" onClick={() => handleRemoveParticipant(p.id)} className="p-0.5 rounded hover:bg-destructive/10"><UserMinus className="h-3 w-3 text-destructive" /></button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    /* ── CONTACT PANEL (Chatwoot-style) ── */
-                    <>
-                      <Separator />
-
-                      {/* Action icons */}
-                      <div className="flex items-center justify-center gap-3">
-                        <button title="Mensagem" className="flex h-8 w-8 items-center justify-center rounded-md bg-muted hover:bg-accent transition-colors"><MessageCircle className="h-4 w-4 text-muted-foreground" /></button>
-                        <button title="Editar" onClick={startEditingContact} className="flex h-8 w-8 items-center justify-center rounded-md bg-muted hover:bg-accent transition-colors"><Edit2 className="h-4 w-4 text-muted-foreground" /></button>
-                      </div>
-
-                      <Separator />
-
-                      {editingContact ? (
-                        <div className="space-y-3">
-                          <div>
-                            <label className="text-[11px] font-medium text-muted-foreground">Nome</label>
-                            <Input className="h-7 text-xs mt-0.5" value={contactForm.name} onChange={(e) => setContactForm((f) => ({ ...f, name: e.target.value }))} />
-                          </div>
-                          <div>
-                            <label className="text-[11px] font-medium text-muted-foreground">Email</label>
-                            <Input className="h-7 text-xs mt-0.5" value={contactForm.email} onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value }))} />
-                          </div>
-                          <div>
-                            <label className="text-[11px] font-medium text-muted-foreground">Telefone</label>
-                            <div className="flex gap-1 mt-0.5">
-                              <Popover open={phoneCountryOpen} onOpenChange={setPhoneCountryOpen}>
-                                <PopoverTrigger asChild>
-                                  <button className="flex items-center gap-0.5 h-7 px-1.5 rounded-md border border-input bg-background text-xs shrink-0 hover:bg-accent">
-                                    <span>{COUNTRY_CODES.find(c => c.dial === phoneCountryCode)?.flag || "🇧🇷"}</span>
-                                    <span className="text-[10px] text-muted-foreground">{phoneCountryCode}</span>
-                                    <ChevronDown className="h-2.5 w-2.5 text-muted-foreground" />
-                                  </button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-48 p-1" align="start">
-                                  <div className="max-h-48 overflow-y-auto">
-                                    {COUNTRY_CODES.map((c) => (
-                                      <button key={c.code} onClick={() => { setPhoneCountryCode(c.dial); setPhoneCountryOpen(false); }}
-                                        className="flex items-center gap-2 w-full rounded px-2 py-1 text-xs hover:bg-muted">
-                                        <span>{c.flag}</span>
-                                        <span className="flex-1 text-left">{c.name}</span>
-                                        <span className="text-muted-foreground">{c.dial}</span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </PopoverContent>
-                              </Popover>
-                              <Input className="h-7 text-xs flex-1" placeholder="(XX) XXXXX-XXXX" value={contactForm.phone}
-                                onChange={(e) => setContactForm((f) => ({ ...f, phone: maskPhoneInput(e.target.value) }))} />
-                            </div>
-                          </div>
-                          <div>
-                            <label className="text-[11px] font-medium text-muted-foreground">Empresa</label>
-                            <Input className="h-7 text-xs mt-0.5" value={contactForm.company} onChange={(e) => setContactForm((f) => ({ ...f, company: e.target.value }))} />
-                          </div>
-                          <div>
-                            <label className="text-[11px] font-medium text-muted-foreground">Endereço</label>
-                            <Input className="h-7 text-xs mt-0.5" value={contactForm.address} onChange={(e) => setContactForm((f) => ({ ...f, address: e.target.value }))} />
-                          </div>
-                          <div>
-                            <label className="text-[11px] font-medium text-muted-foreground">Estado</label>
-                            <Select value={contactForm.state} onValueChange={(v) => setContactForm((f) => ({ ...f, state: v, city: "" }))}>
-                              <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue placeholder="Selecione o estado" /></SelectTrigger>
-                              <SelectContent>
-                                {BRAZIL_STATES.map((s) => (
-                                  <SelectItem key={s.uf} value={s.uf}>{s.uf} - {s.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div>
-                            <label className="text-[11px] font-medium text-muted-foreground">Cidade</label>
-                            <Select value={contactForm.city} onValueChange={(v) => setContactForm((f) => ({ ...f, city: v }))} disabled={!contactForm.state}>
-                              <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue placeholder={contactForm.state ? "Selecione a cidade" : "Selecione o estado primeiro"} /></SelectTrigger>
-                              <SelectContent>
-                                {(BRAZIL_CITIES[contactForm.state] || []).map((city) => (
-                                  <SelectItem key={city} value={city}>{city}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div>
-                            <label className="text-[11px] font-medium text-muted-foreground">Tags</label>
-                            <div className="mt-0.5">
-                              <TagSelector
-                                tags={contactForm.tags ? contactForm.tags.split(",").filter(Boolean) : (contactDetails?.tags || [])}
-                                onChange={(newTags) => setContactForm((f) => ({ ...f, tags: newTags.join(",") }))}
-                                onCreateTag={handleCreateTag}
-                              />
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button size="sm" className="flex-1 h-7 text-xs" onClick={saveContact} disabled={savingContact}>
-                              {savingContact ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Check className="mr-1 h-3 w-3" />} Salvar
-                            </Button>
-                            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingContact(false)}>Cancelar</Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-2.5">
-                          {/* Status */}
-                          <div className="flex items-center gap-2 text-xs">
-                            <MessageCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span className="text-muted-foreground">{contactDetails?.notes || "Indisponível"}</span>
-                          </div>
-                          {/* Phone */}
-                          <div className="flex items-center gap-2 text-xs">
-                            <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span>{formatPhoneWhatsApp(selectedConv.contact_phone)}</span>
-                          </div>
-                          {/* Email */}
-                          <div className="flex items-center gap-2 text-xs">
-                            <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span>{contactDetails?.email || "Indisponível"}</span>
-                          </div>
-                          {/* Company */}
-                          <div className="flex items-center gap-2 text-xs">
-                            <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span>{contactDetails?.company || "Indisponível"}</span>
-                          </div>
-                          {/* Location */}
-                          {(contactDetails?.custom_fields?.city || contactDetails?.custom_fields?.state) && (
-                            <div className="flex items-center gap-2 text-xs">
-                              <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                              <span>
-                                {[
-                                  contactDetails.custom_fields.city,
-                                  BRAZIL_STATES.find(s => s.uf === contactDetails.custom_fields.state)?.name || contactDetails.custom_fields.state,
-                                ].filter(Boolean).join(", ")}
-                              </span>
-                            </div>
-                          )}
-                          {/* Tags */}
-                          <div className="flex items-start gap-2 text-xs">
-                            <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                            <TagSelector tags={contactDetails?.tags || []} onChange={() => {}} readOnly />
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  <Separator />
-                  <div>
-                    <p className="mb-1 text-xs font-medium">Conexão</p>
-                    <p className="text-xs text-muted-foreground">
-                      {instances.find((i) => i.id === selectedConv.instance_id)?.display_name || instances.find((i) => i.id === selectedConv.instance_id)?.phone_number || "—"}
-                    </p>
-                  </div>
-                </div>
-              </ScrollArea>
-            </div>
+            <InfoPanel
+              conversation={selectedConv}
+              profilePicUrl={profilePics[selectedConv.remote_jid]}
+              profilePics={profilePics}
+              groupInfo={currentGroupInfo}
+              instanceName={instances.find((i) => i.id === selectedConv.instance_id)?.instance_name || ""}
+              messages={messages}
+              onClose={() => setShowContactPanel(false)}
+            />
           )}
         </div>
       </div>
