@@ -191,13 +191,32 @@ const AIAnalysis: React.FC = () => {
     if (value === "scores") loadScores();
   };
 
+  const scrollToBottom = () => {
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+  };
+
   const handleAsk = async () => {
     if (!askQuestion.trim()) return;
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: askQuestion.trim(),
+      timestamp: new Date(),
+    };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setAskQuestion("");
+    scrollToBottom();
     try {
       setAskLoading(true);
-      setAiAnswer(null);
-      const result = await askAI(askQuestion);
-      setAiAnswer(result.answer);
+      const result = await askAI(userMsg.content);
+      const aiMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: result.answer,
+        timestamp: new Date(),
+      };
+      setChatMessages((prev) => [...prev, aiMsg]);
+      scrollToBottom();
     } catch (err) {
       toast({
         title: "Erro",
