@@ -44,8 +44,9 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   MessageCircle, Send, Image, Paperclip, Search, X, Loader2,
   LayoutDashboard, Users, Settings, Shield, LogOut, Reply,
-  ChevronDown, RefreshCw, QrCode,
+  ChevronDown, RefreshCw, QrCode, Plus, ArrowLeft,
 } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { format } from "date-fns";
 import logo from "@/assets/logo.png";
 
