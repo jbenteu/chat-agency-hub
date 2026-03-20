@@ -1323,7 +1323,7 @@ const WhatsAppInbox = () => {
                             };
 
                             const bubbleContent = (
-                              <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+                              <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group flex animate-fade-in ${isOutbound ? "justify-end" : "justify-start"}`}>
                                 {isGrp && !isOutbound && (
                                   <Avatar className="mr-2 mt-1 h-7 w-7 shrink-0">
                                     {senderPhone && profilePics[`${senderPhone}@s.whatsapp.net`] && <AvatarImage src={profilePics[`${senderPhone}@s.whatsapp.net`]} />}
