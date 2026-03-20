@@ -34,7 +34,7 @@ function getInitials(name: string | null) {
 
 export function ChatHeader({
   conversation, profilePicUrl, groupInfo, isTyping, showContactPanel,
-  onToggleContactPanel, onRename, onArchive, onPin, onSearchClick,
+  onToggleContactPanel, onRename, onArchive, onPin, onSearchClick, onAnalyze, analyzing,
 }: ChatHeaderProps) {
   const [editing, setEditing] = useState(false);
   const [nameValue, setNameValue] = useState("");
