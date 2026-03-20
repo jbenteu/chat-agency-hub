@@ -1127,7 +1127,7 @@ const WhatsAppInbox = () => {
               <SidebarGroupLabel>Menu</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {navItems.map((item) => (
+                  {navItems.filter(item => item.roles.includes(userRole)).map((item) => (
                     <SidebarMenuItem key={item.path}>
                       <SidebarMenuButton asChild isActive={location.pathname === item.path} tooltip={item.title}>
                         <NavLink to={item.path}><item.icon className="h-4 w-4" /><span>{item.title}</span></NavLink>
