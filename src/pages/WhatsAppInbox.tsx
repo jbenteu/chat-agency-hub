@@ -107,7 +107,8 @@ const WhatsAppInbox = () => {
   const [profilePictureSupported, setProfilePictureSupported] = useState(true);
   const [groupInfoCache, setGroupInfoCache] = useState<Record<string, GroupInfo>>(getCachedGroupInfoMap());
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
-  const [sendingCount, setSendingCount] = useState(0);
+  const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("all");
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [contactDetails, setContactDetails] = useState<ContactDetails | null>(null);
   const [editingContact, setEditingContact] = useState(false);
   const [contactForm, setContactForm] = useState<Record<string, string>>({});
