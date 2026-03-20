@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
 import { MediaMessage } from "@/components/whatsapp/MediaMessage";
+import { useAIAnalysis } from "@/hooks/use-ai-analysis";
 
 import { ConversationFilters, type ConversationFilter } from "@/components/whatsapp/ConversationFilters";
 import { ConversationListItem } from "@/components/whatsapp/ConversationListItem";
