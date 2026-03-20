@@ -96,6 +96,13 @@ interface ScoresRow {
   score_personalizacao: number | null;
 }
 
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: Date;
+}
+
 const AIAnalysis: React.FC = () => {
   const { getDashboard, generateScript, askAI } = useAIAnalysis();
   const { toast } = useToast();
