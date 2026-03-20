@@ -871,7 +871,7 @@ const WhatsAppInbox = () => {
     }
   };
   const formatDate = (d: string) => { try { const date = new Date(d); const today = new Date(); if (date.toDateString() === today.toDateString()) return formatTime(d); return format(date, "dd/MM/yyyy HH:mm"); } catch { return ""; } };
-  const formatFullDate = (d: string) => { try { return format(new Date(d), "dd/MM/yyyy 'às' HH:mm"); } catch { return ""; } };
+  
 
   const isMediaPlaceholder = (content: string | null) => {
     if (!content) return false;
