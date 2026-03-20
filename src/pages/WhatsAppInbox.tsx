@@ -924,6 +924,19 @@ const WhatsAppInbox = () => {
     } catch { toast({ title: "Erro ao renomear", variant: "destructive" }); }
   };
   
+  const handleAnalyze = async () => {
+    if (!selectedConv) return;
+    try {
+      setAnalyzing(true);
+      await analyzeConversation(selectedConv.id);
+      toast({ title: "Análise concluída", description: "A conversa foi analisada pela IA com sucesso." });
+    } catch (err) {
+      toast({ title: "Erro na análise", description: err instanceof Error ? err.message : "Falha ao analisar", variant: "destructive" });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   // Tag create handler moved to InfoPanel
   const isGroupJid = (jid: string) => jid.endsWith("@g.us");
 
