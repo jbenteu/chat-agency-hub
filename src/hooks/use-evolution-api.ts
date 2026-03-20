@@ -34,6 +34,11 @@ interface Conversation {
   status: string;
   assigned_to: string | null;
   profile_picture_url: string | null;
+  pinned: boolean;
+  archived: boolean;
+  typing_presence: string | null;
+  typing_updated_at: string | null;
+  muted_until: string | null;
   created_at: string;
   updated_at: string;
 }
