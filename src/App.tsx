@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { ImportProgressBanner } from "@/components/whatsapp/ImportProgressBanner";
 import LoginPage from "@/components/auth/LoginPage";
 import Index from "./pages/Index";
 import CRM from "./pages/CRM";
@@ -33,6 +34,7 @@ const App = () => (
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          <ImportProgressBanner />
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
