@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Users, User, ChevronRight, Edit2, Search, MoreVertical, Archive, Pin, VolumeX, CircleDot } from "lucide-react";
+import { Users, User, ChevronRight, Edit2, Search, MoreVertical, Archive, Pin, VolumeX, CircleDot, Sparkles } from "lucide-react";
 import { formatPhoneWhatsApp } from "@/data/country-codes";
 import type { Conversation } from "@/hooks/use-evolution-api";
 import type { GroupInfo } from "@/hooks/use-inbox-cache";
