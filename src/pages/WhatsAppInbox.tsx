@@ -37,7 +37,7 @@ import {
   SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
   SidebarProvider, SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   MessageCircle, Send, Image, Paperclip, Search, X, Loader2,
