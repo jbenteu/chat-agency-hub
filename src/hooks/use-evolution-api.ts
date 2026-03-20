@@ -236,6 +236,60 @@ export function useEvolutionApi() {
     [callEvolution]
   );
 
+  const sendReaction = useCallback(
+    (instanceName: string, remoteJid: string, messageId: string, reaction: string) =>
+      callEvolution({ action: "send_reaction", instanceName, remoteJid, messageId, reaction }),
+    [callEvolution]
+  );
+
+  const deleteMessage = useCallback(
+    (instanceName: string, remoteJid: string, messageId: string) =>
+      callEvolution({ action: "delete_message", instanceName, remoteJid, messageId }),
+    [callEvolution]
+  );
+
+  const markAsRead = useCallback(
+    (conversationId: string, instanceName?: string, remoteJid?: string) =>
+      callEvolution(
+        { action: "mark_as_read", conversationId, instanceName, remoteJid },
+        { trackLoading: false, trackError: false }
+      ),
+    [callEvolution]
+  );
+
+  const updatePresence = useCallback(
+    (instanceName: string, remoteJid: string, presence?: string) =>
+      callEvolution(
+        { action: "update_presence", instanceName, remoteJid, presence },
+        { trackLoading: false, trackError: false }
+      ),
+    [callEvolution]
+  );
+
+  const archiveConversation = useCallback(
+    (conversationId: string, archived?: boolean) =>
+      callEvolution({ action: "archive_conversation", conversationId, archived }),
+    [callEvolution]
+  );
+
+  const pinConversation = useCallback(
+    (conversationId: string, pinned?: boolean) =>
+      callEvolution({ action: "pin_conversation", conversationId, pinned }),
+    [callEvolution]
+  );
+
+  const updateConversationStatus = useCallback(
+    (conversationId: string, status: string) =>
+      callEvolution({ action: "update_conversation_status", conversationId, status }),
+    [callEvolution]
+  );
+
+  const searchMessages = useCallback(
+    (conversationId: string, query: string, limit?: number) =>
+      callEvolution({ action: "search_messages", conversationId, query, limit }),
+    [callEvolution]
+  );
+
   return {
     loading,
     error,
@@ -258,6 +312,14 @@ export function useEvolutionApi() {
     promoteGroupParticipant,
     demoteGroupParticipant,
     getMedia,
+    sendReaction,
+    deleteMessage,
+    markAsRead,
+    updatePresence,
+    archiveConversation,
+    pinConversation,
+    updateConversationStatus,
+    searchMessages,
   };
 }
 

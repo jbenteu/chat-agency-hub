@@ -732,6 +732,76 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: true, event: "status_updated" });
     }
 
+    // ─── chats.update ───────────────────────────────────────────────────────
+    if (event === "chats.update") {
+      // When user reads messages on their phone, zero the unread count
+      const chats = Array.isArray(data) ? data : [data];
+      for (const chat of chats) {
+        const chatJid = chat?.id || chat?.remoteJid || chat?.jid;
+        if (!chatJid) continue;
+        const unreadCount = chat?.unreadCount ?? chat?.unread_count;
+        if (typeof unreadCount === "number" && unreadCount === 0) {
+          await supabase
+            .from("whatsapp_conversations")
+            .update({ unread_count: 0 })
+            .eq("tenant_id", tenantId)
+            .eq("instance_id", instanceId)
+            .eq("remote_jid", chatJid);
+        }
+      }
+      return jsonResponse({ ok: true, event: "chats_updated" });
+    }
+
+    // ─── presence.update ────────────────────────────────────────────────────
+    if (event === "presence.update") {
+      const presenceJid = data?.id || data?.remoteJid || data?.jid;
+      const presences = data?.presences || data?.participants || {};
+      if (presenceJid) {
+        // Find if anyone is typing/recording
+        let typingState: string | null = null;
+        for (const [, pData] of Object.entries(presences)) {
+          const p = pData as Record<string, unknown>;
+          if (p?.lastKnownPresence === "composing" || p?.lastKnownPresence === "recording") {
+            typingState = p.lastKnownPresence as string;
+            break;
+          }
+        }
+        await supabase
+          .from("whatsapp_conversations")
+          .update({
+            typing_presence: typingState,
+            typing_updated_at: new Date().toISOString(),
+          })
+          .eq("tenant_id", tenantId)
+          .eq("instance_id", instanceId)
+          .eq("remote_jid", presenceJid);
+      }
+      return jsonResponse({ ok: true, event: "presence_updated" });
+    }
+
+    // ─── groups.update ──────────────────────────────────────────────────────
+    if (event === "groups.update") {
+      const groups = Array.isArray(data) ? data : [data];
+      for (const group of groups) {
+        const groupJid = group?.id || group?.jid;
+        if (!groupJid) continue;
+        const patch: Record<string, unknown> = {};
+        const subject = group?.subject || group?.name;
+        if (subject) patch.contact_name = subject;
+        const pictureUrl = group?.pictureUrl || group?.profilePictureUrl;
+        if (pictureUrl) patch.profile_picture_url = pictureUrl;
+        if (Object.keys(patch).length > 0) {
+          await supabase
+            .from("whatsapp_conversations")
+            .update(patch)
+            .eq("tenant_id", tenantId)
+            .eq("instance_id", instanceId)
+            .eq("remote_jid", groupJid);
+        }
+      }
+      return jsonResponse({ ok: true, event: "groups_updated" });
+    }
+
     return jsonResponse({ ok: true, skipped: "unhandled event" });
   } catch (error: unknown) {
     console.error("Webhook error:", error);
