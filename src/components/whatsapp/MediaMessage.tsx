@@ -344,25 +344,30 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
 
   if (mediaType === "image") {
     return (
-      <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="block mb-1 relative">
-        {/* Thumbnail placeholder with blur — visible until full image loads */}
-        {thumbSrc && !thumbnailLoaded && (
-          <img src={thumbSrc} alt="" className="absolute inset-0 w-full h-full rounded-lg blur-sm object-cover"
-            style={{ maxWidth: 280, maxHeight: 300 }} />
-        )}
-        <img
-          src={resolvedUrl}
-          alt="Imagem"
-          className={cn(
-            "rounded-lg cursor-pointer hover:opacity-90 transition-all duration-300",
-            !thumbnailLoaded && thumbSrc ? "opacity-0" : "opacity-100"
+      <>
+        <div className="block mb-1 relative cursor-pointer" onClick={() => setLightboxOpen(true)}>
+          {/* Thumbnail placeholder with blur — visible until full image loads */}
+          {thumbSrc && !thumbnailLoaded && (
+            <img src={thumbSrc} alt="" className="absolute inset-0 w-full h-full rounded-lg blur-sm object-cover"
+              style={{ maxWidth: 280, maxHeight: 300 }} />
           )}
-          style={{ maxWidth: 280, maxHeight: 300, width: "auto", height: "auto" }}
-          loading="lazy"
-          onLoad={() => setThumbnailLoaded(true)}
-          onError={handleImageError}
-        />
-      </a>
+          <img
+            src={resolvedUrl}
+            alt="Imagem"
+            className={cn(
+              "rounded-lg cursor-pointer hover:opacity-90 transition-all duration-300",
+              !thumbnailLoaded && thumbSrc ? "opacity-0" : "opacity-100"
+            )}
+            style={{ maxWidth: 280, maxHeight: 300, width: "auto", height: "auto" }}
+            loading="lazy"
+            onLoad={() => setThumbnailLoaded(true)}
+            onError={handleImageError}
+          />
+        </div>
+        {lightboxOpen && (
+          <ImageLightbox src={resolvedUrl} alt="Imagem" onClose={() => setLightboxOpen(false)} />
+        )}
+      </>
     );
   }
 
