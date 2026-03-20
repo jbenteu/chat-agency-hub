@@ -1218,6 +1218,15 @@ const WhatsAppInbox = () => {
           <div className="flex flex-1 flex-col">
             {selectedConv ? (
               <>
+                {/* Mobile back button */}
+                {isMobile && (
+                  <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedConv(null)}>
+                      <ArrowLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-xs font-medium truncate">{selectedConv.contact_name || "Conversa"}</span>
+                  </div>
+                )}
                 {/* Chat header */}
                 <ChatHeader
                   conversation={selectedConv}
@@ -1239,6 +1248,14 @@ const WhatsAppInbox = () => {
                     setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, pinned: !c.pinned } : c));
                     setSelectedConv((prev) => prev ? { ...prev, pinned: !prev.pinned } : prev);
                   }}
+                  onSearchClick={() => setShowMessageSearch((v) => !v)}
+                />
+
+                {/* In-conversation search */}
+                <SearchMessages
+                  messages={messages}
+                  visible={showMessageSearch}
+                  onClose={() => setShowMessageSearch(false)}
                 />
 
                 {/* Messages */}
