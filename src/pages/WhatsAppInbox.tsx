@@ -1322,8 +1322,10 @@ const WhatsAppInbox = () => {
                               deleteMessage(currentInstName, selectedConv.remote_jid, msg.message_id).catch(() => {});
                             };
 
+                            const onReplyClick = () => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") });
+
                             const bubbleContent = (
-                              <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group flex animate-fade-in ${isOutbound ? "justify-end" : "justify-start"}`}>
+                              <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group/msg flex animate-fade-in ${isOutbound ? "justify-end" : "justify-start"}`}>
                                 {isGrp && !isOutbound && (
                                   <Avatar className="mr-2 mt-1 h-7 w-7 shrink-0">
                                     {senderPhone && profilePics[`${senderPhone}@s.whatsapp.net`] && <AvatarImage src={profilePics[`${senderPhone}@s.whatsapp.net`]} />}
@@ -1337,11 +1339,30 @@ const WhatsAppInbox = () => {
                                   isOutbound={isOutbound}
                                   messageId={msg.message_id}
                                   senderName={senderName || (isOutbound ? "Você" : selectedConv.contact_name || "")}
-                                  onReply={() => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") })}
+                                  onReply={onReplyClick}
                                   onReact={msg.message_id ? handleReact : undefined}
                                   onDelete={isOutbound && msg.message_id ? handleDelete : undefined}
                                 >
                                   <div className={`relative max-w-[70%] rounded-2xl px-3.5 py-2 text-sm transition-shadow ${isOutbound ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted"}`}>
+                                    {/* Hover action buttons */}
+                                    <div className={`absolute top-1 opacity-0 group-hover/msg:opacity-100 transition-opacity flex items-center gap-0.5 z-10 ${isOutbound ? "left-0 -translate-x-full pr-1" : "right-0 translate-x-full pl-1"}`}>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); onReplyClick(); }}
+                                        className="flex h-7 w-7 items-center justify-center rounded-full bg-background border border-border shadow-sm hover:bg-accent transition-colors"
+                                        title="Responder"
+                                      >
+                                        <Reply className="h-3.5 w-3.5 text-muted-foreground" />
+                                      </button>
+                                      {msg.message_id && (
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); handleReact("👍"); }}
+                                          className="flex h-7 w-7 items-center justify-center rounded-full bg-background border border-border shadow-sm hover:bg-accent transition-colors text-sm"
+                                          title="Reagir"
+                                        >
+                                          👍
+                                        </button>
+                                      )}
+                                    </div>
                                     {isGrp && !isOutbound && senderName && (
                                       <p className={`text-xs font-semibold mb-0.5 ${getSenderColor(senderName)}`}>{senderName}</p>
                                     )}
