@@ -828,15 +828,43 @@ const WhatsAppInbox = () => {
   };
 
   const filteredConversations = useMemo(() => {
-    if (!searchQuery) return conversations;
-    const q = searchQuery.toLowerCase();
-    return conversations.filter(
-      (c) =>
-        c.contact_name?.toLowerCase().includes(q) ||
-        c.contact_phone?.toLowerCase().includes(q) ||
-        c.last_message?.toLowerCase().includes(q)
-    );
-  }, [conversations, searchQuery]);
+    let list = conversations;
+
+    // Apply filter tab
+    if (conversationFilter === "unread") {
+      list = list.filter((c) => c.unread_count > 0);
+    } else if (conversationFilter === "groups") {
+      list = list.filter((c) => c.remote_jid.endsWith("@g.us"));
+    } else if (conversationFilter === "archived") {
+      list = list.filter((c) => c.archived);
+    } else {
+      // "all" — hide archived
+      list = list.filter((c) => !c.archived);
+    }
+
+    // Apply search
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (c) =>
+          c.contact_name?.toLowerCase().includes(q) ||
+          c.contact_phone?.toLowerCase().includes(q) ||
+          c.last_message?.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort: pinned first, then by last_message_at
+    return list.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime();
+    });
+  }, [conversations, searchQuery, conversationFilter]);
+
+  const totalUnread = useMemo(() =>
+    conversations.filter((c) => !c.archived && c.unread_count > 0).length,
+    [conversations]
+  );
 
   const getInitials = (name: string | null) => { if (!name) return "?"; return name.split(" ").map((p) => p[0]).join("").substring(0, 2).toUpperCase(); };
   const formatTime = (d: string | null) => { if (!d) return ""; try { return format(new Date(d), "HH:mm"); } catch { return ""; } };
