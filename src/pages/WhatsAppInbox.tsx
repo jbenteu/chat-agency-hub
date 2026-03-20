@@ -56,7 +56,7 @@ const navItems = [
   { title: "CRM", icon: Users, path: "/crm" },
   { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp" },
   { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis" },
-  { title: "Configurações", icon: Settings, path: "/settings" },
+  { title: "Configurações", icon: Settings, path: "/configuracoes" },
   { title: "Admin", icon: Shield, path: "/admin" },
 ];
 

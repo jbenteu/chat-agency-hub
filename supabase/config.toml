@@ -3,3 +3,21 @@ verify_jwt = false
 
 [functions.evolution-webhook]
 verify_jwt = false
+
+[functions.generate-invite-link]
+verify_jwt = false
+
+[functions.validate-invite]
+verify_jwt = false
+
+[functions.register-via-invite]
+verify_jwt = false
+
+[functions.get-my-clients]
+verify_jwt = false
+
+[functions.get-team-members]
+verify_jwt = false
+
+[functions.ai-analysis]
+verify_jwt = false
