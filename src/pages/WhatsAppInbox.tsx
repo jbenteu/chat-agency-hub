@@ -1124,7 +1124,6 @@ const WhatsAppInbox = () => {
             </div>
           </SidebarFooter>
         </Sidebar>
-        )}
 
         {/* Main area */}
         <div className="relative flex flex-1 overflow-hidden">
