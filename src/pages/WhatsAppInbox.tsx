@@ -1371,150 +1371,163 @@ const WhatsAppInbox = () => {
                 />
 
                 {/* Messages */}
-                <ScrollArea className="flex-1 px-4 py-3">
-                  {loadingMsgs ? (
-                    <div className="flex flex-col items-center justify-center gap-2 py-12">
-                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                      <p className="text-xs text-muted-foreground">Carregando mensagens…</p>
-                    </div>
-                  ) : messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12">
-                      <MessageCircle className="mb-2 h-8 w-8 text-muted-foreground/30" />
-                      <p className="text-xs font-medium text-muted-foreground">Nenhuma mensagem ainda</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {messages
-                        .filter((msg) => {
-                          // Filter out reaction messages (they're now on parent bubble)
-                          if (msg.media_type === "reaction") return false;
-                          if (msg.content === "[Reação]") return false;
-                          return true;
-                        })
-                        .map((msg) => {
-                        const isOutbound = msg.direction === "outbound";
-                        const isGrp = isGroupJid(selectedConv.remote_jid);
-                        const senderName = getSenderName(msg);
-                        const senderPhone = getSenderPhone(msg);
-                        const quoted = getQuotedInfo(msg);
-                        const currentInstName = instances.find((i) => i.id === selectedConv.instance_id)?.instance_name || "";
-                        const meta = msg.metadata as Record<string, any> | null;
-                        const metadataMimeType = meta?.mimeType || null;
-                        const reactions = meta?.reactions as Record<string, string> | null;
-                        const reactionEntries = reactions ? Object.entries(reactions) : [];
-                        // Group reactions by emoji
-                        const reactionCounts: Record<string, number> = {};
-                        for (const [, emoji] of reactionEntries) {
-                          reactionCounts[emoji] = (reactionCounts[emoji] || 0) + 1;
-                        }
+                <div className="relative flex-1 overflow-hidden">
+                  <ScrollArea className="h-full px-4 py-3">
+                    {loadingMsgs ? (
+                      <div className="flex flex-col items-center justify-center gap-2 py-12">
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        <p className="text-xs text-muted-foreground">Carregando mensagens…</p>
+                      </div>
+                    ) : messages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12">
+                        <MessageCircle className="mb-2 h-8 w-8 text-muted-foreground/30" />
+                        <p className="text-xs font-medium text-muted-foreground">Nenhuma mensagem ainda</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {(() => {
+                          const filtered = messages.filter((msg) => {
+                            if (msg.media_type === "reaction") return false;
+                            if (msg.content === "[Reação]") return false;
+                            return true;
+                          });
+                          let lastDateKey = "";
+                          const currentInstName = instances.find((i) => i.id === selectedConv.instance_id)?.instance_name || "";
+                          const isGrp = isGroupJid(selectedConv.remote_jid);
 
-                        const scrollToQuoted = () => {
-                          if (!quoted) return;
-                          const el = document.querySelector(`[data-message-id="${quoted.id}"]`);
-                          if (el) {
-                            el.scrollIntoView({ behavior: "smooth", block: "center" });
-                            el.classList.add("ring-2", "ring-primary/40");
-                            setTimeout(() => el.classList.remove("ring-2", "ring-primary/40"), 2000);
-                          }
-                        };
+                          return filtered.map((msg) => {
+                            const dateKey = getDateKey(msg.created_at);
+                            const showDateSep = dateKey !== lastDateKey;
+                            lastDateKey = dateKey;
 
-                        return (
-                          <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group flex ${isOutbound ? "justify-end" : "justify-start"}`}>
-                            {/* Sender avatar for group inbound */}
-                            {isGrp && !isOutbound && (
-                              <Avatar className="mr-2 mt-1 h-7 w-7 shrink-0">
-                                {senderPhone && profilePics[`${senderPhone}@s.whatsapp.net`] && <AvatarImage src={profilePics[`${senderPhone}@s.whatsapp.net`]} />}
-                                <AvatarFallback className="bg-muted text-[10px]">
-                                  {(senderName || senderPhone || "?").substring(0, 2).toUpperCase()}
-                                </AvatarFallback>
-                              </Avatar>
-                            )}
-                            <div className={`relative max-w-[70%] rounded-2xl px-3.5 py-2 text-sm ${isOutbound ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted"}`}>
-                              {isGrp && !isOutbound && senderName && (
-                                <p className={`text-xs font-semibold mb-0.5 ${getSenderColor(senderName)}`}>{senderName}</p>
-                              )}
-                              {quoted && (
-                                <div
-                                  onClick={scrollToQuoted}
-                                  className={`mb-1.5 rounded-md border-l-2 px-2 py-1 text-[11px] cursor-pointer hover:opacity-80 ${isOutbound ? "border-primary-foreground/40 bg-primary-foreground/10 text-primary-foreground/80" : "border-primary/40 bg-primary/5 text-muted-foreground"}`}
-                                >
-                                  <p className="truncate">{quoted.content}</p>
-                                </div>
-                              )}
-                              {msg.media_type && msg.media_type !== "document" && (msg.media_url || msg.message_id) && (
-                                <MediaMessage
-                                  messageId={msg.message_id}
-                                  mediaUrl={msg.media_url}
-                                  mediaType={msg.media_type}
-                                  content={msg.content}
-                                  instanceName={currentInstName}
-                                  remoteJid={selectedConv.remote_jid}
-                                  isOutbound={isOutbound}
-                                  mediaThumbnail={msg.media_thumbnail}
-                                  mediaWidth={msg.media_width}
-                                  mediaHeight={msg.media_height}
-                                  metadataMimeType={metadataMimeType}
-                                />
-                              )}
-                              {msg.media_type === "document" && (msg.media_url || msg.message_id) && (
-                                <MediaMessage
-                                  messageId={msg.message_id}
-                                  mediaUrl={msg.media_url}
-                                  mediaType="document"
-                                  content={msg.content}
-                                  instanceName={currentInstName}
-                                  remoteJid={selectedConv.remote_jid}
-                                  isOutbound={isOutbound}
-                                  metadataMimeType={metadataMimeType}
-                                />
-                              )}
-                              {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
-                                <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
-                              )}
-                              {(() => {
-                                if (!msg.content || !msg.content.trim()) return null;
-                                if (isMediaPlaceholder(msg.content)) return null;
-                                if (msg.media_type === "document" && (msg.media_url || msg.message_id)) return null;
-                                if (msg.media_type === "audio") return null;
-                                return <p className="whitespace-pre-wrap break-words">{msg.content}</p>;
-                              })()}
-                              <div className={`mt-1 flex items-center justify-end gap-1 ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
-                                <span className="text-[10px]">{formatDate(msg.created_at)}</span>
-                                {isOutbound && (
-                                  <span className="inline-flex items-center">
-                                    {msg.id.startsWith("temp-") || msg.status === "pending" ? (
-                                      <Clock className="h-3 w-3" />
-                                    ) : msg.status === "read" || msg.status === "played" ? (
-                                      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="inline"><path d="M11.07 0.73a.5.5 0 01.76.65l-.06.07L6.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L6.08 6.26l5-5.53z" fill="#53BDEB"/><path d="M14.07 0.73a.5.5 0 01.76.65l-.06.07L9.43 7.32a.5.5 0 01-.63.06l-.07-.06-.53-.53.7-.72.18.18 4.99-5.52z" fill="#53BDEB"/></svg>
-                                    ) : msg.status === "delivered" ? (
-                                      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="inline"><path d="M11.07 0.73a.5.5 0 01.76.65l-.06.07L6.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L6.08 6.26l5-5.53z" fill="#8696A0"/><path d="M14.07 0.73a.5.5 0 01.76.65l-.06.07L9.43 7.32a.5.5 0 01-.63.06l-.07-.06-.53-.53.7-.72.18.18 4.99-5.52z" fill="#8696A0"/></svg>
-                                    ) : (
-                                      <svg width="12" height="11" viewBox="0 0 12 11" fill="none" className="inline"><path d="M9.07 0.73a.5.5 0 01.76.65l-.06.07L4.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L4.08 6.26l5-5.53z" fill="#8696A0"/></svg>
-                                    )}
-                                  </span>
+                            const isOutbound = msg.direction === "outbound";
+                            const senderName = getSenderName(msg);
+                            const senderPhone = getSenderPhone(msg);
+                            const quoted = getQuotedInfo(msg);
+                            const meta = msg.metadata as Record<string, any> | null;
+                            const metadataMimeType = meta?.mimeType || null;
+                            const isDeleted = meta?.deleted === true;
+                            const reactions = meta?.reactions as Record<string, string> | null;
+                            const reactionEntries = reactions ? Object.entries(reactions) : [];
+                            const reactionCounts: Record<string, number> = {};
+                            for (const [, emoji] of reactionEntries) {
+                              reactionCounts[emoji] = (reactionCounts[emoji] || 0) + 1;
+                            }
+
+                            const scrollToQuoted = () => {
+                              if (!quoted) return;
+                              const el = document.querySelector(`[data-message-id="${quoted.id}"]`);
+                              if (el) {
+                                el.scrollIntoView({ behavior: "smooth", block: "center" });
+                                el.classList.add("ring-2", "ring-primary/40");
+                                setTimeout(() => el.classList.remove("ring-2", "ring-primary/40"), 2000);
+                              }
+                            };
+
+                            const handleReact = (emoji: string) => {
+                              if (!msg.message_id) return;
+                              sendReaction(currentInstName, selectedConv.remote_jid, msg.message_id, emoji).catch(() => {});
+                            };
+
+                            const handleDelete = () => {
+                              if (!msg.message_id) return;
+                              deleteMessage(currentInstName, selectedConv.remote_jid, msg.message_id).catch(() => {});
+                            };
+
+                            const bubbleContent = (
+                              <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+                                {isGrp && !isOutbound && (
+                                  <Avatar className="mr-2 mt-1 h-7 w-7 shrink-0">
+                                    {senderPhone && profilePics[`${senderPhone}@s.whatsapp.net`] && <AvatarImage src={profilePics[`${senderPhone}@s.whatsapp.net`]} />}
+                                    <AvatarFallback className="bg-muted text-[10px]">
+                                      {(senderName || senderPhone || "?").substring(0, 2).toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
                                 )}
+                                <MessageContextMenu
+                                  content={msg.content}
+                                  isOutbound={isOutbound}
+                                  messageId={msg.message_id}
+                                  senderName={senderName || (isOutbound ? "Você" : selectedConv.contact_name || "")}
+                                  onReply={() => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") })}
+                                  onReact={msg.message_id ? handleReact : undefined}
+                                  onDelete={isOutbound && msg.message_id ? handleDelete : undefined}
+                                >
+                                  <div className={`relative max-w-[70%] rounded-2xl px-3.5 py-2 text-sm transition-shadow ${isOutbound ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted"}`}>
+                                    {isGrp && !isOutbound && senderName && (
+                                      <p className={`text-xs font-semibold mb-0.5 ${getSenderColor(senderName)}`}>{senderName}</p>
+                                    )}
+                                    {quoted && (
+                                      <div onClick={scrollToQuoted}
+                                        className={`mb-1.5 rounded-md border-l-2 px-2 py-1 text-[11px] cursor-pointer hover:opacity-80 ${isOutbound ? "border-primary-foreground/40 bg-primary-foreground/10 text-primary-foreground/80" : "border-primary/40 bg-primary/5 text-muted-foreground"}`}>
+                                        <p className="truncate">{quoted.content}</p>
+                                      </div>
+                                    )}
+                                    {isDeleted ? (
+                                      <p className="italic text-xs opacity-60">🚫 Mensagem apagada</p>
+                                    ) : (
+                                      <>
+                                        {msg.media_type && msg.media_type !== "document" && (msg.media_url || msg.message_id) && (
+                                          <MediaMessage messageId={msg.message_id} mediaUrl={msg.media_url} mediaType={msg.media_type} content={msg.content}
+                                            instanceName={currentInstName} remoteJid={selectedConv.remote_jid} isOutbound={isOutbound}
+                                            mediaThumbnail={msg.media_thumbnail} mediaWidth={msg.media_width} mediaHeight={msg.media_height} metadataMimeType={metadataMimeType} />
+                                        )}
+                                        {msg.media_type === "document" && (msg.media_url || msg.message_id) && (
+                                          <MediaMessage messageId={msg.message_id} mediaUrl={msg.media_url} mediaType="document" content={msg.content}
+                                            instanceName={currentInstName} remoteJid={selectedConv.remote_jid} isOutbound={isOutbound} metadataMimeType={metadataMimeType} />
+                                        )}
+                                        {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
+                                          <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
+                                        )}
+                                        {(() => {
+                                          if (!msg.content || !msg.content.trim()) return null;
+                                          if (isMediaPlaceholder(msg.content)) return null;
+                                          if (msg.media_type === "document" && (msg.media_url || msg.message_id)) return null;
+                                          if (msg.media_type === "audio") return null;
+                                          return <WhatsAppFormatted text={msg.content} />;
+                                        })()}
+                                      </>
+                                    )}
+                                    <div className={`mt-1 flex items-center justify-end gap-1 ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
+                                      <span className="text-[10px]">{formatDate(msg.created_at)}</span>
+                                      {isOutbound && (
+                                        <span className="inline-flex items-center">
+                                          <MessageStatusIcon status={msg.status} isOptimistic={msg.id.startsWith("temp-")} />
+                                        </span>
+                                      )}
+                                    </div>
+                                    {reactionEntries.length > 0 && (
+                                      <div className={`mt-1 flex flex-wrap gap-1 ${isOutbound ? "-mr-1" : "-ml-1"}`}>
+                                        {Object.entries(reactionCounts).map(([emoji, count]) => (
+                                          <span key={emoji} className="inline-flex items-center gap-0.5 rounded-full bg-background/80 border border-border/50 px-1.5 py-0.5 text-xs shadow-sm"
+                                            title={reactionEntries.filter(([, e]) => e === emoji).map(([phone]) => phone === "me" ? "Você" : phone).join(", ")}>
+                                            {emoji}{count > 1 && <span className="text-[10px] text-muted-foreground">{count}</span>}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </MessageContextMenu>
                               </div>
-                              {/* Reactions */}
-                              {reactionEntries.length > 0 && (
-                                <div className={`mt-1 flex flex-wrap gap-1 ${isOutbound ? "-mr-1" : "-ml-1"}`}>
-                                  {Object.entries(reactionCounts).map(([emoji, count]) => (
-                                    <span key={emoji} className="inline-flex items-center gap-0.5 rounded-full bg-background/80 border border-border/50 px-1.5 py-0.5 text-xs shadow-sm" title={reactionEntries.filter(([, e]) => e === emoji).map(([phone]) => phone === "me" ? "Você" : phone).join(", ")}>
-                                      {emoji}{count > 1 && <span className="text-[10px] text-muted-foreground">{count}</span>}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              <button className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-1 hover:bg-muted"
-                                onClick={() => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") })}
-                                title="Responder"><Reply className="h-3.5 w-3.5 text-muted-foreground" /></button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  )}
-                </ScrollArea>
+                            );
+
+                            return (
+                              <div key={msg.id}>
+                                {showDateSep && <DateSeparator date={msg.created_at} />}
+                                {bubbleContent}
+                              </div>
+                            );
+                          });
+                        })()}
+                        <div ref={messagesEndRef} />
+                      </div>
+                    )}
+                  </ScrollArea>
+                  <ScrollToBottom
+                    visible={showScrollToBottom}
+                    onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
+                  />
+                </div>
 
                 {/* Reply bar */}
                 {replyTarget && (
