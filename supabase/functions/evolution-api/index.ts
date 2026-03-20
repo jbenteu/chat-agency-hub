@@ -881,7 +881,7 @@ Deno.serve(async (req) => {
         url.includes(".enc?");
 
       const fixMinioUrl = (url: string) =>
-        url.replace(/^http:\/\/minio:9000\//, "http://82.25.70.124:9000/");
+        url.replace(/^http:\/\/minio:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/").replace(/^http:\/\/82\.25\.70\.124:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/");
 
       // Busca a mensagem com escopo de tenant (+ conversa se disponível)
       let msgQuery = supabaseAdmin
