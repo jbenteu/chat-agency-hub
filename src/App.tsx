@@ -35,6 +35,7 @@ const App = () => (
             <Route path="/whatsapp/settings" element={<ProtectedRoute><WhatsApp /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+            <Route path="/ai-analysis" element={<ProtectedRoute><Suspense fallback={<div className="flex items-center justify-center h-screen">Carregando...</div>}><AIAnalysis /></Suspense></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           <ImportProgressBanner />
