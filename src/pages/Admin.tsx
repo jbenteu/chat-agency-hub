@@ -183,7 +183,7 @@ const Admin = () => {
     return acc;
   }, {});
 
-  if (profile?.role !== "admin") {
+  if (profile?.role !== "admin" && !isSuperAdmin) {
     return (
       <AppLayout>
         <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
