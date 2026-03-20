@@ -72,6 +72,155 @@ export type Database = {
           },
         ]
       }
+      ai_analysis_queue: {
+        Row: {
+          conversation_id: string
+          created_at: string | null
+          id: string
+          priority: string | null
+          status: string | null
+          tenant_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string | null
+          id?: string
+          priority?: string | null
+          status?: string | null
+          tenant_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string | null
+          id?: string
+          priority?: string | null
+          status?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_analysis_queue_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "whatsapp_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_analysis_queue_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_conversation_analysis: {
+        Row: {
+          analyzed_at: string | null
+          conversation_id: string
+          horas_sem_resposta: number | null
+          id: string
+          objecao_detectada: string | null
+          produto_interesse: string | null
+          resumo: string | null
+          score_clareza: number | null
+          score_contorno_objecao: number | null
+          score_cta: number | null
+          score_empatia: number | null
+          score_followup: number | null
+          score_personalizacao: number | null
+          score_qualidade: number | null
+          score_velocidade: number | null
+          sentimento: string | null
+          status_lead: string | null
+          tenant_id: string
+        }
+        Insert: {
+          analyzed_at?: string | null
+          conversation_id: string
+          horas_sem_resposta?: number | null
+          id?: string
+          objecao_detectada?: string | null
+          produto_interesse?: string | null
+          resumo?: string | null
+          score_clareza?: number | null
+          score_contorno_objecao?: number | null
+          score_cta?: number | null
+          score_empatia?: number | null
+          score_followup?: number | null
+          score_personalizacao?: number | null
+          score_qualidade?: number | null
+          score_velocidade?: number | null
+          sentimento?: string | null
+          status_lead?: string | null
+          tenant_id: string
+        }
+        Update: {
+          analyzed_at?: string | null
+          conversation_id?: string
+          horas_sem_resposta?: number | null
+          id?: string
+          objecao_detectada?: string | null
+          produto_interesse?: string | null
+          resumo?: string | null
+          score_clareza?: number | null
+          score_contorno_objecao?: number | null
+          score_cta?: number | null
+          score_empatia?: number | null
+          score_followup?: number | null
+          score_personalizacao?: number | null
+          score_qualidade?: number | null
+          score_velocidade?: number | null
+          sentimento?: string | null
+          status_lead?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_conversation_analysis_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "whatsapp_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_conversation_analysis_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_dashboard_cache: {
+        Row: {
+          data: Json
+          generated_at: string | null
+          id: string
+          tenant_id: string
+        }
+        Insert: {
+          data: Json
+          generated_at?: string | null
+          id?: string
+          tenant_id: string
+        }
+        Update: {
+          data?: Json
+          generated_at?: string | null
+          id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_dashboard_cache_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           address: string | null
