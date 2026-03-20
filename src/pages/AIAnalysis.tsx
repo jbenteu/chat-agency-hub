@@ -12,7 +12,7 @@ import {
   LayoutDashboard, AlertCircle, BarChart2, Star,
   MessageSquareWarning, TrendingUp, MessageSquare, Flame,
   ArrowUpRight, MessageSquarePlus, Loader2, Tag, AlertTriangle,
-  ChevronDown, Wand2, CheckCircle,
+  ChevronDown, Wand2, CheckCircle, Send, User,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
