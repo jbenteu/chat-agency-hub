@@ -1211,8 +1211,10 @@ const WhatsAppInbox = () => {
               )}
             </ScrollArea>
           </div>
+          )}
 
           {/* Chat area */}
+          {(!isMobile || !!selectedConv) && (
           <div className="flex flex-1 flex-col">
             {selectedConv ? (
               <>
