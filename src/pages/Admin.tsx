@@ -52,7 +52,7 @@ const ROLE_COLORS: Record<UserRole, string> = {
 };
 
 const Admin = () => {
-  const { profile } = useAuth();
+  const { profile, isSuperAdmin } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<ProfileRow[]>([]);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
@@ -183,7 +183,7 @@ const Admin = () => {
     return acc;
   }, {});
 
-  if (profile?.role !== "admin") {
+  if (profile?.role !== "admin" && !isSuperAdmin) {
     return (
       <AppLayout>
         <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
