@@ -31,8 +31,9 @@ function isExpirableUrl(url: string): boolean {
 
 /** Transform internal Docker MinIO URLs to public-facing URLs */
 function fixMinioUrl(url: string): string {
-  // Internal Docker hostname → public IP
-  return url.replace(/^http:\/\/minio:9000\//, "http://82.25.70.124:9000/");
+  return url
+    .replace(/^http:\/\/minio:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/")
+    .replace(/^http:\/\/82\.25\.70\.124:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/");
 }
 
 // ── WhatsApp-style Audio Player ──

@@ -84,7 +84,7 @@ const isExpirableWhatsAppUrl = (url: string | null | undefined): boolean => {
 /** Converte hostname interno do Docker para o IP público do MinIO */
 const fixMinioUrl = (url: string | null): string | null => {
   if (!url) return url;
-  return url.replace(/^http:\/\/minio:9000\//, "http://82.25.70.124:9000/");
+  return url.replace(/^http:\/\/minio:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/").replace(/^http:\/\/82\.25\.70\.124:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/");
 };
 
 /**
