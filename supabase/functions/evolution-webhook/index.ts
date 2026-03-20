@@ -703,6 +703,114 @@ Deno.serve(async (req) => {
         .update(patch)
         .eq("instance_name", instanceName);
 
+      // ── Auto-import WhatsApp contacts on connection ──
+      if (newStatus === "connected" && evoBaseUrl) {
+        // Fire-and-forget: don't block the webhook response
+        (async () => {
+          const progressId = `${tenantId}-${instanceName}`;
+          try {
+            // Initialize progress
+            await supabase.from("import_progress").upsert({
+              id: progressId,
+              tenant_id: tenantId,
+              instance_name: instanceName,
+              total: 0,
+              imported: 0,
+              status: "running",
+              started_at: new Date().toISOString(),
+              finished_at: null,
+              error_message: null,
+            });
+
+            // Fetch contacts from Evolution API
+            let contacts: any[] = [];
+            for (const path of [
+              `/chat/findContacts/${instanceName}`,
+              `/contact/find/${instanceName}`,
+            ]) {
+              try {
+                const res = await fetchWithTimeout(
+                  `${evoBaseUrl}${path}`,
+                  { method: "POST", headers: evoHeaders, body: JSON.stringify({ where: {} }) },
+                  15000,
+                );
+                if (res.ok) {
+                  const json = await res.json();
+                  contacts = Array.isArray(json) ? json : json?.contacts || json?.data || [];
+                  if (contacts.length > 0) break;
+                }
+              } catch { /* try next path */ }
+            }
+
+            if (contacts.length === 0) {
+              await supabase.from("import_progress").update({
+                status: "done", imported: 0, total: 0, finished_at: new Date().toISOString(),
+              }).eq("id", progressId);
+              return;
+            }
+
+            // Update total
+            await supabase.from("import_progress").update({ total: contacts.length }).eq("id", progressId);
+
+            // Process in batches of 100
+            const BATCH_SIZE = 100;
+            let imported = 0;
+
+            for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
+              const batch = contacts.slice(i, i + BATCH_SIZE);
+              const rows = batch
+                .map((c: any) => {
+                  const rawId = c.id || c.jid || c.wuid || "";
+                  const phone = normalizePhone(rawId);
+                  if (!phone) return null;
+                  const name = c.pushName || c.name || c.notify || null;
+                  return {
+                    tenant_id: tenantId,
+                    phone,
+                    name: name && !/^\d+$/.test(name) ? name : phone,
+                    tags: ["whatsapp", "importado"],
+                    origin: "whatsapp_import",
+                    notes: "Importado automaticamente do WhatsApp",
+                  };
+                })
+                .filter(Boolean);
+
+              if (rows.length > 0) {
+                const { error: upsertErr } = await supabase
+                  .from("contacts")
+                  .upsert(rows, { onConflict: "phone,tenant_id", ignoreDuplicates: true });
+                if (!upsertErr) imported += rows.length;
+              }
+
+              // Update progress
+              await supabase.from("import_progress").update({ imported }).eq("id", progressId);
+            }
+
+            // Update conversation names from imported contacts
+            try {
+              await supabase.rpc("update_conversations_contact_names", {
+                p_tenant_id: tenantId,
+                p_instance_name: instanceName,
+              });
+            } catch (e) {
+              console.error("Failed to update conversation names:", e);
+            }
+
+            // Mark done
+            await supabase.from("import_progress").update({
+              status: "done", imported, finished_at: new Date().toISOString(),
+            }).eq("id", progressId);
+          } catch (err) {
+            console.error("Contact import failed:", err);
+            await supabase.from("import_progress").update({
+              status: "error",
+              error_message: String(err),
+              finished_at: new Date().toISOString(),
+            }).eq("id", progressId).catch(() => {});
+          }
+        })();
+      }
+
       return jsonResponse({ ok: true, event: "status_updated", status: newStatus, phoneNumber });
     }
 

@@ -210,6 +210,42 @@ export type Database = {
           },
         ]
       }
+      import_progress: {
+        Row: {
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          imported: number | null
+          instance_name: string
+          started_at: string | null
+          status: string | null
+          tenant_id: string
+          total: number | null
+        }
+        Insert: {
+          error_message?: string | null
+          finished_at?: string | null
+          id: string
+          imported?: number | null
+          instance_name: string
+          started_at?: string | null
+          status?: string | null
+          tenant_id: string
+          total?: number | null
+        }
+        Update: {
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          imported?: number | null
+          instance_name?: string
+          started_at?: string | null
+          status?: string | null
+          tenant_id?: string
+          total?: number | null
+        }
+        Relationships: []
+      }
       pipeline_stages: {
         Row: {
           color: string | null
@@ -697,6 +733,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      update_conversations_contact_names: {
+        Args: { p_instance_name: string; p_tenant_id: string }
+        Returns: undefined
       }
     }
     Enums: {

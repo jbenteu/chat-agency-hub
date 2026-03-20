@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Image as ImageIcon, FileText, Download, Play, Pause, Volume2 } from "lucide-react";
+import { Loader2, Image as ImageIcon, ImageOff, FileText, Download, Play, Pause, Volume2, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // Module-level cache for downloaded media
 const mediaCache = new Map<string, string>();
@@ -133,15 +134,49 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [reloading, setReloading] = useState(false);
   const [triedDirectUrlFallback, setTriedDirectUrlFallback] = useState(false);
+  const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
   const fetchedRef = useRef(false);
 
+  const tryRedownload = async () => {
+    if (!messageId || !instanceName) return;
+    setReloading(true);
+    setError(false);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) { setError(true); return; }
+
+      const { data, error: fnError } = await supabase.functions.invoke("evolution-api", {
+        body: { action: "get_media", instanceName, messageId, remoteJid },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (fnError || data?.error) { setError(true); return; }
+
+      const url = data?.mediaData || data?.mediaUrl || null;
+      if (url) {
+        const cacheKey = messageId || mediaUrl || "";
+        mediaCache.set(cacheKey, url);
+        setResolvedUrl(url);
+        setError(false);
+      } else {
+        setError(true);
+      }
+    } catch {
+      setError(true);
+    } finally {
+      setReloading(false);
+    }
+  };
+
   useEffect(() => {
-    // Reset state on prop change
     fetchedRef.current = false;
     setError(false);
     setResolvedUrl(null);
     setTriedDirectUrlFallback(false);
+    setThumbnailLoaded(false);
 
     const fallbackToDirectUrl = () => {
       if (!mediaUrl) return false;
@@ -220,10 +255,13 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
     setError(true);
   };
 
+  // Thumbnail source for placeholder
+  const thumbSrc = mediaThumbnail
+    ? (mediaThumbnail.startsWith("data:") ? mediaThumbnail : `data:image/jpeg;base64,${mediaThumbnail}`)
+    : null;
+
   if (loading) {
-    // Show thumbnail as placeholder while loading full media
-    if (mediaThumbnail && (mediaType === "image" || mediaType === "video")) {
-      const thumbSrc = mediaThumbnail.startsWith("data:") ? mediaThumbnail : `data:image/jpeg;base64,${mediaThumbnail}`;
+    if (thumbSrc && (mediaType === "image" || mediaType === "video")) {
       return (
         <div className="relative mb-1">
           <img src={thumbSrc} alt="Carregando…" className="max-w-full rounded-lg opacity-60 blur-[2px]"
@@ -245,9 +283,26 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   if (error && !resolvedUrl) {
     if (mediaType === "image") {
       return (
-        <div className="mb-1 flex items-center gap-2 rounded-lg bg-background/10 p-3">
-          <ImageIcon className="h-5 w-5 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">Imagem indisponível</span>
+        <div className="mb-1 flex flex-col items-center gap-2 rounded-lg bg-background/10 p-4">
+          {thumbSrc ? (
+            <img src={thumbSrc} alt="Preview" className="max-w-full rounded-lg opacity-40 blur-sm"
+              style={{ maxHeight: 200 }} />
+          ) : (
+            <ImageOff className="h-8 w-8 text-muted-foreground" />
+          )}
+          <span className="text-xs text-muted-foreground">Imagem expirada</span>
+          <button
+            onClick={tryRedownload}
+            disabled={reloading}
+            className="flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+          >
+            {reloading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3" />
+            )}
+            Recarregar
+          </button>
         </div>
       );
     }
@@ -256,6 +311,14 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
         <div className="mb-1 flex items-center gap-2 rounded-lg bg-background/10 p-3">
           <Volume2 className="h-5 w-5 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">Áudio indisponível</span>
+          <button
+            onClick={tryRedownload}
+            disabled={reloading}
+            className="ml-auto flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-50"
+          >
+            {reloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            Recarregar
+          </button>
         </div>
       );
     }
@@ -263,6 +326,14 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
       <div className="mb-1 flex items-center gap-2 rounded-lg bg-background/10 p-3">
         <FileText className="h-5 w-5 text-muted-foreground" />
         <span className="text-xs text-muted-foreground">Mídia indisponível</span>
+        <button
+          onClick={tryRedownload}
+          disabled={reloading}
+          className="ml-auto flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-50"
+        >
+          {reloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          Recarregar
+        </button>
       </div>
     );
   }
@@ -271,13 +342,22 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
 
   if (mediaType === "image") {
     return (
-      <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="block mb-1">
+      <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="block mb-1 relative">
+        {/* Thumbnail placeholder with blur — visible until full image loads */}
+        {thumbSrc && !thumbnailLoaded && (
+          <img src={thumbSrc} alt="" className="absolute inset-0 w-full h-full rounded-lg blur-sm object-cover"
+            style={{ maxWidth: 280, maxHeight: 300 }} />
+        )}
         <img
           src={resolvedUrl}
           alt="Imagem"
-          className="rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+          className={cn(
+            "rounded-lg cursor-pointer hover:opacity-90 transition-all duration-300",
+            !thumbnailLoaded && thumbSrc ? "opacity-0" : "opacity-100"
+          )}
           style={{ maxWidth: 280, maxHeight: 300, width: "auto", height: "auto" }}
           loading="lazy"
+          onLoad={() => setThumbnailLoaded(true)}
           onError={handleImageError}
         />
       </a>
