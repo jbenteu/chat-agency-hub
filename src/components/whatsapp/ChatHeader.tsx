@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Users, User, ChevronRight, Edit2, Search, MoreVertical, Archive, Pin, VolumeX, CircleDot } from "lucide-react";
+import { Users, User, ChevronRight, Edit2, Search, MoreVertical, Archive, Pin, VolumeX, CircleDot, Sparkles } from "lucide-react";
 import { formatPhoneWhatsApp } from "@/data/country-codes";
 import type { Conversation } from "@/hooks/use-evolution-api";
 import type { GroupInfo } from "@/hooks/use-inbox-cache";
@@ -21,6 +21,8 @@ interface ChatHeaderProps {
   onArchive?: () => void;
   onPin?: () => void;
   onSearchClick?: () => void;
+  onAnalyze?: () => void;
+  analyzing?: boolean;
 }
 
 const isGroupJid = (jid: string) => jid.endsWith("@g.us");
@@ -32,7 +34,7 @@ function getInitials(name: string | null) {
 
 export function ChatHeader({
   conversation, profilePicUrl, groupInfo, isTyping, showContactPanel,
-  onToggleContactPanel, onRename, onArchive, onPin, onSearchClick,
+  onToggleContactPanel, onRename, onArchive, onPin, onSearchClick, onAnalyze, analyzing,
 }: ChatHeaderProps) {
   const [editing, setEditing] = useState(false);
   const [nameValue, setNameValue] = useState("");
@@ -97,6 +99,19 @@ export function ChatHeader({
       </div>
 
       <div className="flex items-center gap-1">
+        {onAnalyze && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 text-xs text-violet-600 hover:text-violet-700 hover:bg-violet-50"
+            onClick={onAnalyze}
+            disabled={analyzing}
+            title="Analisar atendimento com IA"
+          >
+            <Sparkles className={`h-3.5 w-3.5 ${analyzing ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Analisar</span>
+          </Button>
+        )}
         {onSearchClick && (
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onSearchClick} title="Buscar na conversa">
             <Search className="h-4 w-4" />

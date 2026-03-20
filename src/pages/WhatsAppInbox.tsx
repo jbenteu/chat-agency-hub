@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
 import { MediaMessage } from "@/components/whatsapp/MediaMessage";
+import { useAIAnalysis } from "@/hooks/use-ai-analysis";
 
 import { ConversationFilters, type ConversationFilter } from "@/components/whatsapp/ConversationFilters";
 import { ConversationListItem } from "@/components/whatsapp/ConversationListItem";
@@ -78,6 +79,7 @@ interface ReplyTarget { messageId: string; content: string; senderName: string; 
 const WhatsAppInbox = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { analyzeConversation } = useAIAnalysis();
   const location = useLocation();
   const { user, signOut } = useAuth();
   const {
@@ -110,6 +112,7 @@ const WhatsAppInbox = () => {
   const [sendingCount, setSendingCount] = useState(0);
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [showNewConvDialog, setShowNewConvDialog] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const isMobile = useIsMobile();
   // (Contact details, editing, invite link now managed by InfoPanel)
   // Setup flow state (no instances)
@@ -921,6 +924,19 @@ const WhatsAppInbox = () => {
     } catch { toast({ title: "Erro ao renomear", variant: "destructive" }); }
   };
   
+  const handleAnalyze = async () => {
+    if (!selectedConv) return;
+    try {
+      setAnalyzing(true);
+      await analyzeConversation(selectedConv.id);
+      toast({ title: "Análise concluída", description: "A conversa foi analisada pela IA com sucesso." });
+    } catch (err) {
+      toast({ title: "Erro na análise", description: err instanceof Error ? err.message : "Falha ao analisar", variant: "destructive" });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   // Tag create handler moved to InfoPanel
   const isGroupJid = (jid: string) => jid.endsWith("@g.us");
 
@@ -1258,6 +1274,8 @@ const WhatsAppInbox = () => {
                     setSelectedConv((prev) => prev ? { ...prev, pinned: !prev.pinned } : prev);
                   }}
                   onSearchClick={() => setShowMessageSearch((v) => !v)}
+                  onAnalyze={handleAnalyze}
+                  analyzing={analyzing}
                 />
 
                 {/* In-conversation search */}

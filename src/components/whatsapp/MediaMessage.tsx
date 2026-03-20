@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, Image as ImageIcon, ImageOff, FileText, Download, Play, Pause, Volume2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ImageLightbox } from "./ImageLightbox";
 
 // Module-level cache for downloaded media
 const mediaCache = new Map<string, string>();
@@ -137,6 +138,7 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
   const [reloading, setReloading] = useState(false);
   const [triedDirectUrlFallback, setTriedDirectUrlFallback] = useState(false);
   const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const fetchedRef = useRef(false);
 
   const tryRedownload = async () => {
@@ -342,25 +344,30 @@ export function MediaMessage({ messageId, mediaUrl, mediaType, content, instance
 
   if (mediaType === "image") {
     return (
-      <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="block mb-1 relative">
-        {/* Thumbnail placeholder with blur — visible until full image loads */}
-        {thumbSrc && !thumbnailLoaded && (
-          <img src={thumbSrc} alt="" className="absolute inset-0 w-full h-full rounded-lg blur-sm object-cover"
-            style={{ maxWidth: 280, maxHeight: 300 }} />
-        )}
-        <img
-          src={resolvedUrl}
-          alt="Imagem"
-          className={cn(
-            "rounded-lg cursor-pointer hover:opacity-90 transition-all duration-300",
-            !thumbnailLoaded && thumbSrc ? "opacity-0" : "opacity-100"
+      <>
+        <div className="block mb-1 relative cursor-pointer" onClick={() => setLightboxOpen(true)}>
+          {/* Thumbnail placeholder with blur — visible until full image loads */}
+          {thumbSrc && !thumbnailLoaded && (
+            <img src={thumbSrc} alt="" className="absolute inset-0 w-full h-full rounded-lg blur-sm object-cover"
+              style={{ maxWidth: 280, maxHeight: 300 }} />
           )}
-          style={{ maxWidth: 280, maxHeight: 300, width: "auto", height: "auto" }}
-          loading="lazy"
-          onLoad={() => setThumbnailLoaded(true)}
-          onError={handleImageError}
-        />
-      </a>
+          <img
+            src={resolvedUrl}
+            alt="Imagem"
+            className={cn(
+              "rounded-lg cursor-pointer hover:opacity-90 transition-all duration-300",
+              !thumbnailLoaded && thumbSrc ? "opacity-0" : "opacity-100"
+            )}
+            style={{ maxWidth: 280, maxHeight: 300, width: "auto", height: "auto" }}
+            loading="lazy"
+            onLoad={() => setThumbnailLoaded(true)}
+            onError={handleImageError}
+          />
+        </div>
+        {lightboxOpen && (
+          <ImageLightbox src={resolvedUrl} alt="Imagem" onClose={() => setLightboxOpen(false)} />
+        )}
+      </>
     );
   }
 
