@@ -13,6 +13,8 @@ import { ScrollToBottom } from "@/components/whatsapp/ScrollToBottom";
 import { EmojiPicker } from "@/components/whatsapp/EmojiPicker";
 import { AudioRecorder } from "@/components/whatsapp/AudioRecorder";
 import { InfoPanel } from "@/components/whatsapp/InfoPanel";
+import { SearchMessages } from "@/components/whatsapp/SearchMessages";
+import { NewConversationDialog } from "@/components/whatsapp/NewConversationDialog";
 import {
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
