@@ -684,18 +684,7 @@ const WhatsAppInbox = () => {
     fetchGI();
   }, [selectedConv?.id, selectedConv?.remote_jid, groupInfoCache, instances, selectedInstanceId, fetchGroupInfo]);
 
-  // ── Load contact details when panel opens ──
-  useEffect(() => {
-    if (!showContactPanel || !selectedConv || isGroupJid(selectedConv.remote_jid)) { setContactDetails(null); return; }
-    if (!selectedConv.contact_id) { setContactDetails(null); return; }
-    const loadContact = async () => {
-      try {
-        const data = await getContact(selectedConv.contact_id!);
-        if (data?.contact) setContactDetails(data.contact);
-      } catch { /* ignore */ }
-    };
-    loadContact();
-  }, [showContactPanel, selectedConv?.contact_id, getContact]);
+  // Contact details loading moved to InfoPanel
 
   const isTransientEvolutionError = (err: unknown) => {
     const msg = String((err as { message?: string })?.message || err || "");
