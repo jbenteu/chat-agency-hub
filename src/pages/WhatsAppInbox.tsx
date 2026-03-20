@@ -9,6 +9,7 @@ import { MessageStatusIcon } from "@/components/whatsapp/MessageStatusIcon";
 import { DateSeparator, getDateKey } from "@/components/whatsapp/DateSeparator";
 import { WhatsAppFormatted } from "@/components/whatsapp/WhatsAppFormatted";
 import { MessageContextMenu } from "@/components/whatsapp/MessageContextMenu";
+import { ScrollToBottom } from "@/components/whatsapp/ScrollToBottom";
 import {
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
