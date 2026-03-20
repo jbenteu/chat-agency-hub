@@ -74,8 +74,6 @@ function getSenderColor(sender: string): string {
 interface ReplyTarget { messageId: string; content: string; senderName: string; }
 
 // ContactDetails type moved to InfoPanel
-  custom_fields: Record<string, string>; created_at: string;
-}
 
 const WhatsAppInbox = () => {
   const { toast } = useToast();
