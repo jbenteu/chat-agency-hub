@@ -14,12 +14,11 @@ import { useContacts } from "@/hooks/use-contacts";
 import { useActivities } from "@/hooks/use-activities";
 import { usePipeline } from "@/hooks/use-pipeline";
 import { BRAZIL_STATES, BRAZIL_CITIES } from "@/data/brazil-locations";
-import { formatPhoneWhatsApp } from "@/data/country-codes";
+import { formatPhoneWhatsApp, maskPhoneInput, detectCountryCode, COUNTRY_CODES } from "@/data/country-codes";
+import { TagSelector } from "@/components/whatsapp/TagSelector";
 import { ActivityTimeline } from "./ActivityTimeline";
 import { MessageCircle, ExternalLink, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale";
 
 interface Props {
   deal: Deal | null;
@@ -40,7 +39,6 @@ export function DealDetailSheet({ deal, open, onOpenChange }: Props) {
           <TabsList className="mx-6 w-auto">
             <TabsTrigger value="dados">Dados</TabsTrigger>
             <TabsTrigger value="atividades">Atividades</TabsTrigger>
-            <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dados" className="flex-1 overflow-hidden mt-0">
@@ -52,12 +50,6 @@ export function DealDetailSheet({ deal, open, onOpenChange }: Props) {
           <TabsContent value="atividades" className="flex-1 overflow-hidden mt-0">
             <ScrollArea className="h-full">
               <ActivitiesTab deal={deal} />
-            </ScrollArea>
-          </TabsContent>
-
-          <TabsContent value="whatsapp" className="flex-1 overflow-hidden mt-0">
-            <ScrollArea className="h-full">
-              <WhatsAppTab deal={deal} />
             </ScrollArea>
           </TabsContent>
         </Tabs>
@@ -74,11 +66,19 @@ function DealDataTab({ deal }: { deal: Deal }) {
   const contact = deal.contact;
 
   const [contactName, setContactName] = useState(contact?.name || "");
-  const [contactPhone, setContactPhone] = useState(contact?.phone || "");
+  const [contactCountryCode, setContactCountryCode] = useState(() => detectCountryCode(contact?.phone));
+  const [contactPhoneLocal, setContactPhoneLocal] = useState(() => {
+    if (!contact?.phone) return "";
+    const digits = contact.phone.replace(/\D/g, "");
+    const dialDigits = detectCountryCode(contact.phone).replace(/\D/g, "");
+    const local = digits.startsWith(dialDigits) ? digits.slice(dialDigits.length) : digits;
+    return maskPhoneInput(local);
+  });
   const [contactEmail, setContactEmail] = useState(contact?.email || "");
   const [contactCompany, setContactCompany] = useState(contact?.company || "");
   const [contactState, setContactState] = useState(contact?.state || "");
   const [contactCity, setContactCity] = useState(contact?.city || "");
+  const [contactTags, setContactTags] = useState<string[]>(contact?.tags || []);
   const [dealTitle, setDealTitle] = useState(deal.title);
   const [dealValue, setDealValue] = useState(deal.value?.toString() || "0");
   const [dealStage, setDealStage] = useState(deal.pipeline_stage_id || deal.stage);
@@ -86,9 +86,19 @@ function DealDataTab({ deal }: { deal: Deal }) {
 
   const cities = contactState ? BRAZIL_CITIES[contactState] || [] : [];
 
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setContactPhoneLocal(maskPhoneInput(e.target.value));
+  };
+
+  const buildFullPhone = () => {
+    const digits = contactPhoneLocal.replace(/\D/g, "");
+    if (!digits) return "";
+    const dialDigits = contactCountryCode.replace(/\D/g, "");
+    return dialDigits + digits;
+  };
+
   const handleSave = async () => {
     try {
-      // Update deal
       const matchedStage = stages.find((s) => s.id === dealStage);
       await updateDeal.mutateAsync({
         id: deal.id,
@@ -99,16 +109,16 @@ function DealDataTab({ deal }: { deal: Deal }) {
         status: dealStatus,
       });
 
-      // Update contact
       if (contact) {
         await updateContact.mutateAsync({
           id: contact.id,
           name: contactName,
-          phone: contactPhone,
+          phone: buildFullPhone(),
           email: contactEmail,
           company: contactCompany,
           state: contactState,
           city: contactCity,
+          tags: contactTags,
         });
       }
       toast({ title: "Salvo com sucesso" });
@@ -127,9 +137,28 @@ function DealDataTab({ deal }: { deal: Deal }) {
             <Label className="text-xs">Nome</Label>
             <Input value={contactName} onChange={(e) => setContactName(e.target.value)} />
           </div>
-          <div>
+          <div className="col-span-2">
             <Label className="text-xs">Telefone</Label>
-            <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+            <div className="flex gap-2">
+              <Select value={contactCountryCode} onValueChange={setContactCountryCode}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {COUNTRY_CODES.map((c) => (
+                    <SelectItem key={c.code} value={c.dial}>
+                      {c.flag} {c.dial}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                placeholder="(99) 9 9999-9999"
+                value={contactPhoneLocal}
+                onChange={handlePhoneChange}
+                className="flex-1"
+              />
+            </div>
           </div>
           <div>
             <Label className="text-xs">E-mail</Label>
@@ -166,13 +195,10 @@ function DealDataTab({ deal }: { deal: Deal }) {
             </Select>
           </div>
         </div>
-        {contact?.tags && contact.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {contact.tags.map((t) => (
-              <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
-            ))}
-          </div>
-        )}
+        <div className="mt-3">
+          <Label className="text-xs">Tags</Label>
+          <TagSelector tags={contactTags} onChange={setContactTags} />
+        </div>
       </div>
 
       <Separator />
@@ -222,9 +248,46 @@ function DealDataTab({ deal }: { deal: Deal }) {
         </div>
       </div>
 
+      <Separator />
+
+      {/* WhatsApp section (moved from tab) */}
+      <WhatsAppSection deal={deal} />
+
       <Button onClick={handleSave} className="w-full" disabled={updateDeal.isPending}>
         <Save className="h-4 w-4 mr-2" />
         Salvar alterações
+      </Button>
+    </div>
+  );
+}
+
+function WhatsAppSection({ deal }: { deal: Deal }) {
+  const contact = deal.contact;
+
+  if (!contact?.phone) {
+    return (
+      <div className="py-4 text-center">
+        <MessageCircle className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+        <p className="text-xs text-muted-foreground">Contato sem telefone vinculado</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h4 className="text-sm font-medium">WhatsApp</h4>
+      <div className="flex items-center gap-3">
+        <MessageCircle className="h-5 w-5 text-green-600" />
+        <div>
+          <p className="text-sm font-medium">{contact.name}</p>
+          <p className="text-xs text-muted-foreground">{formatPhoneWhatsApp(contact.phone)}</p>
+        </div>
+      </div>
+      <Button asChild variant="outline" className="w-full" size="sm">
+        <a href="/whatsapp">
+          <ExternalLink className="h-4 w-4 mr-2" />
+          Abrir conversa no Inbox
+        </a>
       </Button>
     </div>
   );
@@ -263,37 +326,6 @@ function ActivitiesTab({ deal }: { deal: Deal }) {
       </div>
       <Separator />
       <ActivityTimeline activities={activities} isLoading={isLoading} />
-    </div>
-  );
-}
-
-function WhatsAppTab({ deal }: { deal: Deal }) {
-  const contact = deal.contact;
-
-  if (!contact?.phone) {
-    return (
-      <div className="px-6 py-12 text-center">
-        <MessageCircle className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-        <p className="text-sm text-muted-foreground">Contato sem telefone vinculado</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="px-6 py-4 space-y-4">
-      <div className="flex items-center gap-3">
-        <MessageCircle className="h-5 w-5 text-green-600" />
-        <div>
-          <p className="text-sm font-medium">{contact.name}</p>
-          <p className="text-xs text-muted-foreground">{formatPhoneWhatsApp(contact.phone)}</p>
-        </div>
-      </div>
-      <Button asChild variant="outline" className="w-full">
-        <a href="/whatsapp">
-          <ExternalLink className="h-4 w-4 mr-2" />
-          Abrir conversa no Inbox
-        </a>
-      </Button>
     </div>
   );
 }
