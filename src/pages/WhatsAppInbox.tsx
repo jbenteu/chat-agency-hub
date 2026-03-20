@@ -13,6 +13,8 @@ import { ScrollToBottom } from "@/components/whatsapp/ScrollToBottom";
 import { EmojiPicker } from "@/components/whatsapp/EmojiPicker";
 import { AudioRecorder } from "@/components/whatsapp/AudioRecorder";
 import { InfoPanel } from "@/components/whatsapp/InfoPanel";
+import { SearchMessages } from "@/components/whatsapp/SearchMessages";
+import { NewConversationDialog } from "@/components/whatsapp/NewConversationDialog";
 import {
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
@@ -42,8 +44,9 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   MessageCircle, Send, Image, Paperclip, Search, X, Loader2,
   LayoutDashboard, Users, Settings, Shield, LogOut, Reply,
-  ChevronDown, RefreshCw, QrCode,
+  ChevronDown, RefreshCw, QrCode, Plus, ArrowLeft,
 } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { format } from "date-fns";
 import logo from "@/assets/logo.png";
 
@@ -104,6 +107,9 @@ const WhatsAppInbox = () => {
   const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("all");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [sendingCount, setSendingCount] = useState(0);
+  const [showMessageSearch, setShowMessageSearch] = useState(false);
+  const [showNewConvDialog, setShowNewConvDialog] = useState(false);
+  const isMobile = useIsMobile();
   // (Contact details, editing, invite link now managed by InfoPanel)
   // Setup flow state (no instances)
   const [setupDisplayName, setSetupDisplayName] = useState("");
@@ -1084,8 +1090,8 @@ const WhatsAppInbox = () => {
   return (
     <SidebarProvider>
       <div className="flex h-screen w-full">
-        {/* Compact sidebar */}
-        <Sidebar collapsible="icon">
+        {/* Compact sidebar — hidden on mobile */}
+        <Sidebar collapsible="icon" className={isMobile ? "hidden" : ""}>
           <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
             <div className="flex items-center gap-2">
               <img src={logo} alt="Advanced Marketing" className="h-8 w-auto" />
@@ -1131,20 +1137,22 @@ const WhatsAppInbox = () => {
           )}
 
           {/* Conversation list */}
-          <div className="flex w-72 flex-col border-r border-border bg-background">
+          {(!isMobile || !selectedConv) && (
+          <div className={`flex flex-col border-r border-border bg-background ${isMobile ? "w-full" : "w-72"}`}>
             <div className="flex items-center justify-between gap-2 border-b border-border p-3">
               <div className="flex items-center gap-2">
-                <SidebarTrigger className="h-7 w-7" />
+                {!isMobile && <SidebarTrigger className="h-7 w-7" />}
                 <h2 className="text-sm font-semibold">Conversas</h2>
               </div>
               <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowNewConvDialog(true)} title="Nova conversa"><Plus className="h-3.5 w-3.5" /></Button>
                 <Select value={selectedInstanceId} onValueChange={(v) => { setSelectedInstanceId(v); setCachedSelectedInstance(v); setSelectedConv(null); setMessages([]); const cached = getCachedConversations(v); if (cached) setConversations(cached); }}>
                   <SelectTrigger className="h-7 w-[130px] text-xs"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
                     {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{i.display_name || i.phone_number || "Conexão"}</SelectItem>))}
                   </SelectContent>
                 </Select>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate("/whatsapp/settings")} title="Gerenciar instâncias"><Settings className="h-3.5 w-3.5" /></Button>
+                {!isMobile && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate("/whatsapp/settings")} title="Gerenciar instâncias"><Settings className="h-3.5 w-3.5" /></Button>}
               </div>
             </div>
             <div className="space-y-1.5 p-2">
@@ -1203,11 +1211,22 @@ const WhatsAppInbox = () => {
               )}
             </ScrollArea>
           </div>
+          )}
 
           {/* Chat area */}
+          {(!isMobile || !!selectedConv) && (
           <div className="flex flex-1 flex-col">
             {selectedConv ? (
               <>
+                {/* Mobile back button */}
+                {isMobile && (
+                  <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedConv(null)}>
+                      <ArrowLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-xs font-medium truncate">{selectedConv.contact_name || "Conversa"}</span>
+                  </div>
+                )}
                 {/* Chat header */}
                 <ChatHeader
                   conversation={selectedConv}
@@ -1229,6 +1248,14 @@ const WhatsAppInbox = () => {
                     setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, pinned: !c.pinned } : c));
                     setSelectedConv((prev) => prev ? { ...prev, pinned: !prev.pinned } : prev);
                   }}
+                  onSearchClick={() => setShowMessageSearch((v) => !v)}
+                />
+
+                {/* In-conversation search */}
+                <SearchMessages
+                  messages={messages}
+                  visible={showMessageSearch}
+                  onClose={() => setShowMessageSearch(false)}
                 />
 
                 {/* Messages */}
@@ -1296,7 +1323,7 @@ const WhatsAppInbox = () => {
                             };
 
                             const bubbleContent = (
-                              <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+                              <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group flex animate-fade-in ${isOutbound ? "justify-end" : "justify-start"}`}>
                                 {isGrp && !isOutbound && (
                                   <Avatar className="mr-2 mt-1 h-7 w-7 shrink-0">
                                     {senderPhone && profilePics[`${senderPhone}@s.whatsapp.net`] && <AvatarImage src={profilePics[`${senderPhone}@s.whatsapp.net`]} />}
@@ -1452,6 +1479,7 @@ const WhatsAppInbox = () => {
               </div>
             )}
           </div>
+          )}
 
           {/* Detail panel */}
           {showContactPanel && selectedConv && (
@@ -1466,6 +1494,21 @@ const WhatsAppInbox = () => {
             />
           )}
         </div>
+
+        {/* New conversation dialog */}
+        <NewConversationDialog
+          open={showNewConvDialog}
+          onOpenChange={setShowNewConvDialog}
+          instances={instances}
+          selectedInstanceId={selectedInstanceId}
+          onSend={async (instanceName, phone, message) => {
+            const jid = `${phone}@s.whatsapp.net`;
+            await sendText(instanceName, jid, message);
+            toast({ title: "Mensagem enviada!" });
+            // Refresh conversations to show the new one
+            setTimeout(() => fetchConversations(true), 1500);
+          }}
+        />
       </div>
     </SidebarProvider>
   );
