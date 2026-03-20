@@ -387,7 +387,40 @@ Deno.serve(async (req) => {
         }
 
         const parsed = parseMessagePayload(entry, data);
-        if (parsed.skip) continue;
+        if (parsed.skip) {
+          // Handle reactions: update metadata on original message
+          if ("reason" in parsed && parsed.reason === "reaction" && "reactionMessageId" in parsed) {
+            const reactionMsgId = (parsed as any).reactionMessageId as string | null;
+            const reactionSender = (parsed as any).reactionSender as string | null;
+            const reactionEmoji = (parsed as any).reactionEmoji as string;
+            if (reactionMsgId && reactionSender) {
+              // Find the original message
+              const { data: origMsg } = await supabase
+                .from("whatsapp_messages")
+                .select("id, metadata")
+                .eq("tenant_id", tenantId)
+                .eq("message_id", reactionMsgId)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (origMsg) {
+                const meta = (origMsg.metadata || {}) as Record<string, unknown>;
+                const reactions = (meta.reactions || {}) as Record<string, string>;
+                if (reactionEmoji) {
+                  reactions[reactionSender] = reactionEmoji;
+                } else {
+                  delete reactions[reactionSender]; // empty = remove reaction
+                }
+                await supabase
+                  .from("whatsapp_messages")
+                  .update({ metadata: { ...meta, reactions } })
+                  .eq("tenant_id", tenantId)
+                  .eq("id", origMsg.id);
+              }
+            }
+          }
+          continue;
+        }
 
         const participantJid: string | null =
           key?.participant || entry?.participant || data?.participant || null;
