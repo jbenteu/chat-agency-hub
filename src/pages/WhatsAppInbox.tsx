@@ -1211,7 +1211,7 @@ const WhatsAppInbox = () => {
                         isSelected={selectedConv?.id === c.id}
                         profilePicUrl={profilePics[c.remote_jid] || c.profile_picture_url || undefined}
                         isTyping={!!isTyping}
-                        onClick={() => { setSelectedConv(c); setShowContactPanel(false); setReplyTarget(null); setContactDetails(null); setEditingContact(false); setInviteLink(null); }}
+                        onClick={() => { setSelectedConv(c); setShowContactPanel(false); setReplyTarget(null); }}
                         formatTime={formatConvTime}
                       />
                     </div>
