@@ -924,13 +924,18 @@ const WhatsAppInbox = () => {
 
   const saveInlineRename = async () => {
     if (!selectedConv || !inlineNameValue.trim()) { setInlineEditingName(false); return; }
+    await saveInlineRenameWith(inlineNameValue.trim());
+    setInlineEditingName(false);
+  };
+
+  const saveInlineRenameWith = async (newName: string) => {
+    if (!selectedConv || !newName) return;
     try {
-      await supabase.from("whatsapp_conversations").update({ contact_name: inlineNameValue.trim() }).eq("id", selectedConv.id);
-      setSelectedConv({ ...selectedConv, contact_name: inlineNameValue.trim() });
-      setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, contact_name: inlineNameValue.trim() } : c));
+      await supabase.from("whatsapp_conversations").update({ contact_name: newName }).eq("id", selectedConv.id);
+      setSelectedConv((prev) => prev ? { ...prev, contact_name: newName } : prev);
+      setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, contact_name: newName } : c));
       toast({ title: "Nome atualizado" });
     } catch { toast({ title: "Erro ao renomear", variant: "destructive" }); }
-    setInlineEditingName(false);
   };
   
   // Tag create handler via edge function
