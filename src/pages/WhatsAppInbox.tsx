@@ -1343,37 +1343,27 @@ const WhatsAppInbox = () => {
             {selectedConv ? (
               <>
                 {/* Chat header */}
-                <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9">
-                      {profilePics[selectedConv.remote_jid] && <AvatarImage src={profilePics[selectedConv.remote_jid]} alt={selectedConv.contact_name || ""} />}
-                      <AvatarFallback className="bg-primary/10 text-xs text-primary">
-                        {isGroupJid(selectedConv.remote_jid) ? <Users className="h-4 w-4" /> : getInitials(selectedConv.contact_name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      {inlineEditingName ? (
-                        <div className="flex items-center gap-1">
-                          <Input ref={inlineNameInputRef} className="h-6 w-40 text-sm" value={inlineNameValue} onChange={(e) => setInlineNameValue(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter") saveInlineRename(); if (e.key === "Escape") setInlineEditingName(false); }}
-                            onBlur={saveInlineRename} />
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 group/name">
-                          <p className="text-sm font-medium cursor-pointer" onDoubleClick={startInlineRename}>{selectedConv.contact_name || selectedConv.contact_phone || "Desconhecido"}</p>
-                          <button onClick={startInlineRename} className="opacity-0 group-hover/name:opacity-100 transition-opacity" title="Renomear"><Edit2 className="h-3 w-3 text-muted-foreground" /></button>
-                        </div>
-                      )}
-                      <p className="text-[11px] text-muted-foreground">
-                        {isGroupJid(selectedConv.remote_jid) ? `Grupo · ${currentGroupInfo?.size || "…"} participantes` : formatPhoneWhatsApp(selectedConv.contact_phone)}
-                      </p>
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="sm" onClick={() => setShowContactPanel((v) => !v)}>
-                    <User className="h-4 w-4" />
-                    <ChevronRight className={`ml-1 h-3 w-3 transition-transform ${showContactPanel ? "rotate-180" : ""}`} />
-                  </Button>
-                </div>
+                <ChatHeader
+                  conversation={selectedConv}
+                  profilePicUrl={profilePics[selectedConv.remote_jid]}
+                  groupInfo={currentGroupInfo}
+                  isTyping={selectedConv.typing_presence === "composing" && !!selectedConv.typing_updated_at && (Date.now() - new Date(selectedConv.typing_updated_at).getTime() < 15000)}
+                  showContactPanel={showContactPanel}
+                  onToggleContactPanel={() => setShowContactPanel((v) => !v)}
+                  onRename={(name) => {
+                    saveInlineRenameWith(name);
+                  }}
+                  onArchive={() => {
+                    archiveConversation(selectedConv.id, !selectedConv.archived).catch(() => {});
+                    setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, archived: !c.archived } : c));
+                    setSelectedConv((prev) => prev ? { ...prev, archived: !prev.archived } : prev);
+                  }}
+                  onPin={() => {
+                    pinConversation(selectedConv.id, !selectedConv.pinned).catch(() => {});
+                    setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, pinned: !c.pinned } : c));
+                    setSelectedConv((prev) => prev ? { ...prev, pinned: !prev.pinned } : prev);
+                  }}
+                />
 
                 {/* Messages */}
                 <ScrollArea className="flex-1 px-4 py-3">
