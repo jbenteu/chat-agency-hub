@@ -890,9 +890,7 @@ const WhatsAppInbox = () => {
     return false;
   };
   
-  // Phone editing state
-  const [phoneCountryCode, setPhoneCountryCode] = useState("+55");
-  const [phoneCountryOpen, setPhoneCountryOpen] = useState(false);
+  // Phone editing state moved to InfoPanel
 
   // Inline contact rename state
   const [inlineEditingName, setInlineEditingName] = useState(false);
