@@ -1,22 +1,47 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { KanbanBoard } from "@/components/crm/KanbanBoard";
+import { DealsTable } from "@/components/crm/DealsTable";
+import { ContactsTable } from "@/components/crm/ContactsTable";
+import { LayoutGrid, List, Users } from "lucide-react";
 
 const CRM = () => {
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">CRM</h1>
           <p className="text-sm text-muted-foreground">Gerencie seus contatos e negociações</p>
         </div>
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <Users className="mb-4 h-12 w-12 text-muted-foreground/50" />
-            <p className="text-sm font-medium text-muted-foreground">Nenhum contato cadastrado</p>
-            <p className="text-xs text-muted-foreground/70 mt-1">Adicione seu primeiro contato para começar</p>
-          </CardContent>
-        </Card>
+
+        <Tabs defaultValue="kanban" className="w-full">
+          <TabsList>
+            <TabsTrigger value="kanban" className="gap-1.5">
+              <LayoutGrid className="h-3.5 w-3.5" />
+              Kanban
+            </TabsTrigger>
+            <TabsTrigger value="lista" className="gap-1.5">
+              <List className="h-3.5 w-3.5" />
+              Lista
+            </TabsTrigger>
+            <TabsTrigger value="contatos" className="gap-1.5">
+              <Users className="h-3.5 w-3.5" />
+              Contatos
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="kanban" className="mt-4">
+            <KanbanBoard />
+          </TabsContent>
+
+          <TabsContent value="lista" className="mt-4">
+            <DealsTable />
+          </TabsContent>
+
+          <TabsContent value="contatos" className="mt-4">
+            <ContactsTable />
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );
