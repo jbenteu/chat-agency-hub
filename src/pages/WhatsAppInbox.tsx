@@ -1087,15 +1087,21 @@ const WhatsAppInbox = () => {
     );
   }
 
+  const showConvList = !isMobile || !selectedConv;
+  const showChatArea = !isMobile || !!selectedConv;
+
   return (
     <SidebarProvider>
       <div className="flex h-screen w-full">
-        {/* Compact sidebar */}
+        {/* Compact sidebar — hidden on mobile */}
+        {!isMobile && (
         <Sidebar collapsible="icon">
           <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
             <div className="flex items-center gap-2">
               <img src={logo} alt="Advanced Marketing" className="h-8 w-auto" />
               <span className="text-sm font-semibold text-sidebar-accent-foreground group-data-[collapsible=icon]:hidden">Advanced Marketing</span>
+            </div>
+          </SidebarHeader>
             </div>
           </SidebarHeader>
           <SidebarContent>
