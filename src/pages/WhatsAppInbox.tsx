@@ -87,7 +87,8 @@ const WhatsAppInbox = () => {
   const navigate = useNavigate();
   const { analyzeConversation } = useAIAnalysis();
   const location = useLocation();
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
+  const userRole = profile?.role ?? "cliente";
   const {
     sendText, sendMedia, sendReaction, deleteMessage, archiveConversation, pinConversation,
     getProfilePicture, fetchGroupInfo,
