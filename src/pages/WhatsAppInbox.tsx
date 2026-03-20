@@ -1274,6 +1274,8 @@ const WhatsAppInbox = () => {
                     setSelectedConv((prev) => prev ? { ...prev, pinned: !prev.pinned } : prev);
                   }}
                   onSearchClick={() => setShowMessageSearch((v) => !v)}
+                  onAnalyze={handleAnalyze}
+                  analyzing={analyzing}
                 />
 
                 {/* In-conversation search */}
