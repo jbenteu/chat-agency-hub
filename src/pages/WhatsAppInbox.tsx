@@ -107,6 +107,9 @@ const WhatsAppInbox = () => {
   const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("all");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [sendingCount, setSendingCount] = useState(0);
+  const [showMessageSearch, setShowMessageSearch] = useState(false);
+  const [showNewConvDialog, setShowNewConvDialog] = useState(false);
+  const isMobile = useIsMobile();
   // (Contact details, editing, invite link now managed by InfoPanel)
   // Setup flow state (no instances)
   const [setupDisplayName, setSetupDisplayName] = useState("");
