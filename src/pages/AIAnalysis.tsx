@@ -111,7 +111,7 @@ const AIAnalysis: React.FC = () => {
   const [dashboardData, setDashboardData] = useState<AIDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [askQuestion, setAskQuestion] = useState("");
-  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [askLoading, setAskLoading] = useState(false);
   const [generatingScript, setGeneratingScript] = useState<Record<string, boolean>>({});
   const [generatedScripts, setGeneratedScripts] = useState<Record<string, string>>({});
@@ -123,6 +123,7 @@ const AIAnalysis: React.FC = () => {
   const [objectionLoading, setObjectionLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("visao-geral");
   const [copied, setCopied] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const loadDashboard = async (force = false) => {
     try {
