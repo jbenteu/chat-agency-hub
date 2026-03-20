@@ -2,7 +2,14 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
 import { MediaMessage } from "@/components/whatsapp/MediaMessage";
 import { TagSelector } from "@/components/whatsapp/TagSelector";
-import {
+import { ConversationFilters, type ConversationFilter } from "@/components/whatsapp/ConversationFilters";
+import { ConversationListItem } from "@/components/whatsapp/ConversationListItem";
+import { ChatHeader } from "@/components/whatsapp/ChatHeader";
+import { MessageStatusIcon } from "@/components/whatsapp/MessageStatusIcon";
+import { DateSeparator, getDateKey } from "@/components/whatsapp/DateSeparator";
+import { WhatsAppFormatted } from "@/components/whatsapp/WhatsAppFormatted";
+import { MessageContextMenu } from "@/components/whatsapp/MessageContextMenu";
+import { ScrollToBottom } from "@/components/whatsapp/ScrollToBottom";
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
   getCachedMessages, setCachedProfilePic, getCachedProfilePics,
