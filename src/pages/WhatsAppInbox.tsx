@@ -1549,12 +1549,41 @@ const WhatsAppInbox = () => {
                 <div className="border-t border-border px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     <input type="file" ref={fileInputRef} className="hidden" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" onChange={handleFileUpload} />
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => fileInputRef.current?.click()}><Paperclip className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => { if (!fileInputRef.current) return; fileInputRef.current.accept = "image/*"; fileInputRef.current.click(); fileInputRef.current.accept = "image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"; }}><Image className="h-4 w-4" /></Button>
+                    <EmojiPicker onSelect={(emoji) => setMessageText((prev) => prev + emoji)} />
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => fileInputRef.current?.click()} title="Anexar arquivo"><Paperclip className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => { if (!fileInputRef.current) return; fileInputRef.current.accept = "image/*"; fileInputRef.current.click(); fileInputRef.current.accept = "image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"; }} title="Enviar imagem"><Image className="h-4 w-4" /></Button>
                     <Input placeholder="Digite uma mensagem…" className="flex-1 h-8" value={messageText} onChange={(e) => setMessageText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); } }} />
-                    <Button size="icon" className="h-8 w-8 shrink-0" onClick={handleSendText} disabled={!messageText.trim()}>
-                      {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    </Button>
+                    {messageText.trim() ? (
+                      <Button size="icon" className="h-8 w-8 shrink-0" onClick={handleSendText} disabled={isSending}>
+                        {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      </Button>
+                    ) : (
+                      <AudioRecorder onSend={(base64, mimeType, _duration) => {
+                        const inst = instances.find((i) => i.id === selectedConv?.instance_id);
+                        if (!inst || !selectedConv) return;
+                        const now = new Date().toISOString();
+                        const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                        const optimisticMessage: WhatsAppMessage = {
+                          id: tempId, tenant_id: selectedConv.tenant_id, conversation_id: selectedConv.id,
+                          message_id: null, direction: "outbound", content: "[Áudio]", media_url: null,
+                          media_type: "audio", media_mime_type: mimeType, media_thumbnail: null,
+                          media_width: null, media_height: null, status: "pending",
+                          metadata: { optimistic: true }, created_at: now,
+                        };
+                        addOptimisticMessage(optimisticMessage);
+                        updateConversationPreview(selectedConv.id, "[Áudio]", now);
+                        setSendingCount((c) => c + 1);
+                        sendMedia(inst.instance_name, selectedConv.remote_jid, "audio", base64, undefined, "audio.ogg")
+                          .catch((err: any) => {
+                            removeOptimisticMessage(tempId);
+                            toast({ title: "Erro ao enviar áudio", description: err?.message, variant: "destructive" });
+                          })
+                          .finally(() => setSendingCount((c) => Math.max(0, c - 1)));
+                      }} />
+                    )}
+                    {messageText.length > 500 && (
+                      <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{messageText.length}</span>
+                    )}
                   </div>
                 </div>
               </>
