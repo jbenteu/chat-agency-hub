@@ -1462,6 +1462,7 @@ const WhatsAppInbox = () => {
               </div>
             )}
           </div>
+          )}
 
           {/* Detail panel */}
           {showContactPanel && selectedConv && (
