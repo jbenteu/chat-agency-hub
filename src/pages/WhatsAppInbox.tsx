@@ -2,6 +2,14 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useEvolutionApi, type Conversation, type WhatsAppMessage, type EvolutionInstance } from "@/hooks/use-evolution-api";
 import { MediaMessage } from "@/components/whatsapp/MediaMessage";
 import { TagSelector } from "@/components/whatsapp/TagSelector";
+import { ConversationFilters, type ConversationFilter } from "@/components/whatsapp/ConversationFilters";
+import { ConversationListItem } from "@/components/whatsapp/ConversationListItem";
+import { ChatHeader } from "@/components/whatsapp/ChatHeader";
+import { MessageStatusIcon } from "@/components/whatsapp/MessageStatusIcon";
+import { DateSeparator, getDateKey } from "@/components/whatsapp/DateSeparator";
+import { WhatsAppFormatted } from "@/components/whatsapp/WhatsAppFormatted";
+import { MessageContextMenu } from "@/components/whatsapp/MessageContextMenu";
+import { ScrollToBottom } from "@/components/whatsapp/ScrollToBottom";
 import {
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
@@ -74,7 +82,7 @@ const WhatsAppInbox = () => {
   const location = useLocation();
   const { user, signOut } = useAuth();
   const {
-    sendText, sendMedia,
+    sendText, sendMedia, sendReaction, deleteMessage, archiveConversation, pinConversation,
     getProfilePicture, fetchGroupInfo, getContact, updateContact,
     getGroupInviteLink, removeGroupParticipant, promoteGroupParticipant,
     demoteGroupParticipant,
@@ -100,6 +108,8 @@ const WhatsAppInbox = () => {
   const [profilePictureSupported, setProfilePictureSupported] = useState(true);
   const [groupInfoCache, setGroupInfoCache] = useState<Record<string, GroupInfo>>(getCachedGroupInfoMap());
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
+  const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("all");
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [sendingCount, setSendingCount] = useState(0);
   const [contactDetails, setContactDetails] = useState<ContactDetails | null>(null);
   const [editingContact, setEditingContact] = useState(false);
@@ -820,15 +830,43 @@ const WhatsAppInbox = () => {
   };
 
   const filteredConversations = useMemo(() => {
-    if (!searchQuery) return conversations;
-    const q = searchQuery.toLowerCase();
-    return conversations.filter(
-      (c) =>
-        c.contact_name?.toLowerCase().includes(q) ||
-        c.contact_phone?.toLowerCase().includes(q) ||
-        c.last_message?.toLowerCase().includes(q)
-    );
-  }, [conversations, searchQuery]);
+    let list = conversations;
+
+    // Apply filter tab
+    if (conversationFilter === "unread") {
+      list = list.filter((c) => c.unread_count > 0);
+    } else if (conversationFilter === "groups") {
+      list = list.filter((c) => c.remote_jid.endsWith("@g.us"));
+    } else if (conversationFilter === "archived") {
+      list = list.filter((c) => c.archived);
+    } else {
+      // "all" — hide archived
+      list = list.filter((c) => !c.archived);
+    }
+
+    // Apply search
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (c) =>
+          c.contact_name?.toLowerCase().includes(q) ||
+          c.contact_phone?.toLowerCase().includes(q) ||
+          c.last_message?.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort: pinned first, then by last_message_at
+    return list.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime();
+    });
+  }, [conversations, searchQuery, conversationFilter]);
+
+  const totalUnread = useMemo(() =>
+    conversations.filter((c) => !c.archived && c.unread_count > 0).length,
+    [conversations]
+  );
 
   const getInitials = (name: string | null) => { if (!name) return "?"; return name.split(" ").map((p) => p[0]).join("").substring(0, 2).toUpperCase(); };
   const formatTime = (d: string | null) => { if (!d) return ""; try { return format(new Date(d), "HH:mm"); } catch { return ""; } };
@@ -887,13 +925,18 @@ const WhatsAppInbox = () => {
 
   const saveInlineRename = async () => {
     if (!selectedConv || !inlineNameValue.trim()) { setInlineEditingName(false); return; }
+    await saveInlineRenameWith(inlineNameValue.trim());
+    setInlineEditingName(false);
+  };
+
+  const saveInlineRenameWith = async (newName: string) => {
+    if (!selectedConv || !newName) return;
     try {
-      await supabase.from("whatsapp_conversations").update({ contact_name: inlineNameValue.trim() }).eq("id", selectedConv.id);
-      setSelectedConv({ ...selectedConv, contact_name: inlineNameValue.trim() });
-      setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, contact_name: inlineNameValue.trim() } : c));
+      await supabase.from("whatsapp_conversations").update({ contact_name: newName }).eq("id", selectedConv.id);
+      setSelectedConv((prev) => prev ? { ...prev, contact_name: newName } : prev);
+      setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, contact_name: newName } : c));
       toast({ title: "Nome atualizado" });
     } catch { toast({ title: "Erro ao renomear", variant: "destructive" }); }
-    setInlineEditingName(false);
   };
   
   // Tag create handler via edge function
@@ -1244,12 +1287,24 @@ const WhatsAppInbox = () => {
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate("/whatsapp/settings")} title="Gerenciar instâncias"><Settings className="h-3.5 w-3.5" /></Button>
               </div>
             </div>
-            <div className="p-2">
+            <div className="space-y-1.5 p-2">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input placeholder="Buscar conversa…" className="h-7 pl-8 text-xs" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               </div>
+              <ConversationFilters value={conversationFilter} onChange={setConversationFilter} unreadCount={totalUnread} />
             </div>
+
+            {/* Pinned separator */}
+            {conversationFilter === "all" && filteredConversations.some((c) => c.pinned) && filteredConversations.some((c) => !c.pinned) && (
+              <div className="px-3 pb-0">
+                <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <span>Fixadas</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              </div>
+            )}
+
             <ScrollArea className="flex-1">
               {loadingConvs && !initialLoadDoneRef.current ? (
                 <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
@@ -1263,27 +1318,28 @@ const WhatsAppInbox = () => {
                   <p className="mt-1 text-[11px] text-muted-foreground/60">As conversas aparecerão aqui automaticamente</p>
                 </div>
               ) : (
-                filteredConversations.map((c) => (
-                  <button key={c.id} onClick={() => { setSelectedConv(c); setShowContactPanel(false); setReplyTarget(null); setContactDetails(null); setEditingContact(false); setInviteLink(null); }}
-                    className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 ${selectedConv?.id === c.id ? "bg-muted" : ""}`}>
-                    <Avatar className="h-9 w-9 shrink-0">
-                      {(profilePics[c.remote_jid] || c.profile_picture_url) && <AvatarImage src={profilePics[c.remote_jid] || c.profile_picture_url!} alt={c.contact_name || ""} />}
-                      <AvatarFallback className="bg-primary/10 text-xs text-primary">
-                        {isGroupJid(c.remote_jid) ? <Users className="h-4 w-4" /> : getInitials(c.contact_name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <p className="truncate text-sm font-medium">{c.contact_name || c.contact_phone || "Desconhecido"}</p>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatConvTime(c.last_message_at)}</span>
-                      </div>
-                      <div className="mt-0.5 flex items-center justify-between">
-                        <p className="truncate text-xs text-muted-foreground">{c.last_message || "…"}</p>
-                        {c.unread_count > 0 && <Badge className="ml-1 h-4 min-w-[16px] shrink-0 rounded-full bg-primary px-1 text-[10px] text-primary-foreground">{c.unread_count}</Badge>}
-                      </div>
+                filteredConversations.map((c, idx) => {
+                  // Insert separator between pinned and unpinned
+                  const showUnpinnedSep = conversationFilter === "all" && c.pinned === false && idx > 0 && filteredConversations[idx - 1]?.pinned;
+                  const isTyping = c.typing_presence === "composing" && c.typing_updated_at && (Date.now() - new Date(c.typing_updated_at).getTime() < 15000);
+                  return (
+                    <div key={c.id}>
+                      {showUnpinnedSep && (
+                        <div className="px-3 py-1">
+                          <div className="h-px bg-border" />
+                        </div>
+                      )}
+                      <ConversationListItem
+                        conversation={c}
+                        isSelected={selectedConv?.id === c.id}
+                        profilePicUrl={profilePics[c.remote_jid] || c.profile_picture_url || undefined}
+                        isTyping={!!isTyping}
+                        onClick={() => { setSelectedConv(c); setShowContactPanel(false); setReplyTarget(null); setContactDetails(null); setEditingContact(false); setInviteLink(null); }}
+                        formatTime={formatConvTime}
+                      />
                     </div>
-                  </button>
-                ))
+                  );
+                })
               )}
             </ScrollArea>
           </div>
@@ -1293,183 +1349,186 @@ const WhatsAppInbox = () => {
             {selectedConv ? (
               <>
                 {/* Chat header */}
-                <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9">
-                      {profilePics[selectedConv.remote_jid] && <AvatarImage src={profilePics[selectedConv.remote_jid]} alt={selectedConv.contact_name || ""} />}
-                      <AvatarFallback className="bg-primary/10 text-xs text-primary">
-                        {isGroupJid(selectedConv.remote_jid) ? <Users className="h-4 w-4" /> : getInitials(selectedConv.contact_name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      {inlineEditingName ? (
-                        <div className="flex items-center gap-1">
-                          <Input ref={inlineNameInputRef} className="h-6 w-40 text-sm" value={inlineNameValue} onChange={(e) => setInlineNameValue(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter") saveInlineRename(); if (e.key === "Escape") setInlineEditingName(false); }}
-                            onBlur={saveInlineRename} />
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 group/name">
-                          <p className="text-sm font-medium cursor-pointer" onDoubleClick={startInlineRename}>{selectedConv.contact_name || selectedConv.contact_phone || "Desconhecido"}</p>
-                          <button onClick={startInlineRename} className="opacity-0 group-hover/name:opacity-100 transition-opacity" title="Renomear"><Edit2 className="h-3 w-3 text-muted-foreground" /></button>
-                        </div>
-                      )}
-                      <p className="text-[11px] text-muted-foreground">
-                        {isGroupJid(selectedConv.remote_jid) ? `Grupo · ${currentGroupInfo?.size || "…"} participantes` : formatPhoneWhatsApp(selectedConv.contact_phone)}
-                      </p>
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="sm" onClick={() => setShowContactPanel((v) => !v)}>
-                    <User className="h-4 w-4" />
-                    <ChevronRight className={`ml-1 h-3 w-3 transition-transform ${showContactPanel ? "rotate-180" : ""}`} />
-                  </Button>
-                </div>
+                <ChatHeader
+                  conversation={selectedConv}
+                  profilePicUrl={profilePics[selectedConv.remote_jid]}
+                  groupInfo={currentGroupInfo}
+                  isTyping={selectedConv.typing_presence === "composing" && !!selectedConv.typing_updated_at && (Date.now() - new Date(selectedConv.typing_updated_at).getTime() < 15000)}
+                  showContactPanel={showContactPanel}
+                  onToggleContactPanel={() => setShowContactPanel((v) => !v)}
+                  onRename={(name) => {
+                    saveInlineRenameWith(name);
+                  }}
+                  onArchive={() => {
+                    archiveConversation(selectedConv.id, !selectedConv.archived).catch(() => {});
+                    setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, archived: !c.archived } : c));
+                    setSelectedConv((prev) => prev ? { ...prev, archived: !prev.archived } : prev);
+                  }}
+                  onPin={() => {
+                    pinConversation(selectedConv.id, !selectedConv.pinned).catch(() => {});
+                    setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, pinned: !c.pinned } : c));
+                    setSelectedConv((prev) => prev ? { ...prev, pinned: !prev.pinned } : prev);
+                  }}
+                />
 
                 {/* Messages */}
-                <ScrollArea className="flex-1 px-4 py-3">
-                  {loadingMsgs ? (
-                    <div className="flex flex-col items-center justify-center gap-2 py-12">
-                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                      <p className="text-xs text-muted-foreground">Carregando mensagens…</p>
-                    </div>
-                  ) : messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12">
-                      <MessageCircle className="mb-2 h-8 w-8 text-muted-foreground/30" />
-                      <p className="text-xs font-medium text-muted-foreground">Nenhuma mensagem ainda</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {messages
-                        .filter((msg) => {
-                          // Filter out reaction messages (they're now on parent bubble)
-                          if (msg.media_type === "reaction") return false;
-                          if (msg.content === "[Reação]") return false;
-                          return true;
-                        })
-                        .map((msg) => {
-                        const isOutbound = msg.direction === "outbound";
-                        const isGrp = isGroupJid(selectedConv.remote_jid);
-                        const senderName = getSenderName(msg);
-                        const senderPhone = getSenderPhone(msg);
-                        const quoted = getQuotedInfo(msg);
-                        const currentInstName = instances.find((i) => i.id === selectedConv.instance_id)?.instance_name || "";
-                        const meta = msg.metadata as Record<string, any> | null;
-                        const metadataMimeType = meta?.mimeType || null;
-                        const reactions = meta?.reactions as Record<string, string> | null;
-                        const reactionEntries = reactions ? Object.entries(reactions) : [];
-                        // Group reactions by emoji
-                        const reactionCounts: Record<string, number> = {};
-                        for (const [, emoji] of reactionEntries) {
-                          reactionCounts[emoji] = (reactionCounts[emoji] || 0) + 1;
-                        }
+                <div className="relative flex-1 overflow-hidden">
+                  <ScrollArea className="h-full px-4 py-3">
+                    {loadingMsgs ? (
+                      <div className="flex flex-col items-center justify-center gap-2 py-12">
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        <p className="text-xs text-muted-foreground">Carregando mensagens…</p>
+                      </div>
+                    ) : messages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12">
+                        <MessageCircle className="mb-2 h-8 w-8 text-muted-foreground/30" />
+                        <p className="text-xs font-medium text-muted-foreground">Nenhuma mensagem ainda</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {(() => {
+                          const filtered = messages.filter((msg) => {
+                            if (msg.media_type === "reaction") return false;
+                            if (msg.content === "[Reação]") return false;
+                            return true;
+                          });
+                          let lastDateKey = "";
+                          const currentInstName = instances.find((i) => i.id === selectedConv.instance_id)?.instance_name || "";
+                          const isGrp = isGroupJid(selectedConv.remote_jid);
 
-                        const scrollToQuoted = () => {
-                          if (!quoted) return;
-                          const el = document.querySelector(`[data-message-id="${quoted.id}"]`);
-                          if (el) {
-                            el.scrollIntoView({ behavior: "smooth", block: "center" });
-                            el.classList.add("ring-2", "ring-primary/40");
-                            setTimeout(() => el.classList.remove("ring-2", "ring-primary/40"), 2000);
-                          }
-                        };
+                          return filtered.map((msg) => {
+                            const dateKey = getDateKey(msg.created_at);
+                            const showDateSep = dateKey !== lastDateKey;
+                            lastDateKey = dateKey;
 
-                        return (
-                          <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group flex ${isOutbound ? "justify-end" : "justify-start"}`}>
-                            {/* Sender avatar for group inbound */}
-                            {isGrp && !isOutbound && (
-                              <Avatar className="mr-2 mt-1 h-7 w-7 shrink-0">
-                                {senderPhone && profilePics[`${senderPhone}@s.whatsapp.net`] && <AvatarImage src={profilePics[`${senderPhone}@s.whatsapp.net`]} />}
-                                <AvatarFallback className="bg-muted text-[10px]">
-                                  {(senderName || senderPhone || "?").substring(0, 2).toUpperCase()}
-                                </AvatarFallback>
-                              </Avatar>
-                            )}
-                            <div className={`relative max-w-[70%] rounded-2xl px-3.5 py-2 text-sm ${isOutbound ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted"}`}>
-                              {isGrp && !isOutbound && senderName && (
-                                <p className={`text-xs font-semibold mb-0.5 ${getSenderColor(senderName)}`}>{senderName}</p>
-                              )}
-                              {quoted && (
-                                <div
-                                  onClick={scrollToQuoted}
-                                  className={`mb-1.5 rounded-md border-l-2 px-2 py-1 text-[11px] cursor-pointer hover:opacity-80 ${isOutbound ? "border-primary-foreground/40 bg-primary-foreground/10 text-primary-foreground/80" : "border-primary/40 bg-primary/5 text-muted-foreground"}`}
-                                >
-                                  <p className="truncate">{quoted.content}</p>
-                                </div>
-                              )}
-                              {msg.media_type && msg.media_type !== "document" && (msg.media_url || msg.message_id) && (
-                                <MediaMessage
-                                  messageId={msg.message_id}
-                                  mediaUrl={msg.media_url}
-                                  mediaType={msg.media_type}
-                                  content={msg.content}
-                                  instanceName={currentInstName}
-                                  remoteJid={selectedConv.remote_jid}
-                                  isOutbound={isOutbound}
-                                  mediaThumbnail={msg.media_thumbnail}
-                                  mediaWidth={msg.media_width}
-                                  mediaHeight={msg.media_height}
-                                  metadataMimeType={metadataMimeType}
-                                />
-                              )}
-                              {msg.media_type === "document" && (msg.media_url || msg.message_id) && (
-                                <MediaMessage
-                                  messageId={msg.message_id}
-                                  mediaUrl={msg.media_url}
-                                  mediaType="document"
-                                  content={msg.content}
-                                  instanceName={currentInstName}
-                                  remoteJid={selectedConv.remote_jid}
-                                  isOutbound={isOutbound}
-                                  metadataMimeType={metadataMimeType}
-                                />
-                              )}
-                              {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
-                                <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
-                              )}
-                              {(() => {
-                                if (!msg.content || !msg.content.trim()) return null;
-                                if (isMediaPlaceholder(msg.content)) return null;
-                                if (msg.media_type === "document" && (msg.media_url || msg.message_id)) return null;
-                                if (msg.media_type === "audio") return null;
-                                return <p className="whitespace-pre-wrap break-words">{msg.content}</p>;
-                              })()}
-                              <div className={`mt-1 flex items-center justify-end gap-1 ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
-                                <span className="text-[10px]">{formatDate(msg.created_at)}</span>
-                                {isOutbound && (
-                                  <span className="inline-flex items-center">
-                                    {msg.id.startsWith("temp-") || msg.status === "pending" ? (
-                                      <Clock className="h-3 w-3" />
-                                    ) : msg.status === "read" || msg.status === "played" ? (
-                                      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="inline"><path d="M11.07 0.73a.5.5 0 01.76.65l-.06.07L6.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L6.08 6.26l5-5.53z" fill="#53BDEB"/><path d="M14.07 0.73a.5.5 0 01.76.65l-.06.07L9.43 7.32a.5.5 0 01-.63.06l-.07-.06-.53-.53.7-.72.18.18 4.99-5.52z" fill="#53BDEB"/></svg>
-                                    ) : msg.status === "delivered" ? (
-                                      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="inline"><path d="M11.07 0.73a.5.5 0 01.76.65l-.06.07L6.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L6.08 6.26l5-5.53z" fill="#8696A0"/><path d="M14.07 0.73a.5.5 0 01.76.65l-.06.07L9.43 7.32a.5.5 0 01-.63.06l-.07-.06-.53-.53.7-.72.18.18 4.99-5.52z" fill="#8696A0"/></svg>
-                                    ) : (
-                                      <svg width="12" height="11" viewBox="0 0 12 11" fill="none" className="inline"><path d="M9.07 0.73a.5.5 0 01.76.65l-.06.07L4.43 7.32a.5.5 0 01-.63.06l-.07-.06-2.1-2.1a.5.5 0 01.63-.76l.07.06L4.08 6.26l5-5.53z" fill="#8696A0"/></svg>
-                                    )}
-                                  </span>
+                            const isOutbound = msg.direction === "outbound";
+                            const senderName = getSenderName(msg);
+                            const senderPhone = getSenderPhone(msg);
+                            const quoted = getQuotedInfo(msg);
+                            const meta = msg.metadata as Record<string, any> | null;
+                            const metadataMimeType = meta?.mimeType || null;
+                            const isDeleted = meta?.deleted === true;
+                            const reactions = meta?.reactions as Record<string, string> | null;
+                            const reactionEntries = reactions ? Object.entries(reactions) : [];
+                            const reactionCounts: Record<string, number> = {};
+                            for (const [, emoji] of reactionEntries) {
+                              reactionCounts[emoji] = (reactionCounts[emoji] || 0) + 1;
+                            }
+
+                            const scrollToQuoted = () => {
+                              if (!quoted) return;
+                              const el = document.querySelector(`[data-message-id="${quoted.id}"]`);
+                              if (el) {
+                                el.scrollIntoView({ behavior: "smooth", block: "center" });
+                                el.classList.add("ring-2", "ring-primary/40");
+                                setTimeout(() => el.classList.remove("ring-2", "ring-primary/40"), 2000);
+                              }
+                            };
+
+                            const handleReact = (emoji: string) => {
+                              if (!msg.message_id) return;
+                              sendReaction(currentInstName, selectedConv.remote_jid, msg.message_id, emoji).catch(() => {});
+                            };
+
+                            const handleDelete = () => {
+                              if (!msg.message_id) return;
+                              deleteMessage(currentInstName, selectedConv.remote_jid, msg.message_id).catch(() => {});
+                            };
+
+                            const bubbleContent = (
+                              <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+                                {isGrp && !isOutbound && (
+                                  <Avatar className="mr-2 mt-1 h-7 w-7 shrink-0">
+                                    {senderPhone && profilePics[`${senderPhone}@s.whatsapp.net`] && <AvatarImage src={profilePics[`${senderPhone}@s.whatsapp.net`]} />}
+                                    <AvatarFallback className="bg-muted text-[10px]">
+                                      {(senderName || senderPhone || "?").substring(0, 2).toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
                                 )}
+                                <MessageContextMenu
+                                  content={msg.content}
+                                  isOutbound={isOutbound}
+                                  messageId={msg.message_id}
+                                  senderName={senderName || (isOutbound ? "Você" : selectedConv.contact_name || "")}
+                                  onReply={() => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") })}
+                                  onReact={msg.message_id ? handleReact : undefined}
+                                  onDelete={isOutbound && msg.message_id ? handleDelete : undefined}
+                                >
+                                  <div className={`relative max-w-[70%] rounded-2xl px-3.5 py-2 text-sm transition-shadow ${isOutbound ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted"}`}>
+                                    {isGrp && !isOutbound && senderName && (
+                                      <p className={`text-xs font-semibold mb-0.5 ${getSenderColor(senderName)}`}>{senderName}</p>
+                                    )}
+                                    {quoted && (
+                                      <div onClick={scrollToQuoted}
+                                        className={`mb-1.5 rounded-md border-l-2 px-2 py-1 text-[11px] cursor-pointer hover:opacity-80 ${isOutbound ? "border-primary-foreground/40 bg-primary-foreground/10 text-primary-foreground/80" : "border-primary/40 bg-primary/5 text-muted-foreground"}`}>
+                                        <p className="truncate">{quoted.content}</p>
+                                      </div>
+                                    )}
+                                    {isDeleted ? (
+                                      <p className="italic text-xs opacity-60">🚫 Mensagem apagada</p>
+                                    ) : (
+                                      <>
+                                        {msg.media_type && msg.media_type !== "document" && (msg.media_url || msg.message_id) && (
+                                          <MediaMessage messageId={msg.message_id} mediaUrl={msg.media_url} mediaType={msg.media_type} content={msg.content}
+                                            instanceName={currentInstName} remoteJid={selectedConv.remote_jid} isOutbound={isOutbound}
+                                            mediaThumbnail={msg.media_thumbnail} mediaWidth={msg.media_width} mediaHeight={msg.media_height} metadataMimeType={metadataMimeType} />
+                                        )}
+                                        {msg.media_type === "document" && (msg.media_url || msg.message_id) && (
+                                          <MediaMessage messageId={msg.message_id} mediaUrl={msg.media_url} mediaType="document" content={msg.content}
+                                            instanceName={currentInstName} remoteJid={selectedConv.remote_jid} isOutbound={isOutbound} metadataMimeType={metadataMimeType} />
+                                        )}
+                                        {msg.media_type === "document" && !msg.media_url && !msg.message_id && (
+                                          <div className="mb-1 flex items-center gap-2 rounded bg-background/20 p-2 text-xs"><Paperclip className="h-3.5 w-3.5" /><span>{msg.content || "Documento"}</span></div>
+                                        )}
+                                        {(() => {
+                                          if (!msg.content || !msg.content.trim()) return null;
+                                          if (isMediaPlaceholder(msg.content)) return null;
+                                          if (msg.media_type === "document" && (msg.media_url || msg.message_id)) return null;
+                                          if (msg.media_type === "audio") return null;
+                                          return <WhatsAppFormatted text={msg.content} />;
+                                        })()}
+                                      </>
+                                    )}
+                                    <div className={`mt-1 flex items-center justify-end gap-1 ${isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
+                                      <span className="text-[10px]">{formatDate(msg.created_at)}</span>
+                                      {isOutbound && (
+                                        <span className="inline-flex items-center">
+                                          <MessageStatusIcon status={msg.status} isOptimistic={msg.id.startsWith("temp-")} />
+                                        </span>
+                                      )}
+                                    </div>
+                                    {reactionEntries.length > 0 && (
+                                      <div className={`mt-1 flex flex-wrap gap-1 ${isOutbound ? "-mr-1" : "-ml-1"}`}>
+                                        {Object.entries(reactionCounts).map(([emoji, count]) => (
+                                          <span key={emoji} className="inline-flex items-center gap-0.5 rounded-full bg-background/80 border border-border/50 px-1.5 py-0.5 text-xs shadow-sm"
+                                            title={reactionEntries.filter(([, e]) => e === emoji).map(([phone]) => phone === "me" ? "Você" : phone).join(", ")}>
+                                            {emoji}{count > 1 && <span className="text-[10px] text-muted-foreground">{count}</span>}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </MessageContextMenu>
                               </div>
-                              {/* Reactions */}
-                              {reactionEntries.length > 0 && (
-                                <div className={`mt-1 flex flex-wrap gap-1 ${isOutbound ? "-mr-1" : "-ml-1"}`}>
-                                  {Object.entries(reactionCounts).map(([emoji, count]) => (
-                                    <span key={emoji} className="inline-flex items-center gap-0.5 rounded-full bg-background/80 border border-border/50 px-1.5 py-0.5 text-xs shadow-sm" title={reactionEntries.filter(([, e]) => e === emoji).map(([phone]) => phone === "me" ? "Você" : phone).join(", ")}>
-                                      {emoji}{count > 1 && <span className="text-[10px] text-muted-foreground">{count}</span>}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              <button className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-1 hover:bg-muted"
-                                onClick={() => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") })}
-                                title="Responder"><Reply className="h-3.5 w-3.5 text-muted-foreground" /></button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  )}
-                </ScrollArea>
+                            );
+
+                            return (
+                              <div key={msg.id}>
+                                {showDateSep && <DateSeparator date={msg.created_at} />}
+                                {bubbleContent}
+                              </div>
+                            );
+                          });
+                        })()}
+                        <div ref={messagesEndRef} />
+                      </div>
+                    )}
+                  </ScrollArea>
+                  <ScrollToBottom
+                    visible={showScrollToBottom}
+                    onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
+                  />
+                </div>
 
                 {/* Reply bar */}
                 {replyTarget && (
