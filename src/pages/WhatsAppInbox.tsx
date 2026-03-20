@@ -82,9 +82,7 @@ const WhatsAppInbox = () => {
   const { user, signOut } = useAuth();
   const {
     sendText, sendMedia, sendReaction, deleteMessage, archiveConversation, pinConversation,
-    getProfilePicture, fetchGroupInfo, getContact, updateContact,
-    getGroupInviteLink, removeGroupParticipant, promoteGroupParticipant,
-    demoteGroupParticipant,
+    getProfilePicture, fetchGroupInfo,
     createInstance, getQrCode, getConnectionStatus, deleteInstance,
     loading: evoLoading,
   } = useEvolutionApi();
