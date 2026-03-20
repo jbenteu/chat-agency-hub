@@ -1281,12 +1281,24 @@ const WhatsAppInbox = () => {
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate("/whatsapp/settings")} title="Gerenciar instâncias"><Settings className="h-3.5 w-3.5" /></Button>
               </div>
             </div>
-            <div className="p-2">
+            <div className="space-y-1.5 p-2">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input placeholder="Buscar conversa…" className="h-7 pl-8 text-xs" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               </div>
+              <ConversationFilters value={conversationFilter} onChange={setConversationFilter} unreadCount={totalUnread} />
             </div>
+
+            {/* Pinned separator */}
+            {conversationFilter === "all" && filteredConversations.some((c) => c.pinned) && filteredConversations.some((c) => !c.pinned) && (
+              <div className="px-3 pb-0">
+                <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <span>Fixadas</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              </div>
+            )}
+
             <ScrollArea className="flex-1">
               {loadingConvs && !initialLoadDoneRef.current ? (
                 <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
@@ -1300,27 +1312,28 @@ const WhatsAppInbox = () => {
                   <p className="mt-1 text-[11px] text-muted-foreground/60">As conversas aparecerão aqui automaticamente</p>
                 </div>
               ) : (
-                filteredConversations.map((c) => (
-                  <button key={c.id} onClick={() => { setSelectedConv(c); setShowContactPanel(false); setReplyTarget(null); setContactDetails(null); setEditingContact(false); setInviteLink(null); }}
-                    className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 ${selectedConv?.id === c.id ? "bg-muted" : ""}`}>
-                    <Avatar className="h-9 w-9 shrink-0">
-                      {(profilePics[c.remote_jid] || c.profile_picture_url) && <AvatarImage src={profilePics[c.remote_jid] || c.profile_picture_url!} alt={c.contact_name || ""} />}
-                      <AvatarFallback className="bg-primary/10 text-xs text-primary">
-                        {isGroupJid(c.remote_jid) ? <Users className="h-4 w-4" /> : getInitials(c.contact_name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <p className="truncate text-sm font-medium">{c.contact_name || c.contact_phone || "Desconhecido"}</p>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatConvTime(c.last_message_at)}</span>
-                      </div>
-                      <div className="mt-0.5 flex items-center justify-between">
-                        <p className="truncate text-xs text-muted-foreground">{c.last_message || "…"}</p>
-                        {c.unread_count > 0 && <Badge className="ml-1 h-4 min-w-[16px] shrink-0 rounded-full bg-primary px-1 text-[10px] text-primary-foreground">{c.unread_count}</Badge>}
-                      </div>
+                filteredConversations.map((c, idx) => {
+                  // Insert separator between pinned and unpinned
+                  const showUnpinnedSep = conversationFilter === "all" && c.pinned === false && idx > 0 && filteredConversations[idx - 1]?.pinned;
+                  const isTyping = c.typing_presence === "composing" && c.typing_updated_at && (Date.now() - new Date(c.typing_updated_at).getTime() < 15000);
+                  return (
+                    <div key={c.id}>
+                      {showUnpinnedSep && (
+                        <div className="px-3 py-1">
+                          <div className="h-px bg-border" />
+                        </div>
+                      )}
+                      <ConversationListItem
+                        conversation={c}
+                        isSelected={selectedConv?.id === c.id}
+                        profilePicUrl={profilePics[c.remote_jid] || c.profile_picture_url || undefined}
+                        isTyping={!!isTyping}
+                        onClick={() => { setSelectedConv(c); setShowContactPanel(false); setReplyTarget(null); setContactDetails(null); setEditingContact(false); setInviteLink(null); }}
+                        formatTime={formatConvTime}
+                      />
                     </div>
-                  </button>
-                ))
+                  );
+                })
               )}
             </ScrollArea>
           </div>
