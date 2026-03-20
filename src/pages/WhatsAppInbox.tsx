@@ -44,9 +44,7 @@ import {
   LayoutDashboard, Users, Settings, Shield, LogOut, Reply,
   ChevronDown, RefreshCw, QrCode,
 } from "lucide-react";
-import { format, isToday, isYesterday } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { formatPhoneWhatsApp } from "@/data/country-codes";
+import { format } from "date-fns";
 import logo from "@/assets/logo.png";
 
 const navItems = [
