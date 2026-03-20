@@ -74,7 +74,9 @@ export type Database = {
       }
       contacts: {
         Row: {
+          address: string | null
           assigned_to: string | null
+          city: string | null
           company: string | null
           created_at: string | null
           created_by: string | null
@@ -83,13 +85,17 @@ export type Database = {
           id: string
           name: string
           notes: string | null
+          origin: string | null
           phone: string | null
+          state: string | null
           tags: string[] | null
           tenant_id: string
           updated_at: string | null
         }
         Insert: {
+          address?: string | null
           assigned_to?: string | null
+          city?: string | null
           company?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -98,13 +104,17 @@ export type Database = {
           id?: string
           name: string
           notes?: string | null
+          origin?: string | null
           phone?: string | null
+          state?: string | null
           tags?: string[] | null
           tenant_id: string
           updated_at?: string | null
         }
         Update: {
+          address?: string | null
           assigned_to?: string | null
+          city?: string | null
           company?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -113,7 +123,9 @@ export type Database = {
           id?: string
           name?: string
           notes?: string | null
+          origin?: string | null
           phone?: string | null
+          state?: string | null
           tags?: string[] | null
           tenant_id?: string
           updated_at?: string | null
@@ -136,6 +148,7 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           id: string
+          pipeline_stage_id: string | null
           stage: string
           status: string
           tenant_id: string
@@ -150,6 +163,7 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           id?: string
+          pipeline_stage_id?: string | null
           stage?: string
           status?: string
           tenant_id: string
@@ -164,6 +178,7 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           id?: string
+          pipeline_stage_id?: string | null
           stage?: string
           status?: string
           tenant_id?: string
@@ -177,6 +192,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_stage_id_fkey"
+            columns: ["pipeline_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
           },
           {
@@ -313,6 +335,79 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "tags_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          assigned_to: string | null
+          completed_at: string | null
+          contact_id: string | null
+          created_at: string | null
+          created_by: string | null
+          deal_id: string | null
+          description: string | null
+          due_date: string | null
+          id: string
+          priority: string | null
+          status: string | null
+          tenant_id: string
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          completed_at?: string | null
+          contact_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          deal_id?: string | null
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          priority?: string | null
+          status?: string | null
+          tenant_id: string
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          completed_at?: string | null
+          contact_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          deal_id?: string | null
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          priority?: string | null
+          status?: string | null
+          tenant_id?: string
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
