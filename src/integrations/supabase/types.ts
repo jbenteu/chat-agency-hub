@@ -395,6 +395,54 @@ export type Database = {
         }
         Relationships: []
       }
+      invite_links: {
+        Row: {
+          created_at: string | null
+          created_by: string
+          expires_at: string | null
+          id: string
+          role_to_assign: Database["public"]["Enums"]["user_role"]
+          token: string
+          used: boolean | null
+          used_by: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by: string
+          expires_at?: string | null
+          id?: string
+          role_to_assign: Database["public"]["Enums"]["user_role"]
+          token: string
+          used?: boolean | null
+          used_by?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string
+          expires_at?: string | null
+          id?: string
+          role_to_assign?: Database["public"]["Enums"]["user_role"]
+          token?: string
+          used?: boolean | null
+          used_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invite_links_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invite_links_used_by_fkey"
+            columns: ["used_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pipeline_stages: {
         Row: {
           color: string | null
@@ -434,28 +482,48 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string | null
+          created_by: string | null
+          email: string | null
           full_name: string | null
           id: string
+          is_active: boolean | null
           phone: string | null
+          role: Database["public"]["Enums"]["user_role"] | null
           updated_at: string | null
         }
         Insert: {
           avatar_url?: string | null
           created_at?: string | null
+          created_by?: string | null
+          email?: string | null
           full_name?: string | null
           id: string
+          is_active?: boolean | null
           phone?: string | null
+          role?: Database["public"]["Enums"]["user_role"] | null
           updated_at?: string | null
         }
         Update: {
           avatar_url?: string | null
           created_at?: string | null
+          created_by?: string | null
+          email?: string | null
           full_name?: string | null
           id?: string
+          is_active?: boolean | null
           phone?: string | null
+          role?: Database["public"]["Enums"]["user_role"] | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quick_replies: {
         Row: {
@@ -627,6 +695,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_relationships: {
+        Row: {
+          created_at: string | null
+          id: string
+          subordinate_id: string
+          superior_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          subordinate_id: string
+          superior_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          subordinate_id?: string
+          superior_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_relationships_subordinate_id_fkey"
+            columns: ["subordinate_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_relationships_superior_id_fkey"
+            columns: ["superior_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -757,6 +861,8 @@ export type Database = {
           id: string
           instance_id: string | null
           instance_name: string
+          is_personal: boolean | null
+          owner_id: string | null
           phone_number: string | null
           qr_code: string | null
           settings: Json | null
@@ -770,6 +876,8 @@ export type Database = {
           id?: string
           instance_id?: string | null
           instance_name: string
+          is_personal?: boolean | null
+          owner_id?: string | null
           phone_number?: string | null
           qr_code?: string | null
           settings?: Json | null
@@ -783,6 +891,8 @@ export type Database = {
           id?: string
           instance_id?: string | null
           instance_name?: string
+          is_personal?: boolean | null
+          owner_id?: string | null
           phone_number?: string | null
           qr_code?: string | null
           settings?: Json | null
@@ -791,6 +901,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "whatsapp_instances_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "whatsapp_instances_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -890,6 +1007,7 @@ export type Database = {
     }
     Enums: {
       app_role: "super_admin" | "admin" | "manager" | "agent" | "viewer"
+      user_role: "admin" | "gerente" | "gestor" | "sucesso_cliente" | "cliente"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1018,6 +1136,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["super_admin", "admin", "manager", "agent", "viewer"],
+      user_role: ["admin", "gerente", "gestor", "sucesso_cliente", "cliente"],
     },
   },
 } as const
