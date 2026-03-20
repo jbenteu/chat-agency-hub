@@ -918,18 +918,7 @@ const WhatsAppInbox = () => {
     } catch { toast({ title: "Erro ao renomear", variant: "destructive" }); }
   };
   
-  // Tag create handler via edge function
-  const handleCreateTag = async (name: string, color: string) => {
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) return;
-      await supabase.functions.invoke("evolution-api", {
-        body: { action: "create_tag", name, color },
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch { /* ignore */ }
-  };
+  // Tag create handler moved to InfoPanel
   const isGroupJid = (jid: string) => jid.endsWith("@g.us");
 
   const getSenderName = (msg: WhatsAppMessage): string | null => {
