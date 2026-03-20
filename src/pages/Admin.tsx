@@ -52,7 +52,7 @@ const ROLE_COLORS: Record<UserRole, string> = {
 };
 
 const Admin = () => {
-  const { profile } = useAuth();
+  const { profile, isSuperAdmin } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<ProfileRow[]>([]);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
