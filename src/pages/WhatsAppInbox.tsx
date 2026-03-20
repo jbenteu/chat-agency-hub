@@ -10,6 +10,9 @@ import { DateSeparator, getDateKey } from "@/components/whatsapp/DateSeparator";
 import { WhatsAppFormatted } from "@/components/whatsapp/WhatsAppFormatted";
 import { MessageContextMenu } from "@/components/whatsapp/MessageContextMenu";
 import { ScrollToBottom } from "@/components/whatsapp/ScrollToBottom";
+import { EmojiPicker } from "@/components/whatsapp/EmojiPicker";
+import { AudioRecorder } from "@/components/whatsapp/AudioRecorder";
+import { InfoPanel } from "@/components/whatsapp/InfoPanel";
 import {
   getInboxCache, setCachedInstances, setCachedSelectedInstance,
   setCachedConversations, getCachedConversations, setCachedMessages,
