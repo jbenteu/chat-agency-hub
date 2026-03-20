@@ -44,7 +44,7 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   MessageCircle, Send, Image, Paperclip, Search, X, Loader2,
   LayoutDashboard, Users, Settings, Shield, LogOut, Reply,
-  ChevronDown, RefreshCw, QrCode, Plus, ArrowLeft,
+  ChevronDown, RefreshCw, QrCode, Plus, ArrowLeft, Sparkles,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { format } from "date-fns";
@@ -54,6 +54,7 @@ const navItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/" },
   { title: "CRM", icon: Users, path: "/crm" },
   { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp" },
+  { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis" },
   { title: "Configurações", icon: Settings, path: "/settings" },
   { title: "Admin", icon: Shield, path: "/admin" },
 ];
