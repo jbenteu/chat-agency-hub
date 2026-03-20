@@ -855,55 +855,120 @@ const AIAnalysis: React.FC = () => {
 
             {/* ── Perguntar à IA ── */}
             {activeTab === "perguntar" && (
-              <div className="max-w-2xl mx-auto space-y-4">
-                <div className="bg-white rounded-2xl border border-zinc-200 p-4 focus-within:border-violet-300 transition-colors">
+              <div className="max-w-3xl mx-auto flex flex-col" style={{ height: "calc(100vh - 240px)" }}>
+                {/* Chat messages area */}
+                <div className="flex-1 overflow-y-auto space-y-4 pb-4">
+                  {chatMessages.length === 0 && !askLoading && (
+                    <div className="flex flex-col items-center justify-center py-16 gap-4">
+                      <div className="w-12 h-12 rounded-full bg-violet-50 flex items-center justify-center">
+                        <Sparkles size={24} className="text-violet-500" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-foreground font-medium">Consultor de IA</p>
+                        <p className="text-muted-foreground text-sm mt-1">Pergunte sobre seus leads, vendas e atendimento</p>
+                      </div>
+                      <div className="flex gap-2 flex-wrap justify-center max-w-lg">
+                        {quickQuestions.map((q) => (
+                          <button
+                            key={q}
+                            onClick={() => { setAskQuestion(q); }}
+                            className="bg-zinc-50 border border-zinc-200 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-600 text-muted-foreground text-xs rounded-full px-3 py-1.5 transition-all"
+                          >
+                            {q}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {chatMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      {msg.role === "assistant" && (
+                        <div className="w-8 h-8 rounded-full bg-violet-50 border border-violet-200 flex items-center justify-center shrink-0 mt-1">
+                          <Sparkles size={14} className="text-violet-500" />
+                        </div>
+                      )}
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${
+                          msg.role === "user"
+                            ? "bg-violet-600 text-white rounded-br-md"
+                            : "bg-white border border-zinc-200 text-foreground rounded-bl-md"
+                        }`}
+                      >
+                        {msg.role === "assistant" ? (
+                          <div className="prose prose-sm max-w-none prose-headings:text-foreground prose-headings:font-semibold prose-p:text-foreground prose-strong:text-foreground prose-li:text-foreground prose-a:text-violet-600 prose-hr:border-zinc-200 prose-ul:my-2 prose-ol:my-2 prose-p:my-1.5 prose-headings:my-2">
+                            <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          </div>
+                        ) : (
+                          <span>{msg.content}</span>
+                        )}
+                        <p className={`text-xs mt-2 ${msg.role === "user" ? "text-violet-200" : "text-muted-foreground"}`}>
+                          {msg.timestamp.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                      {msg.role === "user" && (
+                        <div className="w-8 h-8 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center shrink-0 mt-1">
+                          <User size={14} className="text-zinc-500" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {askLoading && (
+                    <div className="flex gap-3 justify-start">
+                      <div className="w-8 h-8 rounded-full bg-violet-50 border border-violet-200 flex items-center justify-center shrink-0 mt-1">
+                        <Sparkles size={14} className="text-violet-500" />
+                      </div>
+                      <div className="bg-white border border-zinc-200 rounded-2xl rounded-bl-md px-4 py-3">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Loader2 size={14} className="animate-spin text-violet-500" />
+                          Analisando...
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Quick suggestions when there are messages */}
+                {chatMessages.length > 0 && !askLoading && (
+                  <div className="flex gap-2 flex-wrap pb-3">
+                    {quickQuestions.slice(0, 3).map((q) => (
+                      <button
+                        key={q}
+                        onClick={() => setAskQuestion(q)}
+                        className="bg-zinc-50 border border-zinc-200 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-600 text-muted-foreground text-xs rounded-full px-3 py-1.5 transition-all"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Input area */}
+                <div className="bg-white rounded-2xl border border-zinc-200 p-3 focus-within:border-violet-300 transition-colors flex items-end gap-3">
                   <Textarea
-                    placeholder="Ex: Como melhorar a conversão dos leads de noivado?"
+                    placeholder="Digite sua pergunta..."
                     value={askQuestion}
                     onChange={(e) => setAskQuestion(e.target.value)}
-                    className="bg-transparent border-none outline-none resize-none text-sm text-foreground placeholder:text-muted-foreground min-h-[80px] focus-visible:ring-0 focus-visible:ring-offset-0"
+                    className="bg-transparent border-none outline-none resize-none text-sm text-foreground placeholder:text-muted-foreground min-h-[44px] max-h-[120px] focus-visible:ring-0 focus-visible:ring-offset-0 py-2"
+                    rows={1}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAsk(); }
                     }}
                   />
-                  <div className="flex justify-between items-center mt-3 pt-3 border-t border-zinc-100">
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Sparkles size={10} className="text-violet-500" />
-                      Análise inteligente
-                    </span>
-                    <button
-                      onClick={handleAsk}
-                      disabled={askLoading || !askQuestion.trim()}
-                      className="bg-violet-600 hover:bg-violet-500 text-white rounded-xl px-4 py-2 text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                    >
-                      {askLoading ? <Loader2 size={14} className="animate-spin" /> : "Perguntar"}
-                    </button>
-                  </div>
+                  <button
+                    onClick={handleAsk}
+                    disabled={askLoading || !askQuestion.trim()}
+                    className="bg-violet-600 hover:bg-violet-500 text-white rounded-xl p-2.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                  >
+                    {askLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  </button>
                 </div>
-
-                <div className="flex gap-2 flex-wrap">
-                  {quickQuestions.map((q) => (
-                    <button
-                      key={q}
-                      onClick={() => setAskQuestion(q)}
-                      className="bg-zinc-50 border border-zinc-200 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-600 text-muted-foreground text-xs rounded-full px-3 py-1.5 transition-all"
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
-
-                {aiAnswer !== null && (
-                  <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
-                    <div className="flex items-center gap-2 px-5 py-3 bg-zinc-50 border-b border-zinc-200">
-                      <Sparkles size={14} className="text-violet-500" />
-                      <span className="text-sm font-medium text-foreground">Resposta da IA</span>
-                    </div>
-                    <div className="p-5 text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-                      {aiAnswer}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </>
