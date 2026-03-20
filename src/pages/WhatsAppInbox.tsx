@@ -7,6 +7,7 @@ import { ConversationFilters, type ConversationFilter } from "@/components/whats
 import { ConversationListItem } from "@/components/whatsapp/ConversationListItem";
 import { ChatHeader } from "@/components/whatsapp/ChatHeader";
 import { MessageStatusIcon } from "@/components/whatsapp/MessageStatusIcon";
+import type { UserRole } from "@/components/auth/AuthProvider";
 import { DateSeparator, getDateKey } from "@/components/whatsapp/DateSeparator";
 import { WhatsAppFormatted } from "@/components/whatsapp/WhatsAppFormatted";
 import { MessageContextMenu } from "@/components/whatsapp/MessageContextMenu";
