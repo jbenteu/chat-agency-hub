@@ -52,13 +52,18 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { format } from "date-fns";
 import logo from "@/assets/logo.png";
 
-const navItems = [
-  { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { title: "CRM", icon: Users, path: "/crm" },
-  { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp" },
-  { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis" },
-  { title: "Configurações", icon: Settings, path: "/configuracoes" },
-  { title: "Admin", icon: Shield, path: "/admin" },
+import { UsersRound, UserCheck } from "lucide-react";
+
+interface InboxNavItem { title: string; icon: React.ElementType; path: string; roles: UserRole[]; }
+const navItems: InboxNavItem[] = [
+  { title: "Dashboard", icon: LayoutDashboard, path: "/", roles: ["admin","gerente","gestor","sucesso_cliente","cliente"] },
+  { title: "CRM", icon: Users, path: "/crm", roles: ["admin","gerente","gestor","sucesso_cliente","cliente"] },
+  { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp", roles: ["admin","gerente","gestor","sucesso_cliente","cliente"] },
+  { title: "Equipe", icon: UsersRound, path: "/equipe", roles: ["admin","gerente"] },
+  { title: "Clientes", icon: UserCheck, path: "/clientes", roles: ["admin","gerente","gestor","sucesso_cliente"] },
+  { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis", roles: ["admin","gerente","gestor","sucesso_cliente","cliente"] },
+  { title: "Painel Admin", icon: Shield, path: "/admin", roles: ["admin"] },
+  { title: "Configurações", icon: Settings, path: "/configuracoes", roles: ["admin","gerente","gestor","sucesso_cliente","cliente"] },
 ];
 
 const SENDER_COLORS = [
