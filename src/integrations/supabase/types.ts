@@ -991,6 +991,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_view_profile: {
+        Args: { _target_id: string; _viewer_id: string }
+        Returns: boolean
+      }
       get_user_tenant_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -1000,6 +1004,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_profile_admin: { Args: { _user_id: string }; Returns: boolean }
       update_conversations_contact_names: {
         Args: { p_instance_name: string; p_tenant_id: string }
         Returns: undefined
