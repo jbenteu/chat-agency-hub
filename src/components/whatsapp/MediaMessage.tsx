@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, Image as ImageIcon, ImageOff, FileText, Download, Play, Pause, Volume2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ImageLightbox } from "./ImageLightbox";
 
 // Module-level cache for downloaded media
 const mediaCache = new Map<string, string>();
