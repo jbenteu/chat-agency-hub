@@ -21,6 +21,8 @@ interface ChatHeaderProps {
   onArchive?: () => void;
   onPin?: () => void;
   onSearchClick?: () => void;
+  onAnalyze?: () => void;
+  analyzing?: boolean;
 }
 
 const isGroupJid = (jid: string) => jid.endsWith("@g.us");
