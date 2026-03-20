@@ -1137,20 +1137,22 @@ const WhatsAppInbox = () => {
           )}
 
           {/* Conversation list */}
-          <div className="flex w-72 flex-col border-r border-border bg-background">
+          {(!isMobile || !selectedConv) && (
+          <div className={`flex flex-col border-r border-border bg-background ${isMobile ? "w-full" : "w-72"}`}>
             <div className="flex items-center justify-between gap-2 border-b border-border p-3">
               <div className="flex items-center gap-2">
-                <SidebarTrigger className="h-7 w-7" />
+                {!isMobile && <SidebarTrigger className="h-7 w-7" />}
                 <h2 className="text-sm font-semibold">Conversas</h2>
               </div>
               <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowNewConvDialog(true)} title="Nova conversa"><Plus className="h-3.5 w-3.5" /></Button>
                 <Select value={selectedInstanceId} onValueChange={(v) => { setSelectedInstanceId(v); setCachedSelectedInstance(v); setSelectedConv(null); setMessages([]); const cached = getCachedConversations(v); if (cached) setConversations(cached); }}>
                   <SelectTrigger className="h-7 w-[130px] text-xs"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
                     {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{i.display_name || i.phone_number || "Conexão"}</SelectItem>))}
                   </SelectContent>
                 </Select>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate("/whatsapp/settings")} title="Gerenciar instâncias"><Settings className="h-3.5 w-3.5" /></Button>
+                {!isMobile && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate("/whatsapp/settings")} title="Gerenciar instâncias"><Settings className="h-3.5 w-3.5" /></Button>}
               </div>
             </div>
             <div className="space-y-1.5 p-2">
