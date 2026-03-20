@@ -79,6 +79,7 @@ interface ReplyTarget { messageId: string; content: string; senderName: string; 
 const WhatsAppInbox = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { analyzeConversation } = useAIAnalysis();
   const location = useLocation();
   const { user, signOut } = useAuth();
   const {
