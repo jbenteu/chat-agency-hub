@@ -110,12 +110,7 @@ const WhatsAppInbox = () => {
   const [conversationFilter, setConversationFilter] = useState<ConversationFilter>("all");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [sendingCount, setSendingCount] = useState(0);
-  const [contactDetails, setContactDetails] = useState<ContactDetails | null>(null);
-  const [editingContact, setEditingContact] = useState(false);
-  const [contactForm, setContactForm] = useState<Record<string, string>>({});
-  const [savingContact, setSavingContact] = useState(false);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
-  const [loadingInvite, setLoadingInvite] = useState(false);
+  // (Contact details, editing, invite link now managed by InfoPanel)
   // Setup flow state (no instances)
   const [setupDisplayName, setSetupDisplayName] = useState("");
   const [setupQrCode, setSetupQrCode] = useState<string | null>(null);
