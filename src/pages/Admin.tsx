@@ -6,11 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Slider } from "@/components/ui/slider";
-import { Shield, Users, Building2, Smartphone, Wifi, WifiOff, Loader2, Save, RefreshCw } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Shield, Users, Building2, Smartphone, Wifi, WifiOff, Loader2, Save, RefreshCw, ChevronDown, ChevronRight, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -25,6 +25,9 @@ interface TenantData {
   user_count: number;
   max_whatsapp_instances: number;
   instances: InstanceData[];
+  owner_name: string | null;
+  owner_email: string | null;
+  owner_role: string | null;
 }
 
 interface InstanceData {
@@ -66,6 +69,7 @@ const Admin = () => {
   const [editingLimits, setEditingLimits] = useState<Record<string, number>>({});
   const [savingTenant, setSavingTenant] = useState<string | null>(null);
   const [togglingUser, setTogglingUser] = useState<string | null>(null);
+  const [expandedTenants, setExpandedTenants] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!authLoading && !isSuperAdmin) {
@@ -91,7 +95,6 @@ const Admin = () => {
       setProfiles(d.profiles || []);
       setInstances(d.instances || []);
 
-      // Init editing limits
       const limits: Record<string, number> = {};
       (d.tenants || []).forEach((t: TenantData) => { limits[t.id] = t.max_whatsapp_instances; });
       setEditingLimits(limits);
@@ -146,6 +149,15 @@ const Admin = () => {
     } finally {
       setTogglingUser(null);
     }
+  };
+
+  const toggleTenantExpanded = (tenantId: string) => {
+    setExpandedTenants((prev) => {
+      const next = new Set(prev);
+      if (next.has(tenantId)) next.delete(tenantId);
+      else next.add(tenantId);
+      return next;
+    });
   };
 
   if (authLoading || !isSuperAdmin) {
@@ -267,23 +279,32 @@ const Admin = () => {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Tenant</TableHead>
+                            <TableHead>Cliente</TableHead>
                             <TableHead className="text-center">Usuários</TableHead>
                             <TableHead className="text-center">Instâncias</TableHead>
                             <TableHead className="text-center">Conectadas</TableHead>
                             <TableHead>Limite WhatsApp</TableHead>
-                            <TableHead className="w-[80px]"></TableHead>
+                            <TableHead className="w-[100px]">Ações</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {tenants.map((t) => {
                             const limitChanged = editingLimits[t.id] !== t.max_whatsapp_instances;
+                            const isExpanded = expandedTenants.has(t.id);
                             return (
-                              <TableRow key={t.id}>
+                              <TableRow key={t.id} className="group">
                                 <TableCell>
                                   <div>
-                                    <p className="font-medium text-sm">{t.name}</p>
-                                    <p className="text-xs text-muted-foreground">{t.slug}</p>
+                                    <p className="font-medium text-sm">{t.owner_name || t.name}</p>
+                                    {t.owner_email && (
+                                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                                        <Mail className="h-3 w-3" />
+                                        {t.owner_email}
+                                      </p>
+                                    )}
+                                    {!t.owner_email && (
+                                      <p className="text-xs text-muted-foreground">{t.slug}</p>
+                                    )}
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-center tabular-nums">{t.user_count}</TableCell>
@@ -307,16 +328,27 @@ const Admin = () => {
                                   </div>
                                 </TableCell>
                                 <TableCell>
-                                  {limitChanged && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleSaveLimit(t.id)}
-                                      disabled={savingTenant === t.id}
-                                    >
-                                      {savingTenant === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                                    </Button>
-                                  )}
+                                  <div className="flex items-center gap-1">
+                                    {limitChanged && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleSaveLimit(t.id)}
+                                        disabled={savingTenant === t.id}
+                                      >
+                                        {savingTenant === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                      </Button>
+                                    )}
+                                    {t.instances.length > 0 && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => toggleTenantExpanded(t.id)}
+                                      >
+                                        {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                      </Button>
+                                    )}
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             );
@@ -324,6 +356,33 @@ const Admin = () => {
                         </TableBody>
                       </Table>
                     )}
+
+                    {/* Expanded instance details rendered outside table for valid HTML */}
+                    {tenants.filter((t) => expandedTenants.has(t.id) && t.instances.length > 0).map((t) => (
+                      <div key={`details-${t.id}`} className="mt-2 ml-4 mr-4 mb-4 rounded-lg border border-border bg-muted/30 p-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-2">
+                          Instâncias de {t.owner_name || t.name}
+                        </p>
+                        <div className="space-y-1.5">
+                          {t.instances.map((inst) => (
+                            <div key={inst.id} className="flex items-center gap-2 text-sm">
+                              {inst.status === "connected" ? (
+                                <Wifi className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                              ) : (
+                                <WifiOff className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              )}
+                              <span className="font-medium">{inst.display_name || inst.instance_name}</span>
+                              {inst.phone_number && (
+                                <span className="text-muted-foreground text-xs">({inst.phone_number})</span>
+                              )}
+                              <Badge variant="outline" className="text-[10px] ml-auto shrink-0">
+                                {inst.status === "connected" ? "Conectado" : "Desconectado"}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -343,7 +402,7 @@ const Admin = () => {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Instância</TableHead>
-                            <TableHead>Tenant</TableHead>
+                            <TableHead>Cliente</TableHead>
                             <TableHead>Telefone</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Criada em</TableHead>
@@ -358,7 +417,7 @@ const Admin = () => {
                                   <p className="font-medium text-sm">{inst.display_name || inst.instance_name}</p>
                                   {inst.display_name && <p className="text-xs text-muted-foreground">{inst.instance_name}</p>}
                                 </TableCell>
-                                <TableCell className="text-sm">{tenant?.name || "—"}</TableCell>
+                                <TableCell className="text-sm">{tenant?.owner_name || tenant?.name || "—"}</TableCell>
                                 <TableCell className="text-sm tabular-nums">{inst.phone_number || "—"}</TableCell>
                                 <TableCell>{getStatusBadge(inst.status)}</TableCell>
                                 <TableCell className="text-sm text-muted-foreground">
