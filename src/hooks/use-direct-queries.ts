@@ -93,6 +93,32 @@ export async function queryInstances(): Promise<EvolutionInstance[]> {
   return (data || []) as unknown as EvolutionInstance[];
 }
 
+/** Fetch instances enriched with owner profile name */
+export async function queryInstancesWithOwners(): Promise<(EvolutionInstance & { owner_name?: string })[]> {
+  const { data, error } = await supabase
+    .from("whatsapp_instances")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  const instances = (data || []) as unknown as EvolutionInstance[];
+  
+  // Collect unique owner IDs
+  const ownerIds = [...new Set(instances.map(i => (i as any).owner_id).filter(Boolean))];
+  if (ownerIds.length === 0) return instances.map(i => ({ ...i, owner_name: undefined }));
+  
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .in("id", ownerIds);
+  
+  const profileMap = new Map((profiles || []).map(p => [p.id, p.full_name]));
+  
+  return instances.map(i => ({
+    ...i,
+    owner_name: profileMap.get((i as any).owner_id) || undefined,
+  }));
+}
+
 export async function queryConversations(instanceId?: string): Promise<Conversation[]> {
   let query = supabase
     .from("whatsapp_conversations")
