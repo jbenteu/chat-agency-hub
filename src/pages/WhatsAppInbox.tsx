@@ -173,7 +173,7 @@ const WhatsAppInbox = () => {
   const loadInstances = useCallback(async () => {
     updateBootstrapProgress(20, "Conectando…");
     try {
-      const allInstances = await queryInstances();
+      const allInstances = await queryInstancesWithOwners();
       const connected = allInstances.filter((i) => i.status === "connected");
       setInstances(connected);
       setCachedInstances(connected);
