@@ -65,7 +65,7 @@ export function ConversationListItem({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 ${
+      className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 overflow-hidden ${
         isSelected ? "bg-muted" : ""
       }`}
     >
@@ -77,28 +77,28 @@ export function ConversationListItem({
           )}
         </AvatarFallback>
       </Avatar>
-      <div className="flex-1 overflow-hidden">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center gap-1 min-w-0 overflow-hidden">
             {c.pinned && <Pin className="h-3 w-3 shrink-0 text-muted-foreground rotate-45" />}
             <p className="truncate text-sm font-medium">{c.contact_name || c.contact_phone || "Desconhecido"}</p>
           </div>
-          <span className={`shrink-0 text-[10px] ${c.unread_count && c.unread_count > 0 ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+          <span className={`shrink-0 text-[10px] whitespace-nowrap ${(c.unread_count ?? 0) > 0 ? "text-primary font-semibold" : "text-muted-foreground"}`}>
             {formatTime(c.last_message_at)}
           </span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-1">
           {isTyping ? (
-            <p className="text-xs text-primary italic animate-pulse">digitando...</p>
+            <p className="text-xs text-primary italic animate-pulse truncate">digitando...</p>
           ) : (
-            <div className="flex items-center gap-1 min-w-0 flex-1">
+            <div className="flex items-center gap-1 min-w-0 overflow-hidden flex-1">
               {mediaIcon}
               <p className="truncate text-xs text-muted-foreground">{c.last_message || "…"}</p>
             </div>
           )}
-          {c.unread_count != null && c.unread_count > 0 && (
+          {(c.unread_count ?? 0) > 0 && (
             <Badge className="ml-1 h-[18px] min-w-[18px] shrink-0 rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
-              {c.unread_count > 99 ? "99+" : c.unread_count}
+              {(c.unread_count ?? 0) > 99 ? "99+" : c.unread_count}
             </Badge>
           )}
         </div>

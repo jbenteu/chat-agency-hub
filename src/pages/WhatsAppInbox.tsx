@@ -858,7 +858,7 @@ const WhatsAppInbox = () => {
   }, [conversations, searchQuery, conversationFilter]);
 
   const totalUnread = useMemo(() =>
-    conversations.filter((c) => !c.archived && c.unread_count > 0).length,
+    conversations.filter((c) => !c.archived && (c.unread_count ?? 0) > 0).length,
     [conversations]
   );
 
