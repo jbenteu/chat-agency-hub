@@ -963,7 +963,23 @@ const WhatsAppInbox = () => {
   const getQuotedInfo = (msg: WhatsAppMessage): { id: string; content: string } | null => {
     const meta = msg.metadata as Record<string, any> | null;
     if (!meta?.quotedMessageId) return null;
-    return { id: meta.quotedMessageId, content: meta.quotedContent || "[Mensagem]" };
+    let content = meta.quotedContent || null;
+    // If webhook stored "[Mensagem]", try to resolve from loaded messages
+    if (!content || content === "[Mensagem]") {
+      const original = messages.find((m) => m.message_id === meta.quotedMessageId);
+      if (original) {
+        if (original.media_type === "image") content = "📷 Foto";
+        else if (original.media_type === "video") content = "🎥 Vídeo";
+        else if (original.media_type === "audio") content = "🎵 Áudio";
+        else if (original.media_type === "sticker") content = "[Sticker]";
+        else if (original.media_type === "document") content = original.content || "[Documento]";
+        else if (original.content) content = original.content;
+        else content = "[Mensagem]";
+      } else {
+        content = content || "[Mensagem]";
+      }
+    }
+    return { id: meta.quotedMessageId, content };
   };
 
   const currentGroupInfo = selectedConv ? groupInfoCache[selectedConv.remote_jid] : null;
