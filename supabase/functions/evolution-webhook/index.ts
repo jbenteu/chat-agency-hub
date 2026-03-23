@@ -181,16 +181,23 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
   if (contextInfo?.stanzaId) {
     quotedMessageId = contextInfo.stanzaId;
     const qm = contextInfo.quotedMessage;
-    quotedContent =
-      qm?.conversation ||
-      qm?.extendedTextMessage?.text ||
-      qm?.imageMessage?.caption ||
-      qm?.videoMessage?.caption ||
-      qm?.documentMessage?.fileName ||
-      (qm?.audioMessage ? "[Áudio]" : null) ||
-      (qm?.stickerMessage ? "[Sticker]" : null) ||
-      (qm?.locationMessage || qm?.liveLocationMessage ? "[Localização]" : null) ||
-      "[Mensagem]";
+    if (qm) {
+      const unwrappedQm = unwrapMessageContent(qm);
+      quotedContent =
+        unwrappedQm?.conversation ||
+        unwrappedQm?.extendedTextMessage?.text ||
+        (unwrappedQm?.imageMessage ? (unwrappedQm.imageMessage.caption || "📷 Foto") : null) ||
+        (unwrappedQm?.videoMessage ? (unwrappedQm.videoMessage.caption || "🎥 Vídeo") : null) ||
+        (unwrappedQm?.documentMessage ? (unwrappedQm.documentMessage.fileName || "[Documento]") : null) ||
+        (unwrappedQm?.audioMessage ? "🎵 Áudio" : null) ||
+        (unwrappedQm?.stickerMessage ? "[Sticker]" : null) ||
+        (unwrappedQm?.locationMessage || unwrappedQm?.liveLocationMessage ? "📍 Localização" : null) ||
+        (unwrappedQm?.contactMessage || unwrappedQm?.contactsArrayMessage ? "👤 Contato" : null) ||
+        (unwrappedQm?.pollCreationMessage || unwrappedQm?.pollCreationMessageV3 ? "📊 Enquete" : null) ||
+        "[Mensagem]";
+    } else {
+      quotedContent = "[Mensagem]";
+    }
   }
 
   if (contentNode.conversation) {
