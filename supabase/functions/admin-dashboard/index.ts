@@ -47,18 +47,28 @@ Deno.serve(async (req: Request) => {
         const instances = instancesRes.data || [];
         const roles = rolesRes.data || [];
 
-        // Enrich tenants with instance count and user count
+        // Enrich tenants with instance count, user count, and owner profile info
         const enrichedTenants = tenants.map((t: any) => {
           const tenantInstances = instances.filter((i: any) => i.tenant_id === t.id);
-          const tenantUsers = roles.filter((r: any) => r.tenant_id === t.id);
+          const tenantUserRoles = roles.filter((r: any) => r.tenant_id === t.id);
           const maxInstances = t.settings?.max_whatsapp_instances ?? 3;
+
+          // Find the owner (user with admin role in this tenant) and their profile
+          const ownerRole = tenantUserRoles.find((r: any) => r.role === "admin");
+          const ownerProfile = ownerRole
+            ? profiles.find((p: any) => p.id === ownerRole.user_id)
+            : null;
+
           return {
             ...t,
             instance_count: tenantInstances.length,
             connected_count: tenantInstances.filter((i: any) => i.status === "connected").length,
-            user_count: tenantUsers.length,
+            user_count: tenantUserRoles.length,
             max_whatsapp_instances: maxInstances,
             instances: tenantInstances,
+            owner_name: ownerProfile?.full_name || null,
+            owner_email: ownerProfile?.email || null,
+            owner_role: ownerProfile?.role || null,
           };
         });
 
@@ -84,7 +94,6 @@ Deno.serve(async (req: Request) => {
         const { tenant_id, settings } = body;
         if (!tenant_id) return new Response(JSON.stringify({ error: "tenant_id required" }), { status: 400, headers: corsHeaders });
 
-        // Merge with existing settings
         const { data: existing } = await supabaseAdmin.from("tenants").select("settings").eq("id", tenant_id).single();
         const mergedSettings = { ...(existing?.settings || {}), ...settings };
 

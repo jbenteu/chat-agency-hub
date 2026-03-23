@@ -64,7 +64,6 @@ Deno.serve(async (req: Request) => {
         .select("id")
         .in("role", roles);
       teamMemberIds = (allTeam ?? []).map((p: any) => p.id);
-
     } else {
       const { data: relations } = await supabaseAdmin
         .from("user_relationships")
@@ -127,6 +126,7 @@ Deno.serve(async (req: Request) => {
           clients = (clientProfiles ?? []).filter((p: any) => p.role === "cliente");
         }
 
+        // Get the member's personal instance
         const { data: waInstance } = await supabaseAdmin
           .from("whatsapp_instances")
           .select("id, instance_name, status, is_personal")
@@ -134,24 +134,47 @@ Deno.serve(async (req: Request) => {
           .eq("is_personal", true)
           .maybeSingle();
 
-        // Get WhatsApp instances owned by this member's clients
+        // Get WhatsApp instances for each client by looking up their tenant_id
         let clientInstances: any[] = [];
         const clientIds = clients.map((c: any) => c.id);
         if (clientIds.length > 0) {
-          const { data: clientWaInstances } = await supabaseAdmin
-            .from("whatsapp_instances")
-            .select("id, instance_name, display_name, status, owner_id, phone_number")
-            .in("owner_id", clientIds);
-          clientInstances = clientWaInstances ?? [];
+          // Find tenant_ids for each client from user_roles
+          const { data: clientRoles } = await supabaseAdmin
+            .from("user_roles")
+            .select("user_id, tenant_id")
+            .in("user_id", clientIds);
+
+          const clientTenantMap: Record<string, string> = {};
+          (clientRoles ?? []).forEach((r: any) => {
+            clientTenantMap[r.user_id] = r.tenant_id;
+          });
+
+          const tenantIds = [...new Set(Object.values(clientTenantMap))];
+          if (tenantIds.length > 0) {
+            const { data: tenantInstances } = await supabaseAdmin
+              .from("whatsapp_instances")
+              .select("id, instance_name, display_name, status, tenant_id, phone_number")
+              .in("tenant_id", tenantIds);
+            clientInstances = tenantInstances ?? [];
+          }
+
+          // Map instances to clients by tenant_id
+          clients = clients.map((c: any) => {
+            const cTenantId = clientTenantMap[c.id];
+            return {
+              ...c,
+              tenant_id: cTenantId || null,
+              whatsapp_instances: clientInstances.filter((wi: any) => wi.tenant_id === cTenantId),
+            };
+          });
+        } else {
+          clients = clients.map((c: any) => ({ ...c, tenant_id: null, whatsapp_instances: [] }));
         }
 
         return {
           ...member,
           client_count: clients.length,
-          clients: clients.map((c: any) => ({
-            ...c,
-            whatsapp_instances: clientInstances.filter((wi: any) => wi.owner_id === c.id),
-          })),
+          clients,
           whatsapp_instance: waInstance
             ? { id: waInstance.id, instance_name: waInstance.instance_name, status: waInstance.status }
             : null,
