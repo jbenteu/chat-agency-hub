@@ -98,7 +98,7 @@ const WhatsAppInbox = () => {
 
   // Initialize state from cache
   const inboxCache = getInboxCache();
-  const [instances, setInstances] = useState<EvolutionInstance[]>(inboxCache.instances);
+  const [instances, setInstances] = useState<(EvolutionInstance & { owner_name?: string })[]>(inboxCache.instances as any);
   const [selectedInstanceId, setSelectedInstanceId] = useState(inboxCache.selectedInstanceId);
   const [conversations, setConversations] = useState<Conversation[]>(
     inboxCache.selectedInstanceId ? (getCachedConversations(inboxCache.selectedInstanceId) || []) : []
