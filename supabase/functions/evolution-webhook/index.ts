@@ -687,6 +687,10 @@ Deno.serve(async (req) => {
           content: parsed.content,
           media_url: parsed.mediaUrl,
           media_type: parsed.mediaType,
+          media_mime_type: parsed.mediaMimeType || null,
+          media_thumbnail: parsed.mediaThumbnail || null,
+          media_width: parsed.mediaWidth || null,
+          media_height: parsed.mediaHeight || null,
           status: fromMe ? "sent" : "received",
           created_at: nowIso, // explícito para ordenação determinística
           metadata: {
