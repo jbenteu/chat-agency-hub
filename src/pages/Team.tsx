@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { InviteDialog } from "@/components/invite/InviteDialog";
+import { ClientDetailDialog } from "@/components/team/ClientDetailDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ interface Client {
   phone: string | null;
   role: string;
   is_active: boolean;
+  tenant_id?: string | null;
   whatsapp_instances: ClientInstance[];
 }
 
@@ -57,6 +59,8 @@ const Team = () => {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [clientDialogOpen, setClientDialogOpen] = useState(false);
 
   const fetchTeam = useCallback(async () => {
     setLoading(true);
@@ -88,6 +92,11 @@ const Team = () => {
       else next.add(memberId);
       return next;
     });
+  };
+
+  const handleClientClick = (client: Client) => {
+    setSelectedClient(client);
+    setClientDialogOpen(true);
   };
 
   const getInitials = (name: string) =>
@@ -146,7 +155,7 @@ const Team = () => {
                   <div className="flex items-center gap-1">
                     <MessageCircle className="h-3.5 w-3.5" />
                     {member.whatsapp_instance ? (
-                      <span className={member.whatsapp_instance.status === "connected" ? "text-green-500" : "text-amber-500"}>
+                      <span className={member.whatsapp_instance.status === "connected" ? "text-emerald-500" : "text-amber-500"}>
                         {member.whatsapp_instance.status === "connected" ? "Conectado" : "Desconectado"}
                       </span>
                     ) : (
@@ -165,7 +174,11 @@ const Team = () => {
                     <CollapsibleContent>
                       <div className="mt-3 space-y-2 border-t border-border pt-3">
                         {member.clients.map((client) => (
-                          <div key={client.id} className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                          <div
+                            key={client.id}
+                            className="rounded-lg border border-border/60 bg-muted/30 p-3 cursor-pointer hover:bg-muted/60 transition-colors"
+                            onClick={() => handleClientClick(client)}
+                          >
                             <div className="flex items-center justify-between gap-2">
                               <div className="min-w-0">
                                 <p className="text-sm font-medium truncate">{client.full_name}</p>
@@ -194,7 +207,7 @@ const Team = () => {
                                 {client.whatsapp_instances.map((inst) => (
                                   <div key={inst.id} className="flex items-center gap-2 text-[11px]">
                                     {inst.status === "connected" ? (
-                                      <Wifi className="h-3 w-3 text-green-500" />
+                                      <Wifi className="h-3 w-3 text-emerald-500" />
                                     ) : (
                                       <WifiOff className="h-3 w-3 text-muted-foreground" />
                                     )}
@@ -257,6 +270,13 @@ const Team = () => {
           <TabsContent value="sucesso_cliente" className="mt-4">{renderMembers("sucesso_cliente")}</TabsContent>
         </Tabs>
       </div>
+
+      <ClientDetailDialog
+        client={selectedClient}
+        open={clientDialogOpen}
+        onOpenChange={setClientDialogOpen}
+        onUpdated={fetchTeam}
+      />
     </AppLayout>
   );
 };
