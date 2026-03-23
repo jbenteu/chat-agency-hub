@@ -1181,7 +1181,7 @@ const WhatsAppInbox = () => {
                   <Select value={selectedInstanceId} onValueChange={(v) => { setSelectedInstanceId(v); setCachedSelectedInstance(v); setSelectedConv(null); setMessages([]); const cached = getCachedConversations(v); if (cached) setConversations(cached); }}>
                     <SelectTrigger className="h-7 w-full text-xs"><SelectValue placeholder="Selecione a conexão" /></SelectTrigger>
                     <SelectContent>
-                      {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{i.display_name || i.phone_number || "Conexão"}</SelectItem>))}
+                      {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{(i.display_name || i.phone_number || "Conexão") + (i.owner_name ? ` — ${i.owner_name}` : "")}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
