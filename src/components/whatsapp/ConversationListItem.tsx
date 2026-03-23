@@ -77,11 +77,11 @@ export function ConversationListItem({
           )}
         </AvatarFallback>
       </Avatar>
-      <div className="flex-1 min-w-0 overflow-hidden">
+      <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-1">
-          <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+          <div className="flex items-center gap-1 min-w-0 flex-1">
             {c.pinned && <Pin className="h-3 w-3 shrink-0 text-muted-foreground rotate-45" />}
-            <p className="truncate text-sm font-medium">{c.contact_name || c.contact_phone || "Desconhecido"}</p>
+            <p className="truncate text-sm font-medium leading-tight">{c.contact_name || c.contact_phone || "Desconhecido"}</p>
           </div>
           <span className={`shrink-0 text-[10px] whitespace-nowrap ${(c.unread_count ?? 0) > 0 ? "text-primary font-semibold" : "text-muted-foreground"}`}>
             {formatTime(c.last_message_at)}
@@ -91,9 +91,9 @@ export function ConversationListItem({
           {isTyping ? (
             <p className="text-xs text-primary italic animate-pulse truncate">digitando...</p>
           ) : (
-            <div className="flex items-center gap-1 min-w-0 overflow-hidden flex-1">
+            <div className="flex items-center gap-1 min-w-0 flex-1">
               {mediaIcon}
-              <p className="truncate text-xs text-muted-foreground">{c.last_message || "…"}</p>
+              <p className="truncate text-xs text-muted-foreground leading-tight">{c.last_message || "…"}</p>
             </div>
           )}
           {(c.unread_count ?? 0) > 0 && (

@@ -181,16 +181,23 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
   if (contextInfo?.stanzaId) {
     quotedMessageId = contextInfo.stanzaId;
     const qm = contextInfo.quotedMessage;
-    quotedContent =
-      qm?.conversation ||
-      qm?.extendedTextMessage?.text ||
-      qm?.imageMessage?.caption ||
-      qm?.videoMessage?.caption ||
-      qm?.documentMessage?.fileName ||
-      (qm?.audioMessage ? "[Áudio]" : null) ||
-      (qm?.stickerMessage ? "[Sticker]" : null) ||
-      (qm?.locationMessage || qm?.liveLocationMessage ? "[Localização]" : null) ||
-      "[Mensagem]";
+    if (qm) {
+      const unwrappedQm = unwrapMessageContent(qm);
+      quotedContent =
+        unwrappedQm?.conversation ||
+        unwrappedQm?.extendedTextMessage?.text ||
+        (unwrappedQm?.imageMessage ? (unwrappedQm.imageMessage.caption || "📷 Foto") : null) ||
+        (unwrappedQm?.videoMessage ? (unwrappedQm.videoMessage.caption || "🎥 Vídeo") : null) ||
+        (unwrappedQm?.documentMessage ? (unwrappedQm.documentMessage.fileName || "[Documento]") : null) ||
+        (unwrappedQm?.audioMessage ? "🎵 Áudio" : null) ||
+        (unwrappedQm?.stickerMessage ? "[Sticker]" : null) ||
+        (unwrappedQm?.locationMessage || unwrappedQm?.liveLocationMessage ? "📍 Localização" : null) ||
+        (unwrappedQm?.contactMessage || unwrappedQm?.contactsArrayMessage ? "👤 Contato" : null) ||
+        (unwrappedQm?.pollCreationMessage || unwrappedQm?.pollCreationMessageV3 ? "📊 Enquete" : null) ||
+        "[Mensagem]";
+    } else {
+      quotedContent = "[Mensagem]";
+    }
   }
 
   if (contentNode.conversation) {
@@ -246,6 +253,21 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
 
   const primaryType = Object.keys(contentNode)[0] || "unknown";
 
+  // Extract mime type from the media node
+  let mediaMimeType: string | null = null;
+  let mediaThumbnail: string | null = null;
+  let mediaWidth: number | null = null;
+  let mediaHeight: number | null = null;
+  const mediaNode =
+    contentNode.imageMessage || contentNode.videoMessage || contentNode.audioMessage ||
+    contentNode.documentMessage || contentNode.stickerMessage || null;
+  if (mediaNode) {
+    mediaMimeType = mediaNode.mimetype || mediaNode.mimeType || null;
+    mediaThumbnail = mediaNode.jpegThumbnail || mediaNode.thumbnail || null;
+    mediaWidth = mediaNode.width || null;
+    mediaHeight = mediaNode.height || null;
+  }
+
   return {
     skip: false as const,
     content,
@@ -254,6 +276,10 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
     primaryType,
     quotedMessageId,
     quotedContent,
+    mediaMimeType,
+    mediaThumbnail,
+    mediaWidth,
+    mediaHeight,
   };
 };
 
@@ -661,6 +687,10 @@ Deno.serve(async (req) => {
           content: parsed.content,
           media_url: parsed.mediaUrl,
           media_type: parsed.mediaType,
+          media_mime_type: parsed.mediaMimeType || null,
+          media_thumbnail: parsed.mediaThumbnail || null,
+          media_width: parsed.mediaWidth || null,
+          media_height: parsed.mediaHeight || null,
           status: fromMe ? "sent" : "received",
           created_at: nowIso, // explícito para ordenação determinística
           metadata: {
