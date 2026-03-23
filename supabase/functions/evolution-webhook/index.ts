@@ -253,6 +253,21 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
 
   const primaryType = Object.keys(contentNode)[0] || "unknown";
 
+  // Extract mime type from the media node
+  let mediaMimeType: string | null = null;
+  let mediaThumbnail: string | null = null;
+  let mediaWidth: number | null = null;
+  let mediaHeight: number | null = null;
+  const mediaNode =
+    contentNode.imageMessage || contentNode.videoMessage || contentNode.audioMessage ||
+    contentNode.documentMessage || contentNode.stickerMessage || null;
+  if (mediaNode) {
+    mediaMimeType = mediaNode.mimetype || mediaNode.mimeType || null;
+    mediaThumbnail = mediaNode.jpegThumbnail || mediaNode.thumbnail || null;
+    mediaWidth = mediaNode.width || null;
+    mediaHeight = mediaNode.height || null;
+  }
+
   return {
     skip: false as const,
     content,
@@ -261,6 +276,10 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
     primaryType,
     quotedMessageId,
     quotedContent,
+    mediaMimeType,
+    mediaThumbnail,
+    mediaWidth,
+    mediaHeight,
   };
 };
 
