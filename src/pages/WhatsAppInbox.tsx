@@ -828,7 +828,7 @@ const WhatsAppInbox = () => {
 
     // Apply filter tab
     if (conversationFilter === "unread") {
-      list = list.filter((c) => c.unread_count > 0);
+      list = list.filter((c) => (c.unread_count ?? 0) > 0);
     } else if (conversationFilter === "groups") {
       list = list.filter((c) => c.remote_jid.endsWith("@g.us"));
     } else if (conversationFilter === "archived") {
