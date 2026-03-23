@@ -109,10 +109,23 @@ Deno.serve(async (req: Request) => {
 
     const enrichedMembers = await Promise.all(
       (teamMembers ?? []).map(async (member: any) => {
-        const { count: clientCount } = await supabaseAdmin
+        // Get subordinate relationships
+        const { data: relations } = await supabaseAdmin
           .from("user_relationships")
-          .select("subordinate_id", { count: "exact", head: true })
+          .select("subordinate_id")
           .eq("superior_id", member.id);
+        const subordinateIds = (relations ?? []).map((r: any) => r.subordinate_id);
+
+        // Get client profiles (subordinates with role=cliente)
+        let clients: any[] = [];
+        if (subordinateIds.length > 0) {
+          const { data: clientProfiles } = await supabaseAdmin
+            .from("profiles")
+            .select("id, full_name, email, phone, role, is_active")
+            .in("id", subordinateIds)
+            .order("full_name", { ascending: true });
+          clients = (clientProfiles ?? []).filter((p: any) => p.role === "cliente");
+        }
 
         const { data: waInstance } = await supabaseAdmin
           .from("whatsapp_instances")
@@ -121,9 +134,24 @@ Deno.serve(async (req: Request) => {
           .eq("is_personal", true)
           .maybeSingle();
 
+        // Get WhatsApp instances owned by this member's clients
+        let clientInstances: any[] = [];
+        const clientIds = clients.map((c: any) => c.id);
+        if (clientIds.length > 0) {
+          const { data: clientWaInstances } = await supabaseAdmin
+            .from("whatsapp_instances")
+            .select("id, instance_name, display_name, status, owner_id, phone_number")
+            .in("owner_id", clientIds);
+          clientInstances = clientWaInstances ?? [];
+        }
+
         return {
           ...member,
-          client_count: clientCount ?? 0,
+          client_count: clients.length,
+          clients: clients.map((c: any) => ({
+            ...c,
+            whatsapp_instances: clientInstances.filter((wi: any) => wi.owner_id === c.id),
+          })),
           whatsapp_instance: waInstance
             ? { id: waInstance.id, instance_name: waInstance.instance_name, status: waInstance.status }
             : null,

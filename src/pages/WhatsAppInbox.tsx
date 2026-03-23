@@ -24,7 +24,7 @@ import {
   setCachedGroupInfo, getCachedGroupInfoMap, isCacheFresh,
   type GroupInfo,
 } from "@/hooks/use-inbox-cache";
-import { queryInstances, queryConversations, queryMessages, queryMessagesSince, markConversationRead } from "@/hooks/use-direct-queries";
+import { queryInstances, queryInstancesWithOwners, queryConversations, queryMessages, queryMessagesSince, markConversationRead } from "@/hooks/use-direct-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -98,7 +98,7 @@ const WhatsAppInbox = () => {
 
   // Initialize state from cache
   const inboxCache = getInboxCache();
-  const [instances, setInstances] = useState<EvolutionInstance[]>(inboxCache.instances);
+  const [instances, setInstances] = useState<(EvolutionInstance & { owner_name?: string })[]>(inboxCache.instances as any);
   const [selectedInstanceId, setSelectedInstanceId] = useState(inboxCache.selectedInstanceId);
   const [conversations, setConversations] = useState<Conversation[]>(
     inboxCache.selectedInstanceId ? (getCachedConversations(inboxCache.selectedInstanceId) || []) : []
@@ -173,7 +173,7 @@ const WhatsAppInbox = () => {
   const loadInstances = useCallback(async () => {
     updateBootstrapProgress(20, "Conectando…");
     try {
-      const allInstances = await queryInstances();
+      const allInstances = await queryInstancesWithOwners();
       const connected = allInstances.filter((i) => i.status === "connected");
       setInstances(connected);
       setCachedInstances(connected);
@@ -828,7 +828,7 @@ const WhatsAppInbox = () => {
 
     // Apply filter tab
     if (conversationFilter === "unread") {
-      list = list.filter((c) => c.unread_count > 0);
+      list = list.filter((c) => (c.unread_count ?? 0) > 0);
     } else if (conversationFilter === "groups") {
       list = list.filter((c) => c.remote_jid.endsWith("@g.us"));
     } else if (conversationFilter === "archived") {
@@ -858,7 +858,7 @@ const WhatsAppInbox = () => {
   }, [conversations, searchQuery, conversationFilter]);
 
   const totalUnread = useMemo(() =>
-    conversations.filter((c) => !c.archived && c.unread_count > 0).length,
+    conversations.filter((c) => !c.archived && (c.unread_count ?? 0) > 0).length,
     [conversations]
   );
 
@@ -1181,7 +1181,7 @@ const WhatsAppInbox = () => {
                   <Select value={selectedInstanceId} onValueChange={(v) => { setSelectedInstanceId(v); setCachedSelectedInstance(v); setSelectedConv(null); setMessages([]); const cached = getCachedConversations(v); if (cached) setConversations(cached); }}>
                     <SelectTrigger className="h-7 w-full text-xs"><SelectValue placeholder="Selecione a conexão" /></SelectTrigger>
                     <SelectContent>
-                      {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{i.display_name || i.phone_number || "Conexão"}</SelectItem>))}
+                      {instances.map((i) => (<SelectItem key={i.id} value={i.id}>{(i.display_name || i.phone_number || "Conexão") + (i.owner_name ? ` — ${i.owner_name}` : "")}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
