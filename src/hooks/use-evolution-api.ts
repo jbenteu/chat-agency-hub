@@ -295,6 +295,18 @@ export function useEvolutionApi() {
     [callEvolution]
   );
 
+  const monitoringConversations = useCallback(
+    (params?: { instanceId?: string; limit?: number; before_id?: string; search?: string; tenantId?: string }) =>
+      callEvolution({ action: "monitoring_conversations", ...params }),
+    [callEvolution]
+  );
+
+  const updateInstanceAssignee = useCallback(
+    (instanceId: string, assignedTo: string | null) =>
+      callEvolution({ action: "update_instance_assignee", instanceId, assignedTo }),
+    [callEvolution]
+  );
+
   return {
     loading,
     error,
