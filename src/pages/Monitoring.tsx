@@ -309,77 +309,135 @@ const Monitoring: React.FC = () => {
   return (
     <AppLayout>
       <div className="flex h-[calc(100vh-5rem)] -m-6 overflow-hidden">
-        {/* Column 1 — Inboxes */}
-        <div className="w-60 border-r border-border flex flex-col bg-muted/30">
-          <div className="p-3 border-b border-border">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
-                <Eye className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold">Monitoramento</span>
+        {/* Column 1 — Sidebar (toggle) */}
+        {sidebarOpen && (
+          <div className="w-64 border-r border-border flex flex-col bg-muted/30">
+            <div className="p-3 border-b border-border">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Eye className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-semibold">Monitoramento</span>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => loadData()}>
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSidebarOpen(false)}>
+                    <PanelLeftClose className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => loadData()}>
-                <RefreshCw className="h-3.5 w-3.5" />
-              </Button>
             </div>
-          </div>
 
-          <ScrollArea className="flex-1">
-            <div className="p-2 space-y-0.5">
-              {/* All conversations */}
-              <button
-                onClick={() => setSelectedInstanceId(null)}
-                className={`w-full flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors ${!selectedInstanceId ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
-              >
-                <MessageCircle className="h-4 w-4 shrink-0" />
-                <span className="flex-1 truncate">Todas as conversas</span>
-                {totalUnread > 0 && (
-                  <Badge variant="destructive" className="h-5 min-w-[20px] px-1.5 text-[10px]">
-                    {totalUnread > 99 ? "99+" : totalUnread}
-                  </Badge>
-                )}
-              </button>
+            <ScrollArea className="flex-1">
+              <div className="p-3 space-y-3">
+                {/* Team member filter */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
+                    <Users className="h-3 w-3" /> Equipe
+                  </label>
+                  <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      {teamMembers.map(m => (
+                        <SelectItem key={m.id} value={m.id}>
+                          <span>{m.name}</span>
+                          <span className="text-muted-foreground ml-1">
+                            ({m.role === "gestor" ? "Gestor" : "CS"})
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <Separator className="my-1.5" />
+                {/* Client filter */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
+                    <Building2 className="h-3 w-3" /> Cliente
+                  </label>
+                  <Select value={selectedClientId} onValueChange={(val) => {
+                    setSelectedClientId(val);
+                    setSelectedInstanceId(null);
+                  }}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Todos os clientes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os clientes</SelectItem>
+                      {clients.map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {/* Instances */}
-              {instances.map(inst => {
-                const isConnected = inst.status === "open" || inst.status === "connected";
-                const unread = instanceUnreads[inst.id] || 0;
-                return (
+                <Separator />
+
+                {/* Instance list */}
+                <div className="space-y-0.5">
+                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Conexões</label>
+                  
                   <button
-                    key={inst.id}
-                    onClick={() => setSelectedInstanceId(inst.id)}
-                    className={`w-full flex items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors ${selectedInstanceId === inst.id ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
+                    onClick={() => setSelectedInstanceId(null)}
+                    className={`w-full flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors ${!selectedInstanceId ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
                   >
-                    {isConnected ? (
-                      <Wifi className="h-3.5 w-3.5 shrink-0 text-green-500" />
-                    ) : (
-                      <WifiOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm truncate">{inst.display_name || inst.phone_number || inst.instance_name}</div>
-                      {inst.tenant_name && (
-                        <div className="text-[10px] text-muted-foreground truncate">{inst.tenant_name}</div>
-                      )}
-                      {inst.owner_name && (
-                        <div className="text-[10px] text-muted-foreground truncate">{inst.owner_name}</div>
-                      )}
-                    </div>
-                    {unread > 0 && (
-                      <Badge variant="destructive" className="h-5 min-w-[20px] px-1.5 text-[10px]">
-                        {unread > 99 ? "99+" : unread}
+                    <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                    <span className="flex-1 truncate">Todas</span>
+                    {totalUnread > 0 && (
+                      <Badge variant="destructive" className="h-4 min-w-[16px] px-1 text-[9px]">
+                        {totalUnread > 99 ? "99+" : totalUnread}
                       </Badge>
                     )}
                   </button>
-                );
-              })}
 
-              {instances.length === 0 && !loading && (
-                <div className="text-xs text-muted-foreground text-center py-4">Nenhuma instância encontrada</div>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
+                  {filteredInstances.map(inst => {
+                    const isConnected = inst.status === "open" || inst.status === "connected";
+                    const unread = instanceUnreads[inst.id] || 0;
+                    return (
+                      <button
+                        key={inst.id}
+                        onClick={() => setSelectedInstanceId(inst.id)}
+                        className={`w-full flex items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors ${selectedInstanceId === inst.id ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
+                      >
+                        {isConnected ? (
+                          <Wifi className="h-3 w-3 shrink-0 text-green-500" />
+                        ) : (
+                          <WifiOff className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs truncate">{inst.display_name || inst.phone_number || inst.instance_name}</div>
+                          <div className="text-[10px] text-muted-foreground truncate">{inst.tenant_name}</div>
+                        </div>
+                        {unread > 0 && (
+                          <Badge variant="destructive" className="h-4 min-w-[16px] px-1 text-[9px]">
+                            {unread > 99 ? "99+" : unread}
+                          </Badge>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  {filteredInstances.length === 0 && !loading && (
+                    <div className="text-[11px] text-muted-foreground text-center py-3">Nenhuma conexão</div>
+                  )}
+                </div>
+              </div>
+            </ScrollArea>
+          </div>
+        )}
+
+        {/* Sidebar toggle when closed */}
+        {!sidebarOpen && (
+          <div className="border-r border-border flex flex-col items-center py-3 px-1 bg-muted/30">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSidebarOpen(true)}>
+              <PanelLeft className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
 
         {/* Column 2 — Conversation List */}
         <div className="w-80 border-r border-border flex flex-col">
