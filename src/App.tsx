@@ -16,6 +16,7 @@ import SettingsPage from "./pages/Settings";
 import Clients from "./pages/Clients";
 import Team from "./pages/Team";
 import Admin from "./pages/Admin";
+import ConversationMonitoring from "./pages/ConversationMonitoring";
 import NotFound from "./pages/NotFound";
 import React, { Suspense } from "react";
 
