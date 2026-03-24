@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/sidebar";
 import { NavLink, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, Users, MessageCircle, Settings, Shield, LogOut, Sparkles, UserCheck, UsersRound,
+  LayoutDashboard, Users, MessageCircle, Settings, Shield, LogOut, Sparkles, UserCheck, UsersRound, Eye,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 
