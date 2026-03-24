@@ -6,11 +6,23 @@ import { ClientDetailDialog } from "@/components/team/ClientDetailDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Search, UsersRound, MessageCircle, Users, ChevronDown, ChevronRight, Phone, Mail, Wifi, WifiOff } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Search, UsersRound, MessageCircle, Users, ChevronDown, ChevronRight,
+  Phone, Mail, Wifi, WifiOff, UserPlus, Building2, Trash2, CalendarDays,
+} from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface ClientInstance {
   id: string;
@@ -31,6 +43,16 @@ interface Client {
   whatsapp_instances: ClientInstance[];
 }
 
+interface TenantAssignment {
+  id: string;
+  manager_id: string;
+  tenant_id: string;
+  assigned_at: string;
+  notes: string | null;
+  tenant_name: string;
+  tenant_slug: string;
+}
+
 interface TeamMember {
   id: string;
   full_name: string;
@@ -46,6 +68,13 @@ interface TeamMember {
     instance_name: string;
     status: string;
   } | null;
+  assigned_tenants: TenantAssignment[];
+}
+
+interface TenantOption {
+  id: string;
+  name: string;
+  slug: string;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -62,6 +91,16 @@ const Team = () => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [clientDialogOpen, setClientDialogOpen] = useState(false);
 
+  // Assignment dialog state
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [selectedManagerId, setSelectedManagerId] = useState("");
+  const [selectedTenantId, setSelectedTenantId] = useState("");
+  const [assignmentNotes, setAssignmentNotes] = useState("");
+  const [allTenants, setAllTenants] = useState<TenantOption[]>([]);
+  const [assigning, setAssigning] = useState(false);
+
+  const { toast } = useToast();
+
   const fetchTeam = useCallback(async () => {
     setLoading(true);
     try {
@@ -71,7 +110,48 @@ const Team = () => {
       });
 
       if (!error && data) {
-        setMembers(data.team_members ?? []);
+        const teamMembers: TeamMember[] = (data.team_members ?? []).map((m: any) => ({
+          ...m,
+          assigned_tenants: [],
+        }));
+
+        // Fetch tenant assignments for all members
+        const memberIds = teamMembers.map((m) => m.id);
+        if (memberIds.length > 0) {
+          const { data: assignments } = await supabase
+            .from("tenant_assignments")
+            .select("id, manager_id, tenant_id, assigned_at, notes")
+            .in("manager_id", memberIds);
+
+          if (assignments && assignments.length > 0) {
+            const tenantIds = [...new Set(assignments.map((a) => a.tenant_id))];
+            const { data: tenants } = await supabase
+              .from("tenants")
+              .select("id, name, slug")
+              .in("id", tenantIds);
+
+            const tenantMap = new Map((tenants ?? []).map((t) => [t.id, t]));
+
+            for (const member of teamMembers) {
+              member.assigned_tenants = assignments
+                .filter((a) => a.manager_id === member.id)
+                .map((a) => {
+                  const tenant = tenantMap.get(a.tenant_id);
+                  return {
+                    id: a.id,
+                    manager_id: a.manager_id,
+                    tenant_id: a.tenant_id,
+                    assigned_at: a.assigned_at,
+                    notes: a.notes,
+                    tenant_name: tenant?.name ?? "Desconhecido",
+                    tenant_slug: tenant?.slug ?? "",
+                  };
+                });
+            }
+          }
+        }
+
+        setMembers(teamMembers);
       }
     } catch (e) {
       console.error("Erro ao buscar equipe:", e);
@@ -80,10 +160,19 @@ const Team = () => {
     }
   }, [search, roleFilter]);
 
+  const loadTenants = useCallback(async () => {
+    const { data } = await supabase.from("tenants").select("id, name, slug").order("name");
+    setAllTenants(data ?? []);
+  }, []);
+
   useEffect(() => {
     const timeout = setTimeout(fetchTeam, 300);
     return () => clearTimeout(timeout);
   }, [fetchTeam]);
+
+  useEffect(() => {
+    loadTenants();
+  }, [loadTenants]);
 
   const toggleExpanded = (memberId: string) => {
     setExpandedMembers((prev) => {
@@ -99,8 +188,54 @@ const Team = () => {
     setClientDialogOpen(true);
   };
 
+  const handleAssign = async () => {
+    if (!selectedManagerId || !selectedTenantId) return;
+    setAssigning(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase.from("tenant_assignments").insert({
+        manager_id: selectedManagerId,
+        tenant_id: selectedTenantId,
+        notes: assignmentNotes || null,
+        assigned_by: user?.id,
+      });
+
+      if (error) {
+        if (error.code === "23505") {
+          toast({ title: "Atribuição já existe", description: "Este cliente já está atribuído a este gestor.", variant: "destructive" });
+          return;
+        }
+        throw error;
+      }
+
+      toast({ title: "Cliente atribuído com sucesso" });
+      setAssignDialogOpen(false);
+      setSelectedManagerId("");
+      setSelectedTenantId("");
+      setAssignmentNotes("");
+      fetchTeam();
+    } catch (e: any) {
+      toast({ title: "Erro ao atribuir", description: e.message, variant: "destructive" });
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const handleRemoveAssignment = async (assignmentId: string, managerName: string, tenantName: string) => {
+    if (!confirm(`Remover ${tenantName} de ${managerName}?`)) return;
+    try {
+      await supabase.from("tenant_assignments").delete().eq("id", assignmentId);
+      toast({ title: "Atribuição removida" });
+      fetchTeam();
+    } catch (e: any) {
+      toast({ title: "Erro ao remover", description: e.message, variant: "destructive" });
+    }
+  };
+
   const getInitials = (name: string) =>
     name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+
+  const managerOptions = members.filter((m) => ["gestor", "sucesso_cliente", "gerente"].includes(m.role));
 
   const renderMembers = (filterRole?: string) => {
     const filtered = filterRole ? members.filter((m) => m.role === filterRole) : members;
@@ -130,6 +265,7 @@ const Team = () => {
       <div className="space-y-4">
         {filtered.map((member) => {
           const isExpanded = expandedMembers.has(member.id);
+          const tenantCount = member.assigned_tenants.length;
           return (
             <Card key={member.id} className="overflow-hidden">
               <CardContent className="p-5">
@@ -141,9 +277,17 @@ const Team = () => {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm truncate">{member.full_name}</div>
                     <div className="text-xs text-muted-foreground truncate">{member.email}</div>
-                    <Badge variant="outline" className="mt-1 text-[10px]">
-                      {ROLE_LABELS[member.role] ?? member.role}
-                    </Badge>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px]">
+                        {ROLE_LABELS[member.role] ?? member.role}
+                      </Badge>
+                      {tenantCount > 0 && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          <Building2 className="mr-1 h-3 w-3" />
+                          {tenantCount} cliente{tenantCount !== 1 ? "s" : ""}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -164,12 +308,60 @@ const Team = () => {
                   </div>
                 </div>
 
-                {/* Expandable client details */}
+                {/* Tenant Assignments Section */}
+                {tenantCount > 0 && (
+                  <>
+                    <Separator className="my-3" />
+                    <Collapsible open={isExpanded} onOpenChange={() => toggleExpanded(member.id)}>
+                      <CollapsibleTrigger className="flex w-full items-center gap-1 text-xs font-medium text-primary hover:underline">
+                        {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        Clientes atribuídos ({tenantCount})
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="mt-3 space-y-2">
+                          {member.assigned_tenants.map((assignment) => (
+                            <div
+                              key={assignment.id}
+                              className="rounded-lg border border-border/60 bg-muted/50 p-3 hover:bg-muted/80 transition-colors"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium truncate">{assignment.tenant_name}</p>
+                                    <p className="text-[11px] text-muted-foreground">@{assignment.tenant_slug}</p>
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-destructive hover:text-destructive shrink-0"
+                                  onClick={() => handleRemoveAssignment(assignment.id, member.full_name, assignment.tenant_name)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                              <div className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                                <CalendarDays className="h-3 w-3" />
+                                <span>Atribuído em {format(new Date(assignment.assigned_at), "dd MMM yyyy", { locale: ptBR })}</span>
+                              </div>
+                              {assignment.notes && (
+                                <p className="mt-1 text-[11px] text-muted-foreground/80 italic">{assignment.notes}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </>
+                )}
+
+                {/* Expandable client details (user_relationships) */}
                 {member.clients && member.clients.length > 0 && (
-                  <Collapsible open={isExpanded} onOpenChange={() => toggleExpanded(member.id)}>
+                  <Collapsible>
                     <CollapsibleTrigger className="mt-3 flex w-full items-center gap-1 text-xs font-medium text-primary hover:underline">
-                      {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                      Ver clientes atribuídos ({member.clients.length})
+                      <ChevronRight className="h-3.5 w-3.5" />
+                      Ver clientes vinculados ({member.clients.length})
                     </CollapsibleTrigger>
                     <CollapsibleContent>
                       <div className="mt-3 space-y-2 border-t border-border pt-3">
@@ -201,7 +393,6 @@ const Team = () => {
                                 {client.is_active ? "Ativo" : "Inativo"}
                               </Badge>
                             </div>
-                            {/* Client WhatsApp instances */}
                             {client.whatsapp_instances.length > 0 && (
                               <div className="mt-2 space-y-1">
                                 {client.whatsapp_instances.map((inst) => (
@@ -246,7 +437,13 @@ const Team = () => {
             <h1 className="text-2xl font-semibold tracking-tight">Equipe</h1>
             <p className="text-sm text-muted-foreground">Gestores e Sucesso do Cliente</p>
           </div>
-          <InviteDialog />
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setAssignDialogOpen(true)}>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Atribuir Cliente
+            </Button>
+            <InviteDialog />
+          </div>
         </div>
 
         <div className="relative max-w-sm">
@@ -277,6 +474,62 @@ const Team = () => {
         onOpenChange={setClientDialogOpen}
         onUpdated={fetchTeam}
       />
+
+      {/* Assignment Dialog */}
+      <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Atribuir Cliente ao Gestor</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Gestor</Label>
+              <Select value={selectedManagerId} onValueChange={setSelectedManagerId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um gestor..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {managerOptions.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.full_name} ({ROLE_LABELS[m.role] ?? m.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Cliente (Tenant)</Label>
+              <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um cliente..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allTenants.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name} (@{t.slug})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Observações (opcional)</Label>
+              <Textarea
+                placeholder="Ex: Cliente prioritário, contato direto..."
+                value={assignmentNotes}
+                onChange={(e) => setAssignmentNotes(e.target.value)}
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleAssign} disabled={!selectedManagerId || !selectedTenantId || assigning}>
+              {assigning ? "Atribuindo..." : "Atribuir"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };
