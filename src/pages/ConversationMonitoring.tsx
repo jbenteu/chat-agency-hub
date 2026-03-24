@@ -312,9 +312,19 @@ const ConversationMonitoring: React.FC = () => {
 
         {/* List */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-            <Loader2 className="h-8 w-8 animate-spin mb-2" />
-            <p>Carregando conversas...</p>
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <Card key={i}>
+                <CardContent className="flex items-start gap-3 p-4">
+                  <Skeleton className="h-10 w-10 rounded-full shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-[60%]" />
+                    <Skeleton className="h-3 w-[40%]" />
+                    <Skeleton className="h-3 w-[80%]" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
