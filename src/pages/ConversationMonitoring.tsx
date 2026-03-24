@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -312,9 +313,19 @@ const ConversationMonitoring: React.FC = () => {
 
         {/* List */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-            <Loader2 className="h-8 w-8 animate-spin mb-2" />
-            <p>Carregando conversas...</p>
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <Card key={i}>
+                <CardContent className="flex items-start gap-3 p-4">
+                  <Skeleton className="h-10 w-10 rounded-full shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-[60%]" />
+                    <Skeleton className="h-3 w-[40%]" />
+                    <Skeleton className="h-3 w-[80%]" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
@@ -323,8 +334,8 @@ const ConversationMonitoring: React.FC = () => {
             <p className="text-sm">Ajuste os filtros ou aguarde novas conversas.</p>
           </div>
         ) : (
-          <ScrollArea className="h-[600px]">
-            <div className="space-y-2">
+         <ScrollArea className="h-[600px]">
+            <div className="space-y-2 pr-3">
               {filtered.map(conv => {
                 const sentiment = getSentimentInfo(conv.sentiment_score ?? null);
                 const qualLevel = (conv.analysis_result as any)?.qualification_level;
