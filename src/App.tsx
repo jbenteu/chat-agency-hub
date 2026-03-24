@@ -16,6 +16,7 @@ import SettingsPage from "./pages/Settings";
 import Clients from "./pages/Clients";
 import Team from "./pages/Team";
 import Admin from "./pages/Admin";
+import ConversationMonitoring from "./pages/ConversationMonitoring";
 import NotFound from "./pages/NotFound";
 import React, { Suspense } from "react";
 
@@ -41,6 +42,7 @@ const App = () => (
             <Route path="/clientes" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
             <Route path="/equipe" element={<ProtectedRoute><Team /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+            <Route path="/monitoramento" element={<ProtectedRoute><ConversationMonitoring /></ProtectedRoute>} />
             <Route path="/ai-analysis" element={<ProtectedRoute><Suspense fallback={<div className="flex items-center justify-center h-screen">Carregando...</div>}><AIAnalysis /></Suspense></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
