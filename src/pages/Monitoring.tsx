@@ -16,8 +16,11 @@ import { MediaMessage } from "@/components/whatsapp/MediaMessage";
 import { WhatsAppFormatted } from "@/components/whatsapp/WhatsAppFormatted";
 import { DateSeparator } from "@/components/whatsapp/DateSeparator";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Eye, RefreshCw, Search, MessageCircle, Loader2, Wifi, WifiOff,
-  ChevronUp, AlertTriangle, Lock,
+  ChevronUp, AlertTriangle, Lock, PanelLeftClose, PanelLeft, Users, Building2,
 } from "lucide-react";
 
 interface MonitoringInstance {
