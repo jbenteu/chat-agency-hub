@@ -331,7 +331,8 @@ const Monitoring: React.FC = () => {
 
             <ScrollArea className="flex-1">
               <div className="p-3 space-y-3">
-                {/* Team member filter */}
+                {/* Team member filter — hidden for gestor/sucesso_cliente */}
+                {profile?.role !== "gestor" && profile?.role !== "sucesso_cliente" && (
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
                     <Users className="h-3 w-3" /> Equipe
@@ -353,6 +354,7 @@ const Monitoring: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
+                )}
 
                 {/* Client filter */}
                 <div className="space-y-1.5">
