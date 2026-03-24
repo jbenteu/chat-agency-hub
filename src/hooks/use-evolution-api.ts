@@ -325,6 +325,8 @@ export function useEvolutionApi() {
     pinConversation,
     updateConversationStatus,
     searchMessages,
+    monitoringConversations,
+    updateInstanceAssignee,
   };
 }
 
