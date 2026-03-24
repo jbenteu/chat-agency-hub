@@ -1368,6 +1368,167 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, messages: (messages || []).reverse() });
     }
 
+    // ── monitoring_conversations ──────────────────────────────────────────────
+    if (action === "monitoring_conversations") {
+      const { data: roleCheck } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("tenant_id", tenantId)
+        .in("role", ["super_admin", "admin", "manager"])
+        .limit(1)
+        .maybeSingle();
+
+      // Also check tenant_assignments for managers of other tenants
+      let accessibleTenantIds = [tenantId];
+      if (roleCheck) {
+        // User is manager/admin in own tenant — also get assigned tenants
+        const { data: assignments } = await supabaseAdmin
+          .from("tenant_assignments")
+          .select("tenant_id")
+          .eq("manager_id", userId);
+        if (assignments) {
+          for (const a of assignments) {
+            if (!accessibleTenantIds.includes(a.tenant_id)) accessibleTenantIds.push(a.tenant_id);
+          }
+        }
+      } else {
+        // Check if user has assignments even without manager role
+        const { data: assignments } = await supabaseAdmin
+          .from("tenant_assignments")
+          .select("tenant_id")
+          .eq("manager_id", userId);
+        if (!assignments?.length) {
+          return jsonResponse({ error: "Acesso negado. Apenas gestores podem acessar o monitoramento." }, 403);
+        }
+        for (const a of assignments) {
+          if (!accessibleTenantIds.includes(a.tenant_id)) accessibleTenantIds.push(a.tenant_id);
+        }
+      }
+
+      const {
+        instanceId: filterInstanceId,
+        limit: reqLimit,
+        before_id: beforeId,
+        search: searchQuery,
+        tenantId: filterTenantId,
+      } = body as Record<string, any>;
+
+      const effectiveLimit = Math.min(Number(reqLimit) || 50, 200);
+
+      // If filtering by tenant, validate access
+      const targetTenants = filterTenantId
+        ? accessibleTenantIds.filter(t => t === filterTenantId)
+        : accessibleTenantIds;
+
+      if (targetTenants.length === 0) {
+        return jsonResponse({ success: true, conversations: [], instances: [], hasMore: false });
+      }
+
+      // Fetch instances for accessible tenants
+      const { data: allInstances } = await supabaseAdmin
+        .from("whatsapp_instances")
+        .select("id, display_name, instance_name, phone_number, status, assigned_to, tenant_id")
+        .in("tenant_id", targetTenants);
+
+      // Fetch tenant names
+      const { data: tenantNames } = await supabaseAdmin
+        .from("tenants")
+        .select("id, name")
+        .in("id", targetTenants);
+      const tenantNameMap: Record<string, string> = {};
+      for (const t of tenantNames || []) tenantNameMap[t.id] = t.name;
+
+      // Fetch profiles of assigned users
+      const assignedUserIds = [...new Set((allInstances || []).map(i => i.assigned_to).filter(Boolean))];
+      const profilesMap: Record<string, string> = {};
+      if (assignedUserIds.length > 0) {
+        const { data: profiles } = await supabaseAdmin
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", assignedUserIds);
+        for (const p of profiles || []) profilesMap[p.id] = p.full_name || "Sem nome";
+      }
+
+      const instanceMap: Record<string, any> = {};
+      for (const inst of allInstances || []) {
+        instanceMap[inst.id] = {
+          ...inst,
+          owner_name: inst.assigned_to ? (profilesMap[inst.assigned_to] || "Sem nome") : null,
+          tenant_name: tenantNameMap[inst.tenant_id] || "—",
+        };
+      }
+
+      let query = supabaseAdmin
+        .from("whatsapp_conversations")
+        .select("*")
+        .in("tenant_id", targetTenants)
+        .order("last_message_at", { ascending: false })
+        .limit(effectiveLimit);
+
+      if (filterInstanceId) query = query.eq("instance_id", filterInstanceId);
+
+      if (searchQuery) {
+        query = query.or(
+          `contact_name.ilike.%${searchQuery}%,contact_phone.ilike.%${searchQuery}%,last_message.ilike.%${searchQuery}%`
+        );
+      }
+
+      if (beforeId) {
+        const { data: pivot } = await supabaseAdmin
+          .from("whatsapp_conversations")
+          .select("last_message_at")
+          .eq("id", beforeId)
+          .maybeSingle();
+        if (pivot?.last_message_at) query = query.lt("last_message_at", pivot.last_message_at);
+      }
+
+      const { data: conversations, error: convError } = await query;
+      if (convError) throw new Error(`DB error: ${convError.message}`);
+
+      const enriched = (conversations || []).map(conv => ({
+        ...conv,
+        instance_display_name: instanceMap[conv.instance_id]?.display_name || instanceMap[conv.instance_id]?.instance_name || "Instância",
+        instance_name_raw: instanceMap[conv.instance_id]?.instance_name || "",
+        instance_phone: instanceMap[conv.instance_id]?.phone_number || "",
+        instance_status: instanceMap[conv.instance_id]?.status || "disconnected",
+        instance_owner_name: instanceMap[conv.instance_id]?.owner_name || null,
+        tenant_name: instanceMap[conv.instance_id]?.tenant_name || "—",
+      }));
+
+      return jsonResponse({
+        success: true,
+        conversations: enriched,
+        instances: Object.values(instanceMap),
+        hasMore: enriched.length === effectiveLimit,
+      });
+    }
+
+    // ── update_instance_assignee ─────────────────────────────────────────────
+    if (action === "update_instance_assignee") {
+      const { instanceId: targetInstanceId, assignedTo } = body as { instanceId?: string; assignedTo?: string | null };
+      if (!targetInstanceId) return jsonResponse({ error: "instanceId é obrigatório" }, 400);
+
+      const { data: roleCheck } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("tenant_id", tenantId)
+        .in("role", ["super_admin", "admin"])
+        .limit(1)
+        .maybeSingle();
+      if (!roleCheck) return jsonResponse({ error: "Acesso negado" }, 403);
+
+      const { error: updErr } = await supabaseAdmin
+        .from("whatsapp_instances")
+        .update({ assigned_to: assignedTo || null })
+        .eq("tenant_id", tenantId)
+        .eq("id", targetInstanceId);
+
+      if (updErr) throw new Error(updErr.message);
+      return jsonResponse({ success: true });
+    }
+
     return jsonResponse({ error: `Unknown action: ${action}` }, 400);
   } catch (error: unknown) {
     console.error("Evolution API edge function error:", error);

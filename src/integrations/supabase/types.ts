@@ -978,6 +978,7 @@ export type Database = {
       }
       whatsapp_instances: {
         Row: {
+          assigned_to: string | null
           created_at: string | null
           display_name: string | null
           id: string
@@ -993,6 +994,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          assigned_to?: string | null
           created_at?: string | null
           display_name?: string | null
           id?: string
@@ -1008,6 +1010,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          assigned_to?: string | null
           created_at?: string | null
           display_name?: string | null
           id?: string
@@ -1156,6 +1159,10 @@ export type Database = {
           _tenant_id: string
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_manager_or_above: {
+        Args: { p_tenant_id: string; p_user_id: string }
         Returns: boolean
       }
       is_profile_admin: { Args: { _user_id: string }; Returns: boolean }
