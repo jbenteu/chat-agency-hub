@@ -127,20 +127,25 @@ const Monitoring: React.FC = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [hasAccess, setHasAccess] = useState<boolean | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Filter states
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; role: string }[]>([]);
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string>("all");
+  const [selectedClientId, setSelectedClientId] = useState<string>("all");
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Check access
   useEffect(() => {
-    const checkAccess = async () => {
-      if (!profile?.id) return;
-      if (isSuperAdmin || profile.role === "admin" || profile.role === "gerente" || profile.role === "gestor" || profile.role === "sucesso_cliente") {
-        setHasAccess(true);
-        return;
-      }
+    if (!profile?.id) return;
+    if (isSuperAdmin || profile.role === "admin" || profile.role === "gerente" || profile.role === "gestor" || profile.role === "sucesso_cliente") {
+      setHasAccess(true);
+    } else {
       setHasAccess(false);
-    };
-    checkAccess();
+    }
   }, [profile, isSuperAdmin]);
 
   useEffect(() => {
@@ -150,6 +155,52 @@ const Monitoring: React.FC = () => {
     }
   }, [hasAccess, navigate, toast]);
 
+  // Load team members and clients for filters
+  useEffect(() => {
+    if (!hasAccess) return;
+    const loadFilters = async () => {
+      try {
+        // Load team members (gestors/CS) visible to this user
+        const { data: relationships } = await supabase
+          .from("user_relationships")
+          .select("subordinate_id, profiles!user_relationships_subordinate_id_fkey(id, full_name, role)")
+          .eq("superior_id", profile?.id || "");
+
+        const members: { id: string; name: string; role: string }[] = [];
+        for (const rel of relationships || []) {
+          const p = rel.profiles as any;
+          if (p && (p.role === "gestor" || p.role === "sucesso_cliente")) {
+            members.push({ id: p.id, name: p.full_name || "Sem nome", role: p.role });
+          }
+        }
+
+        // For admins, also load all gestors/CS
+        if (isSuperAdmin || profile?.role === "admin" || profile?.role === "gerente") {
+          const { data: allProfiles } = await supabase
+            .from("profiles")
+            .select("id, full_name, role")
+            .in("role", ["gestor", "sucesso_cliente"]);
+          for (const p of allProfiles || []) {
+            if (!members.find(m => m.id === p.id)) {
+              members.push({ id: p.id, name: p.full_name || "Sem nome", role: p.role || "" });
+            }
+          }
+        }
+        setTeamMembers(members);
+
+        // Load accessible clients (tenants)
+        const { data: tenants } = await supabase
+          .from("tenants")
+          .select("id, name")
+          .order("name");
+        setClients((tenants || []).map(t => ({ id: t.id, name: t.name })));
+      } catch (err) {
+        console.error("Error loading filters:", err);
+      }
+    };
+    loadFilters();
+  }, [hasAccess, profile, isSuperAdmin]);
+
   const loadData = useCallback(async (silent = false) => {
     if (!hasAccess) return;
     if (!silent) setLoading(true);
@@ -157,6 +208,7 @@ const Monitoring: React.FC = () => {
       const result = await monitoringConversations({
         instanceId: selectedInstanceId || undefined,
         search: searchQuery || undefined,
+        tenantId: selectedClientId !== "all" ? selectedClientId : undefined,
         limit: 100,
       });
       if (result?.conversations) setConversations(result.conversations);
@@ -166,11 +218,11 @@ const Monitoring: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [hasAccess, monitoringConversations, selectedInstanceId, searchQuery, toast]);
+  }, [hasAccess, monitoringConversations, selectedInstanceId, searchQuery, selectedClientId, toast]);
 
   useEffect(() => {
     if (hasAccess) loadData();
-  }, [hasAccess, selectedInstanceId]);
+  }, [hasAccess, selectedInstanceId, selectedClientId]);
 
   // Polling every 30s
   useEffect(() => {
@@ -235,6 +287,12 @@ const Monitoring: React.FC = () => {
     setSelectedConversation(conv);
     loadMessages(conv);
   };
+
+  // Filter instances by selected team member (via tenant_assignments)
+  const filteredInstances = instances.filter(inst => {
+    if (selectedMemberId === "all") return true;
+    return inst.assigned_to === selectedMemberId;
+  });
 
   // Compute unread totals
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
