@@ -102,6 +102,13 @@ export type Database = {
             foreignKeyName: "ai_analysis_queue_conversation_id_fkey"
             columns: ["conversation_id"]
             isOneToOne: true
+            referencedRelation: "conversation_analysis_summary"
+            referencedColumns: ["conversation_id"]
+          },
+          {
+            foreignKeyName: "ai_analysis_queue_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
             referencedRelation: "whatsapp_conversations"
             referencedColumns: ["id"]
           },
@@ -176,6 +183,13 @@ export type Database = {
           tenant_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ai_conversation_analysis_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "conversation_analysis_summary"
+            referencedColumns: ["conversation_id"]
+          },
           {
             foreignKeyName: "ai_conversation_analysis_conversation_id_fkey"
             columns: ["conversation_id"]
@@ -282,6 +296,79 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "contacts_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_ai_analysis: {
+        Row: {
+          action_items: string[] | null
+          analysis_result: Json
+          analysis_type: string
+          analyzed_at: string | null
+          analyzed_by: string | null
+          conversation_id: string
+          created_at: string | null
+          id: string
+          key_insights: string[] | null
+          lead_score: number | null
+          sentiment_score: number | null
+          tags: string[] | null
+          tenant_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          action_items?: string[] | null
+          analysis_result?: Json
+          analysis_type?: string
+          analyzed_at?: string | null
+          analyzed_by?: string | null
+          conversation_id: string
+          created_at?: string | null
+          id?: string
+          key_insights?: string[] | null
+          lead_score?: number | null
+          sentiment_score?: number | null
+          tags?: string[] | null
+          tenant_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          action_items?: string[] | null
+          analysis_result?: Json
+          analysis_type?: string
+          analyzed_at?: string | null
+          analyzed_by?: string | null
+          conversation_id?: string
+          created_at?: string | null
+          id?: string
+          key_insights?: string[] | null
+          lead_score?: number | null
+          sentiment_score?: number | null
+          tags?: string[] | null
+          tenant_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_ai_analysis_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversation_analysis_summary"
+            referencedColumns: ["conversation_id"]
+          },
+          {
+            foreignKeyName: "conversation_ai_analysis_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_ai_analysis_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
@@ -668,6 +755,41 @@ export type Database = {
           },
         ]
       }
+      tenant_assignments: {
+        Row: {
+          assigned_at: string | null
+          assigned_by: string | null
+          id: string
+          manager_id: string
+          notes: string | null
+          tenant_id: string
+        }
+        Insert: {
+          assigned_at?: string | null
+          assigned_by?: string | null
+          id?: string
+          manager_id: string
+          notes?: string | null
+          tenant_id: string
+        }
+        Update: {
+          assigned_at?: string | null
+          assigned_by?: string | null
+          id?: string
+          manager_id?: string
+          notes?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_assignments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenants: {
         Row: {
           created_at: string | null
@@ -974,6 +1096,13 @@ export type Database = {
             foreignKeyName: "whatsapp_messages_conversation_id_fkey"
             columns: ["conversation_id"]
             isOneToOne: false
+            referencedRelation: "conversation_analysis_summary"
+            referencedColumns: ["conversation_id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
             referencedRelation: "whatsapp_conversations"
             referencedColumns: ["id"]
           },
@@ -988,7 +1117,32 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      conversation_analysis_summary: {
+        Row: {
+          action_items: string[] | null
+          analysis_result: Json | null
+          analyzed_at: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          conversation_id: string | null
+          key_insights: string[] | null
+          last_message_at: string | null
+          lead_score: number | null
+          remote_jid: string | null
+          sentiment_score: number | null
+          status: string | null
+          tenant_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_conversations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       can_view_profile: {
