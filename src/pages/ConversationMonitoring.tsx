@@ -323,8 +323,8 @@ const ConversationMonitoring: React.FC = () => {
             <p className="text-sm">Ajuste os filtros ou aguarde novas conversas.</p>
           </div>
         ) : (
-          <ScrollArea className="h-[600px]">
-            <div className="space-y-2">
+         <ScrollArea className="h-[600px]">
+            <div className="space-y-2 pr-3">
               {filtered.map(conv => {
                 const sentiment = getSentimentInfo(conv.sentiment_score ?? null);
                 const qualLevel = (conv.analysis_result as any)?.qualification_level;
