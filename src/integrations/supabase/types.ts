@@ -1163,6 +1163,12 @@ export type Database = {
         Args: { p_instance_name: string; p_tenant_id: string }
         Returns: undefined
       }
+      user_accessible_tenant_ids: {
+        Args: never
+        Returns: {
+          tenant_id: string
+        }[]
+      }
     }
     Enums: {
       app_role: "super_admin" | "admin" | "manager" | "agent" | "viewer"
