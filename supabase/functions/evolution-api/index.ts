@@ -1381,8 +1381,16 @@ Deno.serve(async (req) => {
 
       // Also check tenant_assignments for managers of other tenants
       let accessibleTenantIds = [tenantId];
-      if (roleCheck) {
-        // User is manager/admin in own tenant — also get assigned tenants
+      if (roleCheck && (roleCheck.role === "super_admin" || roleCheck.role === "admin")) {
+        // Admins/super_admins see ALL tenants
+        const { data: allTenants } = await supabaseAdmin
+          .from("tenants")
+          .select("id");
+        if (allTenants) {
+          accessibleTenantIds = allTenants.map(t => t.id);
+        }
+      } else if (roleCheck) {
+        // Manager in own tenant — also get assigned tenants
         const { data: assignments } = await supabaseAdmin
           .from("tenant_assignments")
           .select("tenant_id")
