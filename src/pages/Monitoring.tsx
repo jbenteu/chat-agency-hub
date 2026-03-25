@@ -158,7 +158,12 @@ const Monitoring: React.FC = () => {
     }
   }, [hasAccess, navigate, toast]);
 
-  // Load team members and clients for filters
+  // All tenants (unfiltered)
+  const [allClients, setAllClients] = useState<{ id: string; name: string }[]>([]);
+  // Tenant IDs assigned to the selected team member
+  const [memberTenantIds, setMemberTenantIds] = useState<string[]>([]);
+
+  // Load team members and all clients
   useEffect(() => {
     if (!hasAccess) return;
     const loadFilters = async () => {
@@ -191,11 +196,12 @@ const Monitoring: React.FC = () => {
         }
         setTeamMembers(members);
 
-        // Load accessible clients (tenants)
+        // Load all accessible tenants
         const { data: tenants } = await supabase
           .from("tenants")
           .select("id, name")
           .order("name");
+        setAllClients((tenants || []).map(t => ({ id: t.id, name: t.name })));
         setClients((tenants || []).map(t => ({ id: t.id, name: t.name })));
       } catch (err) {
         console.error("Error loading filters:", err);
@@ -203,6 +209,33 @@ const Monitoring: React.FC = () => {
     };
     loadFilters();
   }, [hasAccess, profile, isSuperAdmin]);
+
+  // When a team member is selected, load their assigned tenants and filter client list
+  useEffect(() => {
+    if (selectedMemberId === "all") {
+      setClients(allClients);
+      setMemberTenantIds([]);
+      return;
+    }
+    const loadMemberTenants = async () => {
+      try {
+        const { data: assignments } = await supabase
+          .from("tenant_assignments")
+          .select("tenant_id")
+          .eq("manager_id", selectedMemberId);
+        const tenantIds = (assignments || []).map(a => a.tenant_id);
+        setMemberTenantIds(tenantIds);
+        setClients(allClients.filter(c => tenantIds.includes(c.id)));
+        // Reset client selection if current selection is not in filtered list
+        if (selectedClientId !== "all" && !tenantIds.includes(selectedClientId)) {
+          setSelectedClientId("all");
+        }
+      } catch (err) {
+        console.error("Error loading member tenants:", err);
+      }
+    };
+    loadMemberTenants();
+  }, [selectedMemberId, allClients]);
 
   const loadData = useCallback(async (silent = false) => {
     if (!hasAccess) return;
