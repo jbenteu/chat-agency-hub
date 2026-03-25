@@ -324,10 +324,11 @@ const Monitoring: React.FC = () => {
     loadMessages(conv);
   };
 
-  // Filter instances by selected team member (via tenant_assignments)
+  // Filter instances by selected team member's assigned tenants
   const filteredInstances = instances.filter(inst => {
     if (selectedMemberId === "all") return true;
-    return inst.assigned_to === selectedMemberId;
+    if (memberTenantIds.length === 0) return false;
+    return memberTenantIds.includes(inst.tenant_id);
   });
 
   // Compute unread totals
