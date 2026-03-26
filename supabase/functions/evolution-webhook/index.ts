@@ -558,8 +558,7 @@ Deno.serve(async (req) => {
                 .from("contacts")
                 .update({ name: evoContactName })
                 .eq("id", contactRecord.id)
-                .then(() => {})
-                .catch(console.error);
+                .then(() => {}, console.error);
               resolvedContactName = evoContactName;
             } else {
               resolvedContactName = contactRecord.name || bestName;
