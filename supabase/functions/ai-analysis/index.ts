@@ -287,9 +287,9 @@ ${transcript}`;
         if (instanceId) q = q.eq("instance_id", instanceId);
         return q;
       };
-      // Base analysis query with optional conv_id filter
-      const analysisBase = () => applyConvFilter(
-        supabaseAdmin.from("ai_conversation_analysis").eq("tenant_id", tenantId!),
+      // deno-lint-ignore no-explicit-any
+      const analysisBase = (): any => applyConvFilter(
+        supabaseAdmin.from("ai_conversation_analysis").select("*").eq("tenant_id", tenantId!),
         convIds,
       );
 
