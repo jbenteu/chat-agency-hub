@@ -76,7 +76,8 @@ const isGroupJid = (jid: string) => jid.endsWith("@g.us");
 export function ConversationListItem({
   conversation: c, isSelected, profilePicUrl, isTyping, onClick, formatTime,
 }: ConversationListItemProps) {
-  const mediaIcon = getMediaPreviewIcon(c.last_message);
+  const lastMsg = isHiddenMessage(c.last_message) ? null : c.last_message;
+  const mediaIcon = getMediaPreviewIcon(lastMsg);
   const isGroup = isGroupJid(c.remote_jid);
 
   const displayName = c.contact_name || (c.contact_phone ? formatPhoneWhatsApp(c.contact_phone) : (() => {
