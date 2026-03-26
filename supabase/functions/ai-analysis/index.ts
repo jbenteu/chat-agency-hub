@@ -110,12 +110,13 @@ Deno.serve(async (req) => {
   };
 
   // Applies instance filter to an analysis query
+  // deno-lint-ignore no-explicit-any
   const applyConvFilter = (
-    query: ReturnType<typeof supabaseAdmin.from>,
+    query: any,
     convIds: string[] | null,
   ) => {
     if (convIds === null) return query;
-    if (convIds.length === 0) return query.eq("conversation_id", "00000000-0000-0000-0000-000000000000"); // impossible match
+    if (convIds.length === 0) return query.eq("conversation_id", "00000000-0000-0000-0000-000000000000");
     return query.in("conversation_id", convIds);
   };
 
