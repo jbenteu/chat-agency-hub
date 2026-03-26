@@ -732,8 +732,7 @@ Deno.serve(async (req) => {
         .update({ unread_count: 0 })
         .eq("tenant_id", tenantId)
         .eq("id", conversationId)
-        .then(() => {})
-        .catch(console.error);
+        .then(() => {}, console.error);
 
       return jsonResponse({
         success: true,
