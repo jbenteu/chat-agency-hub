@@ -119,7 +119,7 @@ const Monitoring: React.FC = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const [instances, setInstances] = useState<MonitoringInstance[]>([]);
+  const [instances, setInstances] = useState<MonitoringInstance[]>([]); // all accessible instances
   const [conversations, setConversations] = useState<MonitoringConversation[]>([]);
   const [messages, setMessages] = useState<MonitoringMessage[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
@@ -134,7 +134,7 @@ const Monitoring: React.FC = () => {
 
   // Filter states
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; role: string }[]>([]);
-  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([]); // derived from instances
   const [selectedMemberId, setSelectedMemberId] = useState<string>("all");
   const [selectedClientId, setSelectedClientId] = useState<string>("all");
 
@@ -158,76 +158,34 @@ const Monitoring: React.FC = () => {
     }
   }, [hasAccess, navigate, toast]);
 
-  // All tenants (unfiltered)
-  const [allClients, setAllClients] = useState<{ id: string; name: string }[]>([]);
-  // Tenant IDs assigned to the selected team member
+  // Tenant IDs assigned to the selected team member (derived from instances)
   const [memberTenantIds, setMemberTenantIds] = useState<string[]>([]);
 
-  // Load team members and all clients
+  // Load team members — fetched via edge function instances list (no direct tenant RLS query)
   useEffect(() => {
     if (!hasAccess) return;
-    const loadFilters = async () => {
+    const loadTeamMembers = async () => {
       try {
-        // Load team members (gestors/CS) visible to this user
-        const { data: relationships } = await supabase
-          .from("user_relationships")
-          .select("subordinate_id, profiles!user_relationships_subordinate_id_fkey(id, full_name, role)")
-          .eq("superior_id", profile?.id || "");
-
-        const members: { id: string; name: string; role: string }[] = [];
-        for (const rel of relationships || []) {
-          const p = rel.profiles as any;
-          if (p && (p.role === "gestor" || p.role === "sucesso_cliente")) {
-            members.push({ id: p.id, name: p.full_name || "Sem nome", role: p.role });
-          }
-        }
-
-        // For admins, also load all gestors/CS
-        if (isSuperAdmin || profile?.role === "admin" || profile?.role === "gerente") {
-          const { data: allProfiles } = await supabase
-            .from("profiles")
-            .select("id, full_name, role")
-            .in("role", ["gestor", "sucesso_cliente"]);
-          for (const p of allProfiles || []) {
-            if (!members.find(m => m.id === p.id)) {
-              members.push({ id: p.id, name: p.full_name || "Sem nome", role: p.role || "" });
-            }
-          }
-        }
+        const { data: allProfiles } = await supabase
+          .from("profiles")
+          .select("id, full_name, role")
+          .in("role", ["gestor", "sucesso_cliente"]);
+        const members: { id: string; name: string; role: string }[] = (allProfiles || []).map(p => ({
+          id: p.id,
+          name: p.full_name || "Sem nome",
+          role: p.role || "",
+        }));
         setTeamMembers(members);
-
-        // Load accessible tenants based on role
-        let tenantList: { id: string; name: string }[] = [];
-        if (isSuperAdmin || profile?.role === "admin" || profile?.role === "gerente") {
-          const { data: tenants } = await supabase
-            .from("tenants")
-            .select("id, name")
-            .order("name");
-          tenantList = (tenants || []).map(t => ({ id: t.id, name: t.name }));
-        } else {
-          // Gestors/CS only see their assigned tenants
-          const { data: assignments } = await supabase
-            .from("tenant_assignments")
-            .select("tenant_id, tenants(id, name)")
-            .eq("manager_id", profile?.id || "");
-          tenantList = (assignments || [])
-            .map((a: any) => a.tenants as { id: string; name: string })
-            .filter(Boolean);
-          tenantList.sort((a, b) => a.name.localeCompare(b.name));
-        }
-        setAllClients(tenantList);
-        setClients(tenantList);
       } catch (err) {
-        console.error("Error loading filters:", err);
+        console.error("Error loading team members:", err);
       }
     };
-    loadFilters();
-  }, [hasAccess, profile, isSuperAdmin]);
+    loadTeamMembers();
+  }, [hasAccess]);
 
-  // When a team member is selected, load their assigned tenants and filter client list
+  // When a team member is selected, filter the instance list by their assigned tenants
   useEffect(() => {
     if (selectedMemberId === "all") {
-      setClients(allClients);
       setMemberTenantIds([]);
       return;
     }
@@ -237,10 +195,9 @@ const Monitoring: React.FC = () => {
           .from("tenant_assignments")
           .select("tenant_id")
           .eq("manager_id", selectedMemberId);
-        const tenantIds = (assignments || []).map(a => a.tenant_id);
+        const tenantIds = (assignments || []).map((a: any) => a.tenant_id as string);
         setMemberTenantIds(tenantIds);
-        setClients(allClients.filter(c => tenantIds.includes(c.id)));
-        // Reset client selection if current selection is not in filtered list
+        // Reset client selection if it no longer matches
         if (selectedClientId !== "all" && !tenantIds.includes(selectedClientId)) {
           setSelectedClientId("all");
         }
@@ -249,7 +206,30 @@ const Monitoring: React.FC = () => {
       }
     };
     loadMemberTenants();
-  }, [selectedMemberId, allClients]);
+  }, [selectedMemberId]);
+
+  // Load all instances once (to build client list — no tenant filter)
+  const loadInstances = useCallback(async () => {
+    if (!hasAccess) return;
+    try {
+      const result = await monitoringConversations({ limit: 1 }); // minimal conversations, just get instances
+      if (result?.instances) {
+        const allInst = result.instances as MonitoringInstance[];
+        setInstances(allInst);
+        // Build client list from instance tenant data (service-role, bypasses RLS)
+        const seen = new Set<string>();
+        const derived: { id: string; name: string }[] = [];
+        for (const inst of allInst) {
+          if (!seen.has(inst.tenant_id)) {
+            seen.add(inst.tenant_id);
+            derived.push({ id: inst.tenant_id, name: inst.tenant_name });
+          }
+        }
+        derived.sort((a, b) => a.name.localeCompare(b.name));
+        setClients(derived);
+      }
+    } catch { /* silent */ }
+  }, [hasAccess, monitoringConversations]);
 
   const loadData = useCallback(async (silent = false) => {
     if (!hasAccess) return;
@@ -262,7 +242,6 @@ const Monitoring: React.FC = () => {
         limit: 100,
       });
       if (result?.conversations) setConversations(result.conversations);
-      if (result?.instances) setInstances(result.instances);
     } catch (err: any) {
       if (!silent) toast({ title: "Erro ao carregar conversas", description: err.message, variant: "destructive" });
     } finally {
@@ -271,15 +250,22 @@ const Monitoring: React.FC = () => {
   }, [hasAccess, monitoringConversations, selectedInstanceId, searchQuery, selectedClientId, toast]);
 
   useEffect(() => {
+    if (hasAccess) {
+      loadInstances();
+      loadData();
+    }
+  }, [hasAccess]);
+
+  useEffect(() => {
     if (hasAccess) loadData();
-  }, [hasAccess, selectedInstanceId, selectedClientId]);
+  }, [selectedInstanceId, selectedClientId]);
 
   // Polling every 30s
   useEffect(() => {
     if (!hasAccess) return;
-    pollingRef.current = setInterval(() => loadData(true), 30000);
+    pollingRef.current = setInterval(() => { loadData(true); loadInstances(); }, 30000);
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
-  }, [hasAccess, loadData]);
+  }, [hasAccess, loadData, loadInstances]);
 
   // Search debounce
   useEffect(() => {
@@ -325,11 +311,14 @@ const Monitoring: React.FC = () => {
     loadMessages(conv);
   };
 
-  // Filter instances by selected team member's assigned tenants
+  // Filter instances by selected client AND/OR team member
   const filteredInstances = instances.filter(inst => {
-    if (selectedMemberId === "all") return true;
-    if (memberTenantIds.length === 0) return false;
-    return memberTenantIds.includes(inst.tenant_id);
+    if (selectedClientId !== "all" && inst.tenant_id !== selectedClientId) return false;
+    if (selectedMemberId !== "all") {
+      if (memberTenantIds.length === 0) return false;
+      if (!memberTenantIds.includes(inst.tenant_id)) return false;
+    }
+    return true;
   });
 
   // Compute unread totals
@@ -354,7 +343,7 @@ const Monitoring: React.FC = () => {
                   <span className="text-sm font-semibold">Monitoramento</span>
                 </div>
                 <div className="flex items-center gap-0.5">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => loadData()}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { loadData(); loadInstances(); }}>
                     <RefreshCw className="h-3.5 w-3.5" />
                   </Button>
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSidebarOpen(false)}>
