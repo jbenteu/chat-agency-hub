@@ -130,13 +130,25 @@ export async function queryConversations(instanceId?: string): Promise<Conversat
   return deduplicateConversations((data || []) as unknown as Conversation[]);
 }
 
-export async function queryMessages(conversationId: string, limit = 100): Promise<WhatsAppMessage[]> {
+export async function queryMessages(conversationId: string, limit = 40): Promise<WhatsAppMessage[]> {
   const { data, error } = await supabase
     .from("whatsapp_messages")
     .select("*")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(Math.min(limit, 500));
+  if (error) throw new Error(error.message);
+  return deduplicateMessages((data || []) as unknown as WhatsAppMessage[]);
+}
+
+export async function queryMessagesBefore(conversationId: string, before: string, limit = 40): Promise<WhatsAppMessage[]> {
+  const { data, error } = await supabase
+    .from("whatsapp_messages")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .lt("created_at", before)
+    .order("created_at", { ascending: false })
+    .limit(Math.min(limit, 200));
   if (error) throw new Error(error.message);
   return deduplicateMessages((data || []) as unknown as WhatsAppMessage[]);
 }
