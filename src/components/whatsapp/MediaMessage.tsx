@@ -51,13 +51,16 @@ function fixMinioUrl(url: string): string {
 }
 
 // ── WhatsApp-style Audio Player ──
+const SPEED_OPTIONS = [1, 1.5, 2] as const;
+
 function AudioPlayer({ src, isOutbound, mimeType }: { src: string; isOutbound: boolean; mimeType?: string | null }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [speed, setSpeed] = useState<number>(1);
   const [waveform] = useState(() =>
-    Array.from({ length: 28 }, () => 0.15 + Math.random() * 0.85)
+    Array.from({ length: 32 }, () => 0.15 + Math.random() * 0.85)
   );
 
   useEffect(() => {
@@ -79,8 +82,15 @@ function AudioPlayer({ src, isOutbound, mimeType }: { src: string; isOutbound: b
   const togglePlay = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (playing) { audio.pause(); } else { audio.play().catch(() => {}); }
+    if (playing) { audio.pause(); } else { audio.playbackRate = speed; audio.play().catch(() => {}); }
     setPlaying(!playing);
+  };
+
+  const cycleSpeed = () => {
+    const idx = SPEED_OPTIONS.indexOf(speed as typeof SPEED_OPTIONS[number]);
+    const next = SPEED_OPTIONS[(idx + 1) % SPEED_OPTIONS.length];
+    setSpeed(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
   };
 
   const progress = duration > 0 ? currentTime / duration : 0;
@@ -101,43 +111,55 @@ function AudioPlayer({ src, isOutbound, mimeType }: { src: string; isOutbound: b
   };
 
   return (
-    <div className="flex items-center gap-2 min-w-[220px] max-w-[280px]">
+    <div className="flex items-center gap-2.5 min-w-[240px] max-w-[300px] py-1">
       <audio ref={audioRef} src={src} preload="metadata" />
       <button
         onClick={togglePlay}
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all shadow-sm ${
           isOutbound
             ? "bg-primary-foreground/20 hover:bg-primary-foreground/30 text-primary-foreground"
-            : "bg-primary/20 hover:bg-primary/30 text-primary"
+            : "bg-primary/15 hover:bg-primary/25 text-primary"
         }`}
       >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
       </button>
-      <div className="flex flex-1 flex-col gap-1">
+      <div className="flex flex-1 flex-col gap-1.5">
         {/* Waveform */}
-        <div className="flex items-end gap-[2px] h-5 cursor-pointer" onClick={handleSeek}>
+        <div className="flex items-end gap-[2px] h-6 cursor-pointer" onClick={handleSeek}>
           {waveform.map((h, i) => {
             const barProgress = i / waveform.length;
             const isActive = barProgress <= progress;
             return (
               <div
                 key={i}
-                className={`w-[3px] rounded-full transition-colors ${
+                className={`w-[3px] rounded-full transition-all duration-150 ${
                   isActive
-                    ? isOutbound ? "bg-primary-foreground/80" : "bg-primary/80"
-                    : isOutbound ? "bg-primary-foreground/25" : "bg-primary/25"
+                    ? isOutbound ? "bg-primary-foreground/90" : "bg-primary"
+                    : isOutbound ? "bg-primary-foreground/20" : "bg-primary/20"
                 }`}
-                style={{ height: `${h * 100}%` }}
+                style={{ height: `${Math.max(h * 100, 12)}%` }}
               />
             );
           })}
         </div>
-        {/* Time */}
-        <span className={`text-[10px] ${
-          isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"
-        }`}>
-          {playing || currentTime > 0 ? formatTime(currentTime) : formatTime(duration)}
-        </span>
+        {/* Time + Speed */}
+        <div className="flex items-center justify-between">
+          <span className={`text-[10px] font-medium tabular-nums ${
+            isOutbound ? "text-primary-foreground/60" : "text-muted-foreground"
+          }`}>
+            {playing || currentTime > 0 ? formatTime(currentTime) : formatTime(duration)}
+          </span>
+          <button
+            onClick={cycleSpeed}
+            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md transition-colors ${
+              isOutbound
+                ? "bg-primary-foreground/15 hover:bg-primary-foreground/25 text-primary-foreground/70"
+                : "bg-primary/10 hover:bg-primary/20 text-primary/70"
+            }`}
+          >
+            {speed}x
+          </button>
+        </div>
       </div>
     </div>
   );

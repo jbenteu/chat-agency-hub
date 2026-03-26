@@ -530,8 +530,8 @@ Conversa (${messages.length} msgs):\n${transcript}`,
 
       const [convCount, leadsNoReply, avgScore, topProdutos, topObjecoes, leadsByStatus, avgScores] =
         await Promise.all([
-          convBase().select("id", { count: "exact", head: true }).gte("last_message_at", thirtyDaysAgo),
-          convBase().select("id", { count: "exact", head: true }).lt("last_message_at", twoHoursAgo).gte("last_message_at", thirtyDaysAgo),
+          convBase().gte("last_message_at", thirtyDaysAgo),
+          convBase().lt("last_message_at", twoHoursAgo).gte("last_message_at", thirtyDaysAgo),
           analysisBase().select("score_qualidade").gte("analyzed_at", thirtyDaysAgo),
           analysisBase().select("produto_interesse").gte("analyzed_at", thirtyDaysAgo).not("produto_interesse", "is", null),
           analysisBase().select("objecao_detectada").gte("analyzed_at", thirtyDaysAgo).not("objecao_detectada", "is", null),
