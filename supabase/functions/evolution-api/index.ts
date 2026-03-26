@@ -951,8 +951,7 @@ Deno.serve(async (req) => {
                 .update({ media_url: evoMediaUrl })
                 .eq("tenant_id", tenantId)
                 .eq("message_id", messageId)
-                .then(() => {})
-                .catch(console.error);
+                .then(() => {}, console.error);
             }
             return jsonResponse({
               success: true,
