@@ -25,7 +25,7 @@ const navItems: NavItem[] = [
   { title: "Equipe", icon: UsersRound, path: "/equipe", roles: ["admin", "gerente"] },
   { title: "Clientes", icon: UserCheck, path: "/clientes", roles: ["admin", "gerente", "gestor", "sucesso_cliente"] },
   { title: "Monitoramento", icon: Eye, path: "/monitoramento", roles: ["admin", "gerente", "gestor", "sucesso_cliente"] },
-  { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis", roles: ["cliente"] },
+  { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis", roles: ["admin", "gerente", "gestor", "sucesso_cliente", "cliente"] },
   { title: "Painel Admin", icon: Shield, path: "/admin", roles: ["admin"] },
   { title: "Configurações", icon: Settings, path: "/configuracoes", roles: ["admin", "gerente", "gestor", "sucesso_cliente", "cliente"] },
 ];
