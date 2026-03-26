@@ -13,9 +13,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Search, UserCheck, ChevronRight, UserPlus, Trash2, Building2, Wifi, WifiOff } from "lucide-react";
+import { Search, UserCheck, ChevronRight, UserPlus, Trash2, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { format } from "date-fns";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 interface Client {
   id: string;
@@ -27,17 +27,24 @@ interface Client {
   creator_name: string | null;
 }
 
+interface AssignedPerson {
+  id: string;
+  assignment_id: string;
+  full_name: string;
+  role: string;
+}
+
+interface AvailablePerson {
+  id: string;
+  full_name: string;
+}
+
 interface ClientDetail {
   client: Client;
   tenantId: string | null;
   instances: { id: string; instance_name: string; display_name: string | null; status: string | null; phone_number: string | null }[];
-  assignments: { id: string; manager_id: string; manager_name: string; manager_role: string; assigned_at: string }[];
-}
-
-interface AvailableManager {
-  id: string;
-  full_name: string;
-  role: string;
+  gestors: AssignedPerson[];
+  csUsers: AssignedPerson[];
 }
 
 const Clients = () => {
@@ -53,8 +60,8 @@ const Clients = () => {
   const [detailLoading, setDetailLoading] = useState(false);
 
   // Assignment
-  const [availableManagers, setAvailableManagers] = useState<AvailableManager[]>([]);
-  const [selectedManager, setSelectedManager] = useState("");
+  const [availableGestors, setAvailableGestors] = useState<AvailablePerson[]>([]);
+  const [availableCs, setAvailableCs] = useState<AvailablePerson[]>([]);
   const [assignLoading, setAssignLoading] = useState(false);
 
   const fetchClients = useCallback(async () => {
@@ -84,7 +91,6 @@ const Clients = () => {
     setDetailOpen(true);
     setDetailLoading(true);
     setDetail(null);
-    setSelectedManager("");
 
     try {
       // Get tenant for this client
@@ -97,53 +103,56 @@ const Clients = () => {
 
       const tenantId = userRole?.tenant_id || null;
       let instances: ClientDetail["instances"] = [];
-      let assignments: ClientDetail["assignments"] = [];
+      let gestors: AssignedPerson[] = [];
+      let csUsers: AssignedPerson[] = [];
 
       if (tenantId) {
-        // Fetch instances
-        const { data: inst } = await supabase
-          .from("whatsapp_instances")
-          .select("id, instance_name, display_name, status, phone_number")
-          .eq("tenant_id", tenantId);
-        instances = (inst || []) as any;
+        // Fetch instances + assignments in parallel
+        const [instRes, assignRes] = await Promise.all([
+          supabase.from("whatsapp_instances").select("id, instance_name, display_name, status, phone_number").eq("tenant_id", tenantId),
+          supabase.from("tenant_assignments").select("id, manager_id, assigned_at").eq("tenant_id", tenantId),
+        ]);
 
-        // Fetch assignments (gestors/CS assigned to this tenant)
-        const { data: assigns } = await supabase
-          .from("tenant_assignments")
-          .select("id, manager_id, assigned_at")
-          .eq("tenant_id", tenantId);
+        instances = (instRes.data || []) as any;
 
-        if (assigns && assigns.length > 0) {
-          const managerIds = assigns.map(a => a.manager_id);
+        if (assignRes.data && assignRes.data.length > 0) {
+          const managerIds = assignRes.data.map(a => a.manager_id);
           const { data: profiles } = await supabase
             .from("profiles")
             .select("id, full_name, role")
             .in("id", managerIds);
 
           const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-          assignments = assigns.map(a => {
+
+          assignRes.data.forEach(a => {
             const p = profileMap.get(a.manager_id);
-            return {
-              id: a.id,
-              manager_id: a.manager_id,
-              manager_name: p?.full_name || "—",
-              manager_role: p?.role || "—",
-              assigned_at: a.assigned_at || "",
+            if (!p) return;
+            const person: AssignedPerson = {
+              id: p.id,
+              assignment_id: a.id,
+              full_name: p.full_name || "—",
+              role: p.role || "",
             };
+            if (p.role === "gestor") gestors.push(person);
+            else if (p.role === "sucesso_cliente") csUsers.push(person);
+            else {
+              // gerente or admin goes to gestors section
+              gestors.push(person);
+            }
           });
         }
       }
 
-      // Load available managers (gestor, sucesso_cliente, gerente)
-      const { data: managers } = await supabase
-        .from("profiles")
-        .select("id, full_name, role")
-        .in("role", ["gestor", "sucesso_cliente", "gerente"] as any[])
-        .eq("is_active", true)
-        .order("full_name");
-      setAvailableManagers((managers || []) as AvailableManager[]);
+      // Load available gestors and CS in parallel
+      const [gestorsRes, csRes] = await Promise.all([
+        supabase.from("profiles").select("id, full_name").eq("role", "gestor").eq("is_active", true).order("full_name"),
+        supabase.from("profiles").select("id, full_name").eq("role", "sucesso_cliente").eq("is_active", true).order("full_name"),
+      ]);
 
-      setDetail({ client, tenantId, instances, assignments });
+      setAvailableGestors((gestorsRes.data || []) as AvailablePerson[]);
+      setAvailableCs((csRes.data || []) as AvailablePerson[]);
+
+      setDetail({ client, tenantId, instances, gestors, csUsers });
     } catch (err) {
       console.error("Error loading client detail:", err);
     } finally {
@@ -151,33 +160,31 @@ const Clients = () => {
     }
   };
 
-  const handleAssign = async () => {
-    if (!selectedManager || !detail?.tenantId) return;
+  const handleAssign = async (managerId: string, role: string) => {
+    if (!detail?.tenantId) return;
     setAssignLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from("tenant_assignments").insert({
-        manager_id: selectedManager,
+        manager_id: managerId,
         tenant_id: detail.tenantId,
         assigned_by: user?.id,
       });
 
       if (error) {
         if (error.code === "23505") {
-          toast({ title: "Este responsável já está atribuído", variant: "destructive" });
+          toast.info("Este responsável já está atribuído.");
         } else {
           throw error;
         }
       } else {
-        toast({ title: "Responsável atribuído com sucesso" });
-        openDetail(detail.client); // Refresh
+        toast.success(`${role === "gestor" ? "Gestor" : "Sucesso do Cliente"} atribuído com sucesso`);
+        openDetail(detail.client);
       }
-    } catch (err) {
-      console.error(err);
-      toast({ title: "Erro ao atribuir", variant: "destructive" });
+    } catch (err: any) {
+      toast.error("Erro ao atribuir: " + (err.message || ""));
     } finally {
       setAssignLoading(false);
-      setSelectedManager("");
     }
   };
 
@@ -185,10 +192,10 @@ const Clients = () => {
     if (!confirm(`Remover ${name} deste cliente?`)) return;
     try {
       await supabase.from("tenant_assignments").delete().eq("id", assignmentId);
-      toast({ title: "Responsável removido" });
+      toast.success("Responsável removido");
       if (detail) openDetail(detail.client);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      toast.error("Erro ao remover: " + (err.message || ""));
     }
   };
 
@@ -288,24 +295,20 @@ const Clients = () => {
           </DialogHeader>
 
           {detailLoading ? (
-            <div className="space-y-3 py-4">
-              <div className="h-4 w-40 bg-muted rounded animate-pulse" />
-              <div className="h-4 w-32 bg-muted rounded animate-pulse" />
-              <div className="h-4 w-48 bg-muted rounded animate-pulse" />
-            </div>
+            <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : detail ? (
             <div className="space-y-5">
               {/* Instances */}
               <div>
                 <h4 className="text-sm font-semibold mb-2">Instâncias WhatsApp</h4>
                 {detail.instances.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nenhuma instância configurada.</p>
+                  <p className="text-xs text-muted-foreground italic">Nenhuma instância configurada.</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {detail.instances.map(inst => (
                       <div key={inst.id} className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
-                        {inst.status === "open" ? (
-                          <Wifi className="h-4 w-4 text-green-500 shrink-0" />
+                        {inst.status === "connected" ? (
+                          <Wifi className="h-4 w-4 text-emerald-500 shrink-0" />
                         ) : (
                           <WifiOff className="h-4 w-4 text-muted-foreground shrink-0" />
                         )}
@@ -313,8 +316,8 @@ const Clients = () => {
                           <p className="text-sm font-medium truncate">{inst.display_name || inst.instance_name}</p>
                           {inst.phone_number && <p className="text-xs text-muted-foreground">{inst.phone_number}</p>}
                         </div>
-                        <Badge variant={inst.status === "open" ? "default" : "secondary"} className="text-[10px]">
-                          {inst.status === "open" ? "Conectado" : "Desconectado"}
+                        <Badge variant={inst.status === "connected" ? "default" : "secondary"} className="text-[10px]">
+                          {inst.status === "connected" ? "Conectado" : "Desconectado"}
                         </Badge>
                       </div>
                     ))}
@@ -324,51 +327,87 @@ const Clients = () => {
 
               <Separator />
 
-              {/* Assignments */}
+              {/* Gestors Section */}
               <div>
-                <h4 className="text-sm font-semibold mb-2">Responsáveis Atribuídos</h4>
-                {detail.assignments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nenhum responsável atribuído.</p>
+                <h4 className="text-sm font-semibold mb-2">Gestor Atribuído</h4>
+                {detail.gestors.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">Nenhum gestor atribuído</p>
                 ) : (
-                  <div className="space-y-2">
-                    {detail.assignments.map(a => (
-                      <div key={a.id} className="flex items-center justify-between gap-2 p-2 rounded-lg border bg-muted/30">
+                  <div className="space-y-1.5">
+                    {detail.gestors.map(g => (
+                      <div key={g.assignment_id} className="flex items-center justify-between gap-2 p-2 rounded-lg border bg-muted/30">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{a.manager_name}</p>
-                          <p className="text-xs text-muted-foreground">{ROLE_LABELS[a.manager_role] || a.manager_role}</p>
+                          <p className="text-sm font-medium truncate">{g.full_name}</p>
+                          <p className="text-xs text-muted-foreground">{ROLE_LABELS[g.role] || g.role}</p>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive shrink-0" onClick={() => handleRemoveAssignment(a.id, a.manager_name)}>
-                          <Trash2 className="h-4 w-4" />
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0" onClick={() => handleRemoveAssignment(g.assignment_id, g.full_name)}>
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     ))}
                   </div>
                 )}
+                {(() => {
+                  const unassigned = availableGestors.filter(g => !detail.gestors.some(a => a.id === g.id));
+                  if (unassigned.length === 0 || !detail.tenantId) return null;
+                  return (
+                    <div className="mt-2 flex items-center gap-2">
+                      <Select onValueChange={(v) => handleAssign(v, "gestor")} disabled={assignLoading}>
+                        <SelectTrigger className="flex-1 h-8 text-xs">
+                          <SelectValue placeholder="Adicionar gestor..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {unassigned.map(g => (
+                            <SelectItem key={g.id} value={g.id}>{g.full_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <UserPlus className="h-4 w-4 text-muted-foreground shrink-0" />
+                    </div>
+                  );
+                })()}
               </div>
 
-              {/* Add assignment */}
-              {detail.tenantId && (
-                <div className="flex items-center gap-2">
-                  <Select value={selectedManager} onValueChange={setSelectedManager}>
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Atribuir responsável..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableManagers
-                        .filter(m => !detail.assignments.some(a => a.manager_id === m.id))
-                        .map(m => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.full_name} ({ROLE_LABELS[m.role] || m.role})
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" onClick={handleAssign} disabled={!selectedManager || assignLoading}>
-                    <UserPlus className="h-4 w-4 mr-1" />
-                    Atribuir
-                  </Button>
-                </div>
-              )}
+              {/* CS Section */}
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Sucesso do Cliente</h4>
+                {detail.csUsers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">Nenhum CS atribuído</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {detail.csUsers.map(c => (
+                      <div key={c.assignment_id} className="flex items-center justify-between gap-2 p-2 rounded-lg border bg-muted/30">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{c.full_name}</p>
+                          <p className="text-xs text-muted-foreground">Sucesso do Cliente</p>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0" onClick={() => handleRemoveAssignment(c.assignment_id, c.full_name)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {(() => {
+                  const unassigned = availableCs.filter(c => !detail.csUsers.some(a => a.id === c.id));
+                  if (unassigned.length === 0 || !detail.tenantId) return null;
+                  return (
+                    <div className="mt-2 flex items-center gap-2">
+                      <Select onValueChange={(v) => handleAssign(v, "sucesso_cliente")} disabled={assignLoading}>
+                        <SelectTrigger className="flex-1 h-8 text-xs">
+                          <SelectValue placeholder="Adicionar CS..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {unassigned.map(c => (
+                            <SelectItem key={c.id} value={c.id}>{c.full_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <UserPlus className="h-4 w-4 text-muted-foreground shrink-0" />
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           ) : null}
         </DialogContent>

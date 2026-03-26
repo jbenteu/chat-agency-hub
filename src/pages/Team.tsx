@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { InviteDialog } from "@/components/invite/InviteDialog";
-import { ClientDetailDialog } from "@/components/team/ClientDetailDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,16 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
 import {
-  Search, UsersRound, MessageCircle, Users, ChevronDown, ChevronRight,
-  Phone, Mail, Wifi, WifiOff, UserPlus, Building2, Trash2, CalendarDays,
+  Search, UsersRound, UserPlus, Building2, Trash2, CalendarDays, Wifi, WifiOff,
+  Mail, Phone,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -28,29 +26,24 @@ interface ClientInstance {
   id: string;
   instance_name: string;
   display_name: string | null;
-  status: string;
+  status: string | null;
   phone_number: string | null;
 }
 
-interface Client {
-  id: string;
-  full_name: string;
-  email: string | null;
-  phone: string | null;
-  role: string;
-  is_active: boolean;
-  tenant_id?: string | null;
-  whatsapp_instances: ClientInstance[];
-}
-
-interface TenantAssignment {
-  id: string;
-  manager_id: string;
+interface AssignedClient {
   tenant_id: string;
+  tenant_name: string;
+  assignment_id: string;
   assigned_at: string;
   notes: string | null;
-  tenant_name: string;
-  tenant_slug: string;
+  client_profile: {
+    id: string;
+    full_name: string;
+    email: string | null;
+    phone: string | null;
+    is_active: boolean;
+  } | null;
+  instances: ClientInstance[];
 }
 
 interface TeamMember {
@@ -61,14 +54,7 @@ interface TeamMember {
   role: string;
   is_active: boolean;
   created_at: string;
-  client_count: number;
-  clients: Client[];
-  whatsapp_instance: {
-    id: string;
-    instance_name: string;
-    status: string;
-  } | null;
-  assigned_tenants: TenantAssignment[];
+  assignedClients: AssignedClient[];
 }
 
 interface TenantOption {
@@ -80,6 +66,7 @@ interface TenantOption {
 const ROLE_LABELS: Record<string, string> = {
   gestor: "Gestor",
   sucesso_cliente: "Sucesso do Cliente",
+  gerente: "Gerente",
 };
 
 const Team = () => {
@@ -87,11 +74,8 @@ const Team = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
-  const [expandedMembers, setExpandedMembers] = useState<Set<string>>(new Set());
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [clientDialogOpen, setClientDialogOpen] = useState(false);
 
-  // Assignment dialog state
+  // Assignment dialog
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedManagerId, setSelectedManagerId] = useState("");
   const [selectedTenantId, setSelectedTenantId] = useState("");
@@ -99,7 +83,8 @@ const Team = () => {
   const [allTenants, setAllTenants] = useState<TenantOption[]>([]);
   const [assigning, setAssigning] = useState(false);
 
-  const { toast } = useToast();
+  // Detail dialog for a specific member
+  const [detailMember, setDetailMember] = useState<TeamMember | null>(null);
 
   const fetchTeam = useCallback(async () => {
     setLoading(true);
@@ -109,49 +94,107 @@ const Team = () => {
         method: "GET",
       });
 
-      if (!error && data) {
-        const teamMembers: TeamMember[] = (data.team_members ?? []).map((m: any) => ({
-          ...m,
-          assigned_tenants: [],
-        }));
+      if (error || !data) {
+        setMembers([]);
+        return;
+      }
 
-        // Fetch tenant assignments for all members
-        const memberIds = teamMembers.map((m) => m.id);
-        if (memberIds.length > 0) {
-          const { data: assignments } = await supabase
-            .from("tenant_assignments")
-            .select("id, manager_id, tenant_id, assigned_at, notes")
-            .in("manager_id", memberIds);
+      const rawMembers = data.team_members ?? [];
+      const memberIds = rawMembers.map((m: any) => m.id);
 
-          if (assignments && assignments.length > 0) {
-            const tenantIds = [...new Set(assignments.map((a) => a.tenant_id))];
-            const { data: tenants } = await supabase
-              .from("tenants")
-              .select("id, name, slug")
-              .in("id", tenantIds);
+      if (memberIds.length === 0) {
+        setMembers([]);
+        return;
+      }
 
-            const tenantMap = new Map((tenants ?? []).map((t) => [t.id, t]));
+      // Fetch all tenant assignments for these members
+      const { data: assignments } = await supabase
+        .from("tenant_assignments")
+        .select("id, manager_id, tenant_id, assigned_at, notes")
+        .in("manager_id", memberIds);
 
-            for (const member of teamMembers) {
-              member.assigned_tenants = assignments
-                .filter((a) => a.manager_id === member.id)
-                .map((a) => {
-                  const tenant = tenantMap.get(a.tenant_id);
-                  return {
-                    id: a.id,
-                    manager_id: a.manager_id,
-                    tenant_id: a.tenant_id,
-                    assigned_at: a.assigned_at,
-                    notes: a.notes,
-                    tenant_name: tenant?.name ?? "Desconhecido",
-                    tenant_slug: tenant?.slug ?? "",
-                  };
-                });
-            }
-          }
+      const tenantIds = [...new Set((assignments ?? []).map((a) => a.tenant_id))];
+
+      // Fetch tenant names + client profiles + instances in parallel
+      let tenantsMap = new Map<string, { name: string; slug: string }>();
+      let clientProfilesMap = new Map<string, { id: string; full_name: string; email: string | null; phone: string | null; is_active: boolean }>();
+      let instancesMap = new Map<string, ClientInstance[]>();
+
+      if (tenantIds.length > 0) {
+        const [tenantsRes, rolesRes, instancesRes] = await Promise.all([
+          supabase.from("tenants").select("id, name, slug").in("id", tenantIds),
+          supabase.from("user_roles").select("user_id, tenant_id").in("tenant_id", tenantIds),
+          supabase.from("whatsapp_instances").select("id, instance_name, display_name, status, phone_number, tenant_id").in("tenant_id", tenantIds),
+        ]);
+
+        (tenantsRes.data ?? []).forEach((t) => tenantsMap.set(t.id, { name: t.name, slug: t.slug }));
+
+        // Group instances by tenant
+        (instancesRes.data ?? []).forEach((inst) => {
+          const list = instancesMap.get(inst.tenant_id) || [];
+          list.push(inst);
+          instancesMap.set(inst.tenant_id, list);
+        });
+
+        // Get client profiles (users who own each tenant)
+        const clientUserIds = [...new Set((rolesRes.data ?? []).map((r) => r.user_id))];
+        if (clientUserIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("id, full_name, email, phone, is_active")
+            .in("id", clientUserIds)
+            .eq("role", "cliente");
+
+          (profiles ?? []).forEach((p) => clientProfilesMap.set(p.id, {
+            id: p.id,
+            full_name: p.full_name || "Sem nome",
+            email: p.email,
+            phone: p.phone,
+            is_active: p.is_active ?? true,
+          }));
         }
 
-        setMembers(teamMembers);
+        // Map tenant -> client profile
+        const tenantToClient = new Map<string, string>();
+        (rolesRes.data ?? []).forEach((r) => {
+          if (clientProfilesMap.has(r.user_id)) {
+            tenantToClient.set(r.tenant_id, r.user_id);
+          }
+        });
+
+        // Build enriched members
+        const enrichedMembers: TeamMember[] = rawMembers.map((m: any) => {
+          const memberAssignments = (assignments ?? []).filter((a) => a.manager_id === m.id);
+          const assignedClients: AssignedClient[] = memberAssignments.map((a) => {
+            const tenant = tenantsMap.get(a.tenant_id);
+            const clientUserId = tenantToClient.get(a.tenant_id);
+            const clientProfile = clientUserId ? clientProfilesMap.get(clientUserId) || null : null;
+            return {
+              tenant_id: a.tenant_id,
+              tenant_name: tenant?.name ?? "Desconhecido",
+              assignment_id: a.id,
+              assigned_at: a.assigned_at,
+              notes: a.notes,
+              client_profile: clientProfile,
+              instances: instancesMap.get(a.tenant_id) ?? [],
+            };
+          });
+
+          return {
+            id: m.id,
+            full_name: m.full_name,
+            email: m.email,
+            avatar_url: m.avatar_url,
+            role: m.role,
+            is_active: m.is_active,
+            created_at: m.created_at,
+            assignedClients,
+          };
+        });
+
+        setMembers(enrichedMembers);
+      } else {
+        setMembers(rawMembers.map((m: any) => ({ ...m, assignedClients: [] })));
       }
     } catch (e) {
       console.error("Erro ao buscar equipe:", e);
@@ -170,23 +213,7 @@ const Team = () => {
     return () => clearTimeout(timeout);
   }, [fetchTeam]);
 
-  useEffect(() => {
-    loadTenants();
-  }, [loadTenants]);
-
-  const toggleExpanded = (memberId: string) => {
-    setExpandedMembers((prev) => {
-      const next = new Set(prev);
-      if (next.has(memberId)) next.delete(memberId);
-      else next.add(memberId);
-      return next;
-    });
-  };
-
-  const handleClientClick = (client: Client) => {
-    setSelectedClient(client);
-    setClientDialogOpen(true);
-  };
+  useEffect(() => { loadTenants(); }, [loadTenants]);
 
   const handleAssign = async () => {
     if (!selectedManagerId || !selectedTenantId) return;
@@ -199,36 +226,34 @@ const Team = () => {
         notes: assignmentNotes || null,
         assigned_by: user?.id,
       });
-
       if (error) {
         if (error.code === "23505") {
-          toast({ title: "Atribuição já existe", description: "Este cliente já está atribuído a este gestor.", variant: "destructive" });
+          toast.error("Este cliente já está atribuído a este membro.");
           return;
         }
         throw error;
       }
-
-      toast({ title: "Cliente atribuído com sucesso" });
+      toast.success("Cliente atribuído com sucesso");
       setAssignDialogOpen(false);
       setSelectedManagerId("");
       setSelectedTenantId("");
       setAssignmentNotes("");
       fetchTeam();
     } catch (e: any) {
-      toast({ title: "Erro ao atribuir", description: e.message, variant: "destructive" });
+      toast.error("Erro ao atribuir: " + (e.message || ""));
     } finally {
       setAssigning(false);
     }
   };
 
-  const handleRemoveAssignment = async (assignmentId: string, managerName: string, tenantName: string) => {
-    if (!confirm(`Remover ${tenantName} de ${managerName}?`)) return;
+  const handleRemoveAssignment = async (assignmentId: string, tenantName: string) => {
+    if (!confirm(`Remover atribuição de "${tenantName}"?`)) return;
     try {
       await supabase.from("tenant_assignments").delete().eq("id", assignmentId);
-      toast({ title: "Atribuição removida" });
+      toast.success("Atribuição removida");
       fetchTeam();
     } catch (e: any) {
-      toast({ title: "Erro ao remover", description: e.message, variant: "destructive" });
+      toast.error("Erro ao remover: " + (e.message || ""));
     }
   };
 
@@ -241,19 +266,19 @@ const Team = () => {
     const filtered = filterRole ? members.filter((m) => m.role === filterRole) : members;
 
     if (loading) {
-      return Array.from({ length: 3 }).map((_, i) => (
-        <Card key={i}>
-          <CardContent className="p-5">
-            <Skeleton className="h-20 w-full" />
-          </CardContent>
-        </Card>
-      ));
+      return (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Card key={i}><CardContent className="p-5"><Skeleton className="h-32 w-full" /></CardContent></Card>
+          ))}
+        </div>
+      );
     }
 
     if (filtered.length === 0) {
       return (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
+          <CardContent className="flex flex-col items-center justify-center py-16">
             <UsersRound className="mb-3 h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">Nenhum membro encontrado</p>
           </CardContent>
@@ -262,169 +287,59 @@ const Team = () => {
     }
 
     return (
-      <div className="space-y-4">
-        {filtered.map((member) => {
-          const isExpanded = expandedMembers.has(member.id);
-          const tenantCount = member.assigned_tenants.length;
-          return (
-            <Card key={member.id} className="overflow-hidden">
-              <CardContent className="p-5">
-                <div className="flex items-start gap-3">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={member.avatar_url ?? undefined} />
-                    <AvatarFallback className="text-xs">{getInitials(member.full_name)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate">{member.full_name}</div>
-                    <div className="text-xs text-muted-foreground truncate">{member.email}</div>
-                    <div className="mt-1 flex items-center gap-2">
-                      <Badge variant="outline" className="text-[10px]">
-                        {ROLE_LABELS[member.role] ?? member.role}
-                      </Badge>
-                      {tenantCount > 0 && (
-                        <Badge variant="secondary" className="text-[10px]">
-                          <Building2 className="mr-1 h-3 w-3" />
-                          {tenantCount} cliente{tenantCount !== 1 ? "s" : ""}
-                        </Badge>
-                      )}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {filtered.map((member) => (
+          <Card
+            key={member.id}
+            className="cursor-pointer hover:border-primary/40 transition-colors"
+            onClick={() => setDetailMember(member)}
+          >
+            <CardContent className="p-5 space-y-3">
+              {/* Header */}
+              <div className="flex items-center gap-3">
+                <Avatar className="h-10 w-10">
+                  <AvatarImage src={member.avatar_url ?? undefined} />
+                  <AvatarFallback className="text-xs">{getInitials(member.full_name)}</AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate">{member.full_name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                </div>
+              </div>
+
+              {/* Role + client count */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="outline" className="text-[10px]">
+                  {ROLE_LABELS[member.role] ?? member.role}
+                </Badge>
+                <Badge variant="secondary" className="text-[10px]">
+                  <Building2 className="mr-1 h-3 w-3" />
+                  {member.assignedClients.length} cliente{member.assignedClients.length !== 1 ? "s" : ""}
+                </Badge>
+              </div>
+
+              {/* Preview of assigned clients (max 3) */}
+              {member.assignedClients.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  {member.assignedClients.slice(0, 3).map((ac) => (
+                    <div key={ac.assignment_id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Building2 className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{ac.client_profile?.full_name ?? ac.tenant_name}</span>
+                      {ac.instances.some((i) => i.status === "connected") ? (
+                        <Wifi className="h-3 w-3 text-emerald-500 shrink-0 ml-auto" />
+                      ) : ac.instances.length > 0 ? (
+                        <WifiOff className="h-3 w-3 text-muted-foreground shrink-0 ml-auto" />
+                      ) : null}
                     </div>
-                  </div>
+                  ))}
+                  {member.assignedClients.length > 3 && (
+                    <p className="text-[11px] text-muted-foreground/60">+{member.assignedClients.length - 3} mais</p>
+                  )}
                 </div>
-
-                <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    <Users className="h-3.5 w-3.5" />
-                    <span>{member.client_count} cliente{member.client_count !== 1 ? "s" : ""}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <MessageCircle className="h-3.5 w-3.5" />
-                    {member.whatsapp_instance ? (
-                      <span className={member.whatsapp_instance.status === "connected" ? "text-emerald-500" : "text-amber-500"}>
-                        {member.whatsapp_instance.status === "connected" ? "Conectado" : "Desconectado"}
-                      </span>
-                    ) : (
-                      <span>Sem instância pessoal</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Tenant Assignments Section */}
-                {tenantCount > 0 && (
-                  <>
-                    <Separator className="my-3" />
-                    <Collapsible open={isExpanded} onOpenChange={() => toggleExpanded(member.id)}>
-                      <CollapsibleTrigger className="flex w-full items-center gap-1 text-xs font-medium text-primary hover:underline">
-                        {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                        Clientes atribuídos ({tenantCount})
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <div className="mt-3 space-y-2">
-                          {member.assigned_tenants.map((assignment) => (
-                            <div
-                              key={assignment.id}
-                              className="rounded-lg border border-border/60 bg-muted/50 p-3 hover:bg-muted/80 transition-colors"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-medium truncate">{assignment.tenant_name}</p>
-                                    <p className="text-[11px] text-muted-foreground">@{assignment.tenant_slug}</p>
-                                  </div>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-destructive hover:text-destructive shrink-0"
-                                  onClick={() => handleRemoveAssignment(assignment.id, member.full_name, assignment.tenant_name)}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                              <div className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                                <CalendarDays className="h-3 w-3" />
-                                <span>Atribuído em {format(new Date(assignment.assigned_at), "dd MMM yyyy", { locale: ptBR })}</span>
-                              </div>
-                              {assignment.notes && (
-                                <p className="mt-1 text-[11px] text-muted-foreground/80 italic">{assignment.notes}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  </>
-                )}
-
-                {/* Expandable client details (user_relationships) */}
-                {member.clients && member.clients.length > 0 && (
-                  <Collapsible>
-                    <CollapsibleTrigger className="mt-3 flex w-full items-center gap-1 text-xs font-medium text-primary hover:underline">
-                      <ChevronRight className="h-3.5 w-3.5" />
-                      Ver clientes vinculados ({member.clients.length})
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <div className="mt-3 space-y-2 border-t border-border pt-3">
-                        {member.clients.map((client) => (
-                          <div
-                            key={client.id}
-                            className="rounded-lg border border-border/60 bg-muted/30 p-3 cursor-pointer hover:bg-muted/60 transition-colors"
-                            onClick={() => handleClientClick(client)}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium truncate">{client.full_name}</p>
-                                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                                  {client.email && (
-                                    <span className="flex items-center gap-1">
-                                      <Mail className="h-3 w-3" />
-                                      {client.email}
-                                    </span>
-                                  )}
-                                  {client.phone && (
-                                    <span className="flex items-center gap-1">
-                                      <Phone className="h-3 w-3" />
-                                      {client.phone}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <Badge variant={client.is_active ? "default" : "secondary"} className="shrink-0 text-[9px]">
-                                {client.is_active ? "Ativo" : "Inativo"}
-                              </Badge>
-                            </div>
-                            {client.whatsapp_instances.length > 0 && (
-                              <div className="mt-2 space-y-1">
-                                {client.whatsapp_instances.map((inst) => (
-                                  <div key={inst.id} className="flex items-center gap-2 text-[11px]">
-                                    {inst.status === "connected" ? (
-                                      <Wifi className="h-3 w-3 text-emerald-500" />
-                                    ) : (
-                                      <WifiOff className="h-3 w-3 text-muted-foreground" />
-                                    )}
-                                    <span className="truncate text-muted-foreground">
-                                      {inst.display_name || inst.phone_number || inst.instance_name}
-                                    </span>
-                                    <Badge variant="outline" className="text-[9px] ml-auto shrink-0">
-                                      {inst.status === "connected" ? "Conectado" : "Desconectado"}
-                                    </Badge>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {client.whatsapp_instances.length === 0 && (
-                              <p className="mt-1.5 text-[11px] text-muted-foreground/60 italic">Sem instância WhatsApp</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
+              )}
+            </CardContent>
+          </Card>
+        ))}
       </div>
     );
   };
@@ -448,12 +363,7 @@ const Team = () => {
 
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nome ou e-mail..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+          <Input placeholder="Buscar por nome ou e-mail..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
 
         <Tabs defaultValue="all" onValueChange={setRoleFilter}>
@@ -468,25 +378,114 @@ const Team = () => {
         </Tabs>
       </div>
 
-      <ClientDetailDialog
-        client={selectedClient}
-        open={clientDialogOpen}
-        onOpenChange={setClientDialogOpen}
-        onUpdated={fetchTeam}
-      />
+      {/* Member detail dialog */}
+      <Dialog open={!!detailMember} onOpenChange={(open) => !open && setDetailMember(null)}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          {detailMember && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10">
+                    <AvatarImage src={detailMember.avatar_url ?? undefined} />
+                    <AvatarFallback className="text-xs">{getInitials(detailMember.full_name)}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p>{detailMember.full_name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <Badge variant="outline" className="text-[10px]">{ROLE_LABELS[detailMember.role] ?? detailMember.role}</Badge>
+                    </div>
+                  </div>
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
+                {detailMember.email && (
+                  <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{detailMember.email}</span>
+                )}
+              </div>
+
+              <Separator />
+
+              <div>
+                <h4 className="text-sm font-semibold mb-3">Clientes Atribuídos ({detailMember.assignedClients.length})</h4>
+                {detailMember.assignedClients.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">Nenhum cliente atribuído</p>
+                ) : (
+                  <div className="space-y-3">
+                    {detailMember.assignedClients.map((ac) => (
+                      <div key={ac.assignment_id} className="rounded-lg border p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {ac.client_profile?.full_name ?? ac.tenant_name}
+                            </p>
+                            {ac.client_profile?.email && (
+                              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Mail className="h-3 w-3" />{ac.client_profile.email}
+                              </p>
+                            )}
+                            {ac.client_profile?.phone && (
+                              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Phone className="h-3 w-3" />{ac.client_profile.phone}
+                              </p>
+                            )}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive shrink-0"
+                            onClick={() => handleRemoveAssignment(ac.assignment_id, ac.client_profile?.full_name ?? ac.tenant_name)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+
+                        {/* Instances */}
+                        {ac.instances.length > 0 && (
+                          <div className="space-y-1">
+                            {ac.instances.map((inst) => (
+                              <div key={inst.id} className="flex items-center gap-2 text-xs rounded-md bg-muted/50 p-1.5">
+                                {inst.status === "connected" ? (
+                                  <Wifi className="h-3 w-3 text-emerald-500 shrink-0" />
+                                ) : (
+                                  <WifiOff className="h-3 w-3 text-muted-foreground shrink-0" />
+                                )}
+                                <span className="truncate">{inst.display_name || inst.phone_number || inst.instance_name}</span>
+                                <Badge variant="outline" className="text-[9px] ml-auto shrink-0">
+                                  {inst.status === "connected" ? "Conectado" : "Desconectado"}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <CalendarDays className="h-3 w-3" />
+                          <span>Atribuído em {format(new Date(ac.assigned_at), "dd MMM yyyy", { locale: ptBR })}</span>
+                        </div>
+                        {ac.notes && <p className="text-[11px] text-muted-foreground/80 italic">{ac.notes}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Assignment Dialog */}
       <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Atribuir Cliente ao Gestor</DialogTitle>
+            <DialogTitle>Atribuir Cliente</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>Gestor</Label>
+              <Label>Membro da Equipe</Label>
               <Select value={selectedManagerId} onValueChange={setSelectedManagerId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione um gestor..." />
+                  <SelectValue placeholder="Selecione um membro..." />
                 </SelectTrigger>
                 <SelectContent>
                   {managerOptions.map((m) => (
@@ -505,9 +504,7 @@ const Team = () => {
                 </SelectTrigger>
                 <SelectContent>
                   {allTenants.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name} (@{t.slug})
-                    </SelectItem>
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -515,7 +512,7 @@ const Team = () => {
             <div className="space-y-2">
               <Label>Observações (opcional)</Label>
               <Textarea
-                placeholder="Ex: Cliente prioritário, contato direto..."
+                placeholder="Ex: Cliente prioritário..."
                 value={assignmentNotes}
                 onChange={(e) => setAssignmentNotes(e.target.value)}
                 rows={2}
