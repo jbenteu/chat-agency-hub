@@ -88,7 +88,7 @@ export function ConversationListItem({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 overflow-hidden ${
+      className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 overflow-hidden max-w-full ${
         isSelected ? "bg-muted" : ""
       }`}
     >
