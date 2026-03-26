@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useEvolutionApi } from "@/hooks/use-evolution-api";
-import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -115,7 +114,7 @@ const formatMessageContent = (content: string | null): string => {
 
 const Monitoring: React.FC = () => {
   const { profile, isSuperAdmin } = useAuth();
-  const { monitoringConversations } = useEvolutionApi();
+  const { monitoringConversations, monitoringMessages } = useEvolutionApi();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -292,46 +291,33 @@ const Monitoring: React.FC = () => {
     setLoadingMessages(true);
     setMessages([]);
     try {
-      const { data: msgs, error } = await supabase
-        .from("whatsapp_messages")
-        .select("*")
-        .eq("conversation_id", conv.id)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      const sorted = (msgs || []).reverse();
-      setMessages(sorted as MonitoringMessage[]);
-      setHasMoreMessages((msgs?.length || 0) >= 50);
+      const result = await monitoringMessages(conv.id, 50);
+      const msgs = result?.messages || [];
+      setMessages(msgs as MonitoringMessage[]);
+      setHasMoreMessages(result?.hasMore ?? false);
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     } catch (err: any) {
       toast({ title: "Erro ao carregar mensagens", description: err.message, variant: "destructive" });
     } finally {
       setLoadingMessages(false);
     }
-  }, [toast]);
+  }, [monitoringMessages, toast]);
 
   const loadMoreMessages = useCallback(async () => {
     if (!selectedConversation || loadingMore || messages.length === 0) return;
     setLoadingMore(true);
     try {
       const oldest = messages[0];
-      const { data: msgs, error } = await supabase
-        .from("whatsapp_messages")
-        .select("*")
-        .eq("conversation_id", selectedConversation.id)
-        .lt("created_at", oldest.created_at)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      const sorted = (msgs || []).reverse();
-      setMessages(prev => [...sorted as MonitoringMessage[], ...prev]);
-      setHasMoreMessages((msgs?.length || 0) >= 50);
+      const result = await monitoringMessages(selectedConversation.id, 50, oldest.id);
+      const msgs = result?.messages || [];
+      setMessages(prev => [...msgs as MonitoringMessage[], ...prev]);
+      setHasMoreMessages(result?.hasMore ?? false);
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
       setLoadingMore(false);
     }
-  }, [selectedConversation, loadingMore, messages, toast]);
+  }, [selectedConversation, loadingMore, messages, monitoringMessages, toast]);
 
   const handleSelectConversation = (conv: MonitoringConversation) => {
     setSelectedConversation(conv);

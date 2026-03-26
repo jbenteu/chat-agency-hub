@@ -314,6 +314,12 @@ export function useEvolutionApi() {
     [callEvolution]
   );
 
+  const monitoringMessages = useCallback(
+    (conversationId: string, limit?: number, before_id?: string) =>
+      callEvolution({ action: "monitoring_messages", conversationId, limit, before_id }),
+    [callEvolution]
+  );
+
   return {
     loading,
     error,
@@ -347,6 +353,7 @@ export function useEvolutionApi() {
     monitoringConversations,
     updateInstanceAssignee,
     importContacts,
+    monitoringMessages,
   };
 }
 

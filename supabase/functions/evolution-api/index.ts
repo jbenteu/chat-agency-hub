@@ -1657,6 +1657,73 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true, message: "Importação iniciada" });
     }
 
+    // ── monitoring_messages ───────────────────────────────────────────────────
+    if (action === "monitoring_messages") {
+      const { conversationId, limit: reqLimit, before_id: beforeMsgId } = body as Record<string, any>;
+      if (!conversationId) return jsonResponse({ error: "conversationId é obrigatório" }, 400);
+
+      // Resolve accessible tenant IDs (same logic as monitoring_conversations)
+      const { data: roleCheck } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("tenant_id", tenantId)
+        .in("role", ["super_admin", "admin", "manager"])
+        .limit(1)
+        .maybeSingle();
+
+      let accessibleTenantIds: string[] = [tenantId];
+      if (roleCheck && (roleCheck.role === "super_admin" || roleCheck.role === "admin")) {
+        const { data: allTenants } = await supabaseAdmin.from("tenants").select("id");
+        if (allTenants) accessibleTenantIds = allTenants.map(t => t.id);
+      } else {
+        const { data: assignments } = await supabaseAdmin
+          .from("tenant_assignments")
+          .select("tenant_id")
+          .eq("manager_id", userId);
+        for (const a of assignments || []) {
+          if (!accessibleTenantIds.includes(a.tenant_id)) accessibleTenantIds.push(a.tenant_id);
+        }
+      }
+
+      // Verify the conversation belongs to an accessible tenant
+      const { data: conv } = await supabaseAdmin
+        .from("whatsapp_conversations")
+        .select("id, tenant_id")
+        .eq("id", conversationId)
+        .in("tenant_id", accessibleTenantIds)
+        .maybeSingle();
+      if (!conv) return jsonResponse({ error: "Conversa não encontrada ou acesso negado" }, 404);
+
+      const effectiveLimit = Math.min(Number(reqLimit) || 50, 200);
+
+      let query = supabaseAdmin
+        .from("whatsapp_messages")
+        .select("*")
+        .eq("tenant_id", conv.tenant_id)
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(effectiveLimit);
+
+      if (beforeMsgId) {
+        const { data: pivot } = await supabaseAdmin
+          .from("whatsapp_messages")
+          .select("created_at")
+          .eq("id", beforeMsgId)
+          .maybeSingle();
+        if (pivot?.created_at) query = query.lt("created_at", pivot.created_at);
+      }
+
+      const { data: msgs, error: msgsErr } = await query;
+      if (msgsErr) throw new Error(msgsErr.message);
+
+      return jsonResponse({
+        success: true,
+        messages: (msgs || []).reverse(),
+        hasMore: (msgs || []).length === effectiveLimit,
+      });
+    }
+
     return jsonResponse({ error: `Unknown action: ${action}` }, 400);
   } catch (error: unknown) {
     console.error("Evolution API edge function error:", error);

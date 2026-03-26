@@ -1,16 +1,29 @@
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "./AuthProvider";
+import { useAuth, type UserRole } from "./AuthProvider";
 
-export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { session, loading } = useAuth();
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+  allowedRoles?: UserRole[];
+}
+
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
+  const { session, loading, profile } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && !session) {
+    if (loading) return;
+    if (!session) {
       navigate("/login", { replace: true });
+      return;
     }
-  }, [loading, session, navigate]);
+    if (allowedRoles && profile) {
+      const role = profile.role ?? "cliente";
+      if (!allowedRoles.includes(role)) {
+        navigate("/", { replace: true });
+      }
+    }
+  }, [loading, session, profile, allowedRoles, navigate]);
 
   if (loading) {
     return (
@@ -20,8 +33,11 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
     );
   }
 
-  if (!session) {
-    return null;
+  if (!session) return null;
+
+  if (allowedRoles && profile) {
+    const role = profile.role ?? "cliente";
+    if (!allowedRoles.includes(role)) return null;
   }
 
   return <>{children}</>;
