@@ -1684,8 +1684,18 @@ const WhatsAppInbox = () => {
             const jid = `${phone}@s.whatsapp.net`;
             await sendText(instanceName, jid, message);
             toast({ title: "Mensagem enviada!" });
-            // Refresh conversations to show the new one
-            setTimeout(() => fetchConversations(true), 1500);
+            // Wait for webhook to create the conversation, then refresh once
+            setTimeout(async () => {
+              await fetchConversations(true);
+              // Auto-select the new conversation
+              setConversations((prev) => {
+                const newConv = prev.find((c) => c.remote_jid === jid);
+                if (newConv && (!selectedConv || selectedConv.remote_jid !== jid)) {
+                  setSelectedConv(newConv);
+                }
+                return prev;
+              });
+            }, 2000);
           }}
         />
       </div>
