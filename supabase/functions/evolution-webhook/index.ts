@@ -845,7 +845,7 @@ Deno.serve(async (req) => {
               status: "error",
               error_message: String(err),
               finished_at: new Date().toISOString(),
-            }).eq("id", progressId).catch(() => {});
+            }).eq("id", progressId).then(() => {}, () => {});
           }
         })();
       }
