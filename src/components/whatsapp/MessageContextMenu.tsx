@@ -97,9 +97,6 @@ export function MessageContextMenu({
 }
 
 /* Inline emoji grid (not using the Popover-based EmojiPicker component to avoid nested popovers) */
-import { useMemo, useCallback } from "react";
-import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
 
 const EMOJI_CATEGORIES: { label: string; emojis: string[] }[] = [
   { label: "Frequentes", emojis: ["😂", "❤️", "👍", "🔥", "😍", "🙏", "😊", "😭", "🥰", "😘", "💕", "🤣", "😁", "👏", "🎉", "💯"] },
