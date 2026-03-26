@@ -2,6 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Users, Pin, ImageIcon, Mic, Video, FileText, MapPin, Sticker } from "lucide-react";
 import type { Conversation } from "@/hooks/use-evolution-api";
+import { formatPhoneWhatsApp } from "@/data/country-codes";
 
 interface ConversationListItemProps {
   conversation: Conversation;
