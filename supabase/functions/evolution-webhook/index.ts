@@ -654,8 +654,7 @@ Deno.serve(async (req) => {
             .update(updatePayload)
             .eq("tenant_id", tenantId)
             .eq("id", conversationId)
-            .then(() => {})
-            .catch(console.error);
+            .then(() => {}, console.error);
         }
 
         // ── Deduplicação correta ──────────────────────────────────────────────
