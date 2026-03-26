@@ -35,11 +35,27 @@ function getInitialColor(name: string | null): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// Internal protocol messages that should not be shown to users
+const HIDDEN_MESSAGES = [
+  "[messagecontextinfo]",
+  "[appstatesynckeyshare]",
+  "[e2enotification]",
+  "[protocolmessage]",
+  "[senderkeydistributionmessage]",
+];
+
+function isHiddenMessage(content: string | null): boolean {
+  if (!content) return false;
+  const lower = content.toLowerCase().trim();
+  const colonIdx = lower.lastIndexOf(": ");
+  const suffix = colonIdx > 0 ? lower.substring(colonIdx + 2).trim() : lower;
+  return HIDDEN_MESSAGES.some((h) => suffix === h || suffix.startsWith(h));
+}
+
 function getMediaPreviewIcon(content: string | null) {
   if (!content) return null;
   const lower = content.toLowerCase();
   const checkAll = (text: string) => {
-    // Check after ": " for group messages
     const colonIdx = text.lastIndexOf(": ");
     const suffix = colonIdx > 0 ? text.substring(colonIdx + 2) : text;
     return suffix.trim();
