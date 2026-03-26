@@ -732,8 +732,7 @@ Deno.serve(async (req) => {
         .update({ unread_count: 0 })
         .eq("tenant_id", tenantId)
         .eq("id", conversationId)
-        .then(() => {})
-        .catch(console.error);
+        .then(() => {}, console.error);
 
       return jsonResponse({
         success: true,
@@ -803,8 +802,7 @@ Deno.serve(async (req) => {
                 .eq("tenant_id", tenantId)
                 .eq("instance_id", inst.id)
                 .eq("remote_jid", remoteJid)
-                .then(() => {})
-                .catch(console.error);
+                .then(() => {}, console.error);
             }
             const participants = rawParticipants.slice(0, 256).map((p: any) => ({
               id: p.id || p.jid || null,
@@ -953,8 +951,7 @@ Deno.serve(async (req) => {
                 .update({ media_url: evoMediaUrl })
                 .eq("tenant_id", tenantId)
                 .eq("message_id", messageId)
-                .then(() => {})
-                .catch(console.error);
+                .then(() => {}, console.error);
             }
             return jsonResponse({
               success: true,
@@ -1048,8 +1045,7 @@ Deno.serve(async (req) => {
           .update({ contact_name: patch.name as string })
           .eq("tenant_id", tenantId)
           .eq("contact_id", contactId)
-          .then(() => {})
-          .catch(console.error);
+          .then(() => {}, console.error);
       }
       return jsonResponse({ success: true });
     }

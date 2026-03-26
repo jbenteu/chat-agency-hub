@@ -110,12 +110,13 @@ Deno.serve(async (req) => {
   };
 
   // Applies instance filter to an analysis query
+  // deno-lint-ignore no-explicit-any
   const applyConvFilter = (
-    query: ReturnType<typeof supabaseAdmin.from>,
+    query: any,
     convIds: string[] | null,
   ) => {
     if (convIds === null) return query;
-    if (convIds.length === 0) return query.eq("conversation_id", "00000000-0000-0000-0000-000000000000"); // impossible match
+    if (convIds.length === 0) return query.eq("conversation_id", "00000000-0000-0000-0000-000000000000");
     return query.in("conversation_id", convIds);
   };
 
@@ -282,13 +283,13 @@ ${transcript}`;
 
       // Base conversation query with optional instance filter
       const convBase = () => {
-        let q = supabaseAdmin.from("whatsapp_conversations").eq("tenant_id", tenantId!);
+        let q = supabaseAdmin.from("whatsapp_conversations").select("*", { count: "exact", head: true }).eq("tenant_id", tenantId!);
         if (instanceId) q = q.eq("instance_id", instanceId);
         return q;
       };
-      // Base analysis query with optional conv_id filter
-      const analysisBase = () => applyConvFilter(
-        supabaseAdmin.from("ai_conversation_analysis").eq("tenant_id", tenantId!),
+      // deno-lint-ignore no-explicit-any
+      const analysisBase = (): any => applyConvFilter(
+        supabaseAdmin.from("ai_conversation_analysis").select("*").eq("tenant_id", tenantId!),
         convIds,
       );
 
@@ -866,11 +867,11 @@ Priorize: risco de receita, oportunidades de conversão, eficiência operacional
         return jsonResponse({ hot_leads: [], warm_leads: [] });
       }
 
-      const convIds = analyses.map((a: Record<string, unknown>) => a.conversation_id as string);
+      const pipelineConvIds = analyses.map((a: Record<string, unknown>) => a.conversation_id as string);
       const { data: convs } = await supabaseAdmin
         .from("whatsapp_conversations")
         .select("id, contact_name, contact_phone, last_message, last_message_at")
-        .in("id", convIds);
+        .in("id", pipelineConvIds);
 
       const convMap: Record<string, Record<string, unknown>> = {};
       (convs || []).forEach((c: Record<string, unknown>) => {

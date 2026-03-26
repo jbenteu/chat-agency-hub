@@ -35,11 +35,27 @@ function getInitialColor(name: string | null): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// Internal protocol messages that should not be shown to users
+const HIDDEN_MESSAGES = [
+  "[messagecontextinfo]",
+  "[appstatesynckeyshare]",
+  "[e2enotification]",
+  "[protocolmessage]",
+  "[senderkeydistributionmessage]",
+];
+
+function isHiddenMessage(content: string | null): boolean {
+  if (!content) return false;
+  const lower = content.toLowerCase().trim();
+  const colonIdx = lower.lastIndexOf(": ");
+  const suffix = colonIdx > 0 ? lower.substring(colonIdx + 2).trim() : lower;
+  return HIDDEN_MESSAGES.some((h) => suffix === h || suffix.startsWith(h));
+}
+
 function getMediaPreviewIcon(content: string | null) {
   if (!content) return null;
   const lower = content.toLowerCase();
   const checkAll = (text: string) => {
-    // Check after ": " for group messages
     const colonIdx = text.lastIndexOf(": ");
     const suffix = colonIdx > 0 ? text.substring(colonIdx + 2) : text;
     return suffix.trim();
@@ -60,7 +76,8 @@ const isGroupJid = (jid: string) => jid.endsWith("@g.us");
 export function ConversationListItem({
   conversation: c, isSelected, profilePicUrl, isTyping, onClick, formatTime,
 }: ConversationListItemProps) {
-  const mediaIcon = getMediaPreviewIcon(c.last_message);
+  const lastMsg = isHiddenMessage(c.last_message) ? null : c.last_message;
+  const mediaIcon = getMediaPreviewIcon(lastMsg);
   const isGroup = isGroupJid(c.remote_jid);
 
   const displayName = c.contact_name || (c.contact_phone ? formatPhoneWhatsApp(c.contact_phone) : (() => {
@@ -71,7 +88,7 @@ export function ConversationListItem({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 overflow-hidden ${
+      className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 overflow-hidden max-w-full ${
         isSelected ? "bg-muted" : ""
       }`}
     >
@@ -99,7 +116,7 @@ export function ConversationListItem({
           ) : (
             <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
               {mediaIcon}
-              <p className="truncate text-xs text-muted-foreground leading-tight">{c.last_message || "…"}</p>
+              <p className="truncate text-xs text-muted-foreground leading-tight">{lastMsg || "…"}</p>
             </div>
           )}
           {(c.unread_count ?? 0) > 0 && (

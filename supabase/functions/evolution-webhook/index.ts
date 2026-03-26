@@ -547,8 +547,7 @@ Deno.serve(async (req) => {
                   stage: "lead",
                   status: "open",
                 })
-                .then(() => {})
-                .catch(console.error);
+                .then(() => {}, console.error);
             }
           }
 
@@ -559,8 +558,7 @@ Deno.serve(async (req) => {
                 .from("contacts")
                 .update({ name: evoContactName })
                 .eq("id", contactRecord.id)
-                .then(() => {})
-                .catch(console.error);
+                .then(() => {}, console.error);
               resolvedContactName = evoContactName;
             } else {
               resolvedContactName = contactRecord.name || bestName;
@@ -656,8 +654,7 @@ Deno.serve(async (req) => {
             .update(updatePayload)
             .eq("tenant_id", tenantId)
             .eq("id", conversationId)
-            .then(() => {})
-            .catch(console.error);
+            .then(() => {}, console.error);
         }
 
         // ── Deduplicação correta ──────────────────────────────────────────────
@@ -720,8 +717,7 @@ Deno.serve(async (req) => {
             priority: 'high',
             status: 'pending',
           }, { onConflict: 'conversation_id', ignoreDuplicates: false })
-          .then(() => {})
-          .catch(() => {});
+          .then(() => {}, () => {});
         }
 
         processed++;
@@ -849,7 +845,7 @@ Deno.serve(async (req) => {
               status: "error",
               error_message: String(err),
               finished_at: new Date().toISOString(),
-            }).eq("id", progressId).catch(() => {});
+            }).eq("id", progressId).then(() => {}, () => {});
           }
         })();
       }
@@ -870,8 +866,8 @@ Deno.serve(async (req) => {
       // Atualiza todos em paralelo
       await Promise.all(
         updates
-          .filter((u) => u?.key?.id !== undefined && u?.update?.status !== undefined)
-          .map((u) =>
+          .filter((u: any) => u?.key?.id !== undefined && u?.update?.status !== undefined)
+          .map((u: any) =>
             supabase
               .from("whatsapp_messages")
               .update({ status: statusMap[u.update.status] || "sent" })
