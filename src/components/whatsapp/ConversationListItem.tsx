@@ -116,7 +116,7 @@ export function ConversationListItem({
           ) : (
             <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
               {mediaIcon}
-              <p className="truncate text-xs text-muted-foreground leading-tight">{c.last_message || "…"}</p>
+              <p className="truncate text-xs text-muted-foreground leading-tight">{lastMsg || "…"}</p>
             </div>
           )}
           {(c.unread_count ?? 0) > 0 && (
