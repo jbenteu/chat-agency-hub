@@ -308,6 +308,12 @@ export function useEvolutionApi() {
     [callEvolution]
   );
 
+  const importContacts = useCallback(
+    (instanceName: string) =>
+      callEvolution({ action: "import_contacts", instanceName }),
+    [callEvolution]
+  );
+
   return {
     loading,
     error,
@@ -340,6 +346,7 @@ export function useEvolutionApi() {
     searchMessages,
     monitoringConversations,
     updateInstanceAssignee,
+    importContacts,
   };
 }
 

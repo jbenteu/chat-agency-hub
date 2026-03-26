@@ -20,6 +20,7 @@ import {
   Loader2,
   Smartphone,
   Pencil,
+  Users,
 } from "lucide-react";
 
 const WhatsApp = () => {
@@ -33,6 +34,7 @@ const WhatsApp = () => {
     listInstances,
     deleteInstance,
     updateDisplayName,
+    importContacts,
   } = useEvolutionApi();
 
   const [instances, setInstances] = useState<EvolutionInstance[]>([]);
@@ -53,6 +55,9 @@ const WhatsApp = () => {
   // Rename dialog
   const [renameInstance, setRenameInstance] = useState<EvolutionInstance | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  // Import contacts state
+  const [importingContacts, setImportingContacts] = useState<string | null>(null);
 
   // Auto-poll ref
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -180,6 +185,21 @@ const WhatsApp = () => {
       await fetchInstances();
     } catch (err: any) {
       toast({ title: "Erro ao remover", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleImportContacts = async (instanceName: string) => {
+    setImportingContacts(instanceName);
+    try {
+      await importContacts(instanceName);
+      toast({
+        title: "Importação iniciada",
+        description: "Acompanhe o progresso no indicador no canto da tela.",
+      });
+    } catch (err: any) {
+      toast({ title: "Erro ao importar", description: err.message, variant: "destructive" });
+    } finally {
+      setImportingContacts(null);
     }
   };
 
@@ -337,6 +357,21 @@ const WhatsApp = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(inst.status)}
+                    {inst.status === "connected" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleImportContacts(inst.instance_name)}
+                        disabled={importingContacts === inst.instance_name}
+                        title="Importar contatos da agenda"
+                      >
+                        {importingContacts === inst.instance_name ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Users className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"

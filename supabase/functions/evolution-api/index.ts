@@ -1551,6 +1551,112 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: true });
     }
 
+    // ── import_contacts ───────────────────────────────────────────────────────
+    if (action === "import_contacts") {
+      if (!instanceName) return jsonResponse({ error: "instanceName é obrigatório" }, 400);
+
+      const progressId = `${tenantId}-${instanceName}`;
+
+      // Initialize progress record
+      await supabaseAdmin.from("import_progress").upsert({
+        id: progressId,
+        tenant_id: tenantId,
+        instance_name: instanceName,
+        total: 0,
+        imported: 0,
+        status: "running",
+        started_at: new Date().toISOString(),
+        finished_at: null,
+        error_message: null,
+      });
+
+      // Fire-and-forget: run import in background, return immediately
+      (async () => {
+        try {
+          // Fetch contacts from Evolution API (try multiple endpoints)
+          let contacts: any[] = [];
+          for (const path of [
+            `/chat/findContacts/${instanceName}`,
+            `/contact/find/${instanceName}`,
+          ]) {
+            try {
+              const res = await fetchWithTimeout(
+                `${baseUrl}${path}`,
+                { method: "POST", headers: { ...evoHeaders }, body: JSON.stringify({ where: {} }) },
+                15000,
+              );
+              if (res.ok) {
+                const json = await res.json();
+                contacts = Array.isArray(json) ? json : json?.contacts || json?.data || [];
+                if (contacts.length > 0) break;
+              }
+            } catch { /* try next */ }
+          }
+
+          if (contacts.length === 0) {
+            await supabaseAdmin.from("import_progress").update({
+              status: "done", imported: 0, total: 0, finished_at: new Date().toISOString(),
+            }).eq("id", progressId);
+            return;
+          }
+
+          await supabaseAdmin.from("import_progress").update({ total: contacts.length }).eq("id", progressId);
+
+          const BATCH_SIZE = 100;
+          let imported = 0;
+
+          for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
+            const batch = contacts.slice(i, i + BATCH_SIZE);
+            const rows = batch
+              .map((c: any) => {
+                const rawId = c.id || c.jid || c.wuid || "";
+                const phone = normalizePhone(rawId);
+                if (!phone) return null;
+                const name = c.pushName || c.name || c.notify || null;
+                return {
+                  tenant_id: tenantId,
+                  phone,
+                  name: name && !/^\d+$/.test(name) ? name : phone,
+                  tags: ["whatsapp", "importado"],
+                  origin: "whatsapp_import",
+                  notes: "Importado automaticamente do WhatsApp",
+                };
+              })
+              .filter(Boolean);
+
+            if (rows.length > 0) {
+              const { error: upsertErr } = await supabaseAdmin
+                .from("contacts")
+                .upsert(rows, { onConflict: "phone,tenant_id", ignoreDuplicates: true });
+              if (!upsertErr) imported += rows.length;
+            }
+
+            await supabaseAdmin.from("import_progress").update({ imported }).eq("id", progressId);
+          }
+
+          // Sync conversation names from imported contacts
+          try {
+            await supabaseAdmin.rpc("update_conversations_contact_names", {
+              p_tenant_id: tenantId,
+              p_instance_name: instanceName,
+            });
+          } catch { /* non-fatal */ }
+
+          await supabaseAdmin.from("import_progress").update({
+            status: "done", imported, finished_at: new Date().toISOString(),
+          }).eq("id", progressId);
+        } catch (err) {
+          await supabaseAdmin.from("import_progress").update({
+            status: "error",
+            error_message: String(err),
+            finished_at: new Date().toISOString(),
+          }).eq("id", progressId).then(() => {}, () => {});
+        }
+      })();
+
+      return jsonResponse({ success: true, message: "Importação iniciada" });
+    }
+
     return jsonResponse({ error: `Unknown action: ${action}` }, 400);
   } catch (error: unknown) {
     console.error("Evolution API edge function error:", error);
