@@ -802,8 +802,7 @@ Deno.serve(async (req) => {
                 .eq("tenant_id", tenantId)
                 .eq("instance_id", inst.id)
                 .eq("remote_jid", remoteJid)
-                .then(() => {})
-                .catch(console.error);
+                .then(() => {}, console.error);
             }
             const participants = rawParticipants.slice(0, 256).map((p: any) => ({
               id: p.id || p.jid || null,
