@@ -24,7 +24,7 @@ import {
   setCachedGroupInfo, getCachedGroupInfoMap, isCacheFresh,
   type GroupInfo,
 } from "@/hooks/use-inbox-cache";
-import { queryInstances, queryInstancesWithOwners, queryConversations, queryMessages, queryMessagesSince, markConversationRead } from "@/hooks/use-direct-queries";
+import { queryInstances, queryInstancesWithOwners, queryConversations, queryMessages, queryMessagesBefore, queryMessagesSince, markConversationRead } from "@/hooks/use-direct-queries";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -105,6 +105,8 @@ const WhatsAppInbox = () => {
   );
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingOlderMsgs, setLoadingOlderMsgs] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showContactPanel, setShowContactPanel] = useState(false);
@@ -146,6 +148,8 @@ const WhatsAppInbox = () => {
   const lastMessageAtRef = useRef<string | null>(null);
   const messageCountRef = useRef(0);
   const lastScrolledConvRef = useRef<string | null>(null);
+  const oldestMessageAtRef = useRef<string | null>(null);
+  const prependingOlderRef = useRef(false);
 
   const isSending = sendingCount > 0;
 
@@ -279,22 +283,30 @@ const WhatsAppInbox = () => {
   }, [fetchConversations, selectedInstanceId]);
 
   // ── Load messages (direct DB query, use cache for instant render) ──
+  const MSG_PAGE = 40;
   useEffect(() => {
     if (!selectedConv) return;
+
+    oldestMessageAtRef.current = null;
+    setHasMoreMessages(false);
 
     const cached = getCachedMessages(selectedConv.id);
     if (cached && cached.length > 0) {
       setMessages(cached);
       lastMessageAtRef.current = cached[cached.length - 1]?.created_at || null;
+      oldestMessageAtRef.current = cached[0]?.created_at || null;
+      setHasMoreMessages(cached.length >= MSG_PAGE);
       setLoadingMsgs(false);
     }
 
     const load = async () => {
       if (!cached?.length) setLoadingMsgs(true);
       try {
-        const msgs = await queryMessages(selectedConv.id, 100);
+        const msgs = await queryMessages(selectedConv.id, MSG_PAGE);
         setMessages(msgs);
         lastMessageAtRef.current = msgs[msgs.length - 1]?.created_at || null;
+        oldestMessageAtRef.current = msgs[0]?.created_at || null;
+        setHasMoreMessages(msgs.length >= MSG_PAGE);
         setCachedMessages(selectedConv.id, msgs);
       } catch {
         /* UI handles */
@@ -311,15 +323,21 @@ const WhatsAppInbox = () => {
     markConversationRead(selectedConv.id).catch(() => {});
   }, [selectedConv?.id]);
 
-  // Scroll to bottom only when: conversation first opens, or new messages arrive (not status updates)
+  // Scroll to bottom only when: conversation first opens, or new messages arrive (not status updates, not older messages prepended)
   useEffect(() => {
+    // If we just prepended older messages, skip scroll entirely to preserve reading position
+    if (prependingOlderRef.current) {
+      prependingOlderRef.current = false;
+      messageCountRef.current = messages.length;
+      return;
+    }
+
     const convChanged = lastScrolledConvRef.current !== selectedConv?.id;
     const countIncreased = messages.length > messageCountRef.current;
     messageCountRef.current = messages.length;
 
     if (convChanged) {
       lastScrolledConvRef.current = selectedConv?.id ?? null;
-      // Immediate scroll when switching conversations
       messagesEndRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
     } else if (countIncreased) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -341,6 +359,32 @@ const WhatsAppInbox = () => {
       }
     }, 700);
   }, [fetchConversations]);
+
+  // ── Load older messages (pagination) ──
+  const loadOlderMessages = useCallback(async () => {
+    if (!selectedConv || !oldestMessageAtRef.current || loadingOlderMsgs) return;
+    setLoadingOlderMsgs(true);
+    try {
+      const older = await queryMessagesBefore(selectedConv.id, oldestMessageAtRef.current, 40);
+      if (older.length === 0) {
+        setHasMoreMessages(false);
+        return;
+      }
+      prependingOlderRef.current = true;
+      setMessages((prev) => {
+        // Deduplicate: older messages may overlap with what's already loaded
+        const existingIds = new Set(prev.map((m) => m.message_id || m.id));
+        const newOnes = older.filter((m) => !existingIds.has(m.message_id || m.id));
+        return [...newOnes, ...prev];
+      });
+      oldestMessageAtRef.current = older[0]?.created_at || null;
+      setHasMoreMessages(older.length >= 40);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingOlderMsgs(false);
+    }
+  }, [selectedConv, loadingOlderMsgs]);
 
   // ── Realtime: conversations (silent refresh, debounced) ──
   useEffect(() => {
@@ -619,17 +663,16 @@ const WhatsAppInbox = () => {
 
     const prioritized = [
       ...(selectedConv ? [selectedConv] : []),
-      ...conversations.slice(0, 24).filter((conversation) => conversation.id !== selectedConv?.id),
+      ...conversations.slice(0, 40).filter((conversation) => conversation.id !== selectedConv?.id),
     ];
 
-    const queue = prioritized
-      .filter(
-        (conversation) =>
-          !profilePics[conversation.remote_jid] &&
-          !pendingProfileFetchesRef.current.has(conversation.remote_jid) &&
-          !profilePicsResolvedRef.current.has(conversation.remote_jid)
-      )
-      .slice(0, 12);
+    // profilePicsResolvedRef tracks all attempted JIDs; pendingProfileFetchesRef tracks in-flight ones
+    // No need to check profilePics state — refs are sufficient and avoid infinite dep loops
+    const queue = prioritized.filter(
+      (conversation) =>
+        !pendingProfileFetchesRef.current.has(conversation.remote_jid) &&
+        !profilePicsResolvedRef.current.has(conversation.remote_jid)
+    );
 
     if (queue.length === 0) return;
 
@@ -637,7 +680,7 @@ const WhatsAppInbox = () => {
     queue.forEach((conversation) => pendingProfileFetchesRef.current.add(conversation.remote_jid));
 
     const fetchBatch = async () => {
-      const chunkSize = 4;
+      const chunkSize = 6;
 
       for (let i = 0; i < queue.length; i += chunkSize) {
         if (cancelled) return;
@@ -687,8 +730,6 @@ const WhatsAppInbox = () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  // profilePics intentionally excluded: profilePicsResolvedRef tracks what's already fetched
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profilePictureSupported, selectedInstanceId, conversations, instances, selectedConv?.id, getProfilePicture]);
 
   // ── Fetch group info when selecting a group conversation ──
@@ -1340,6 +1381,25 @@ const WhatsAppInbox = () => {
                       </div>
                     ) : (
                       <div className="space-y-1.5">
+                        {/* Load older messages button */}
+                        {hasMoreMessages && (
+                          <div className="flex justify-center pb-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1.5 text-xs"
+                              onClick={loadOlderMessages}
+                              disabled={loadingOlderMsgs}
+                            >
+                              {loadingOlderMsgs ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3 rotate-180" />
+                              )}
+                              {loadingOlderMsgs ? "Carregando…" : "Carregar mensagens anteriores"}
+                            </Button>
+                          </div>
+                        )}
                         {(() => {
                           const filtered = messages.filter((msg) => {
                             if (msg.media_type === "reaction") return false;
