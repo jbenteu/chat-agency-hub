@@ -547,8 +547,7 @@ Deno.serve(async (req) => {
                   stage: "lead",
                   status: "open",
                 })
-                .then(() => {})
-                .catch(console.error);
+                .then(() => {}, console.error);
             }
           }
 
