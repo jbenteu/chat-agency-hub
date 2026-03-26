@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Reply, Copy, Smile, Trash2, Plus } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Reply, Copy, Trash2, Plus, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { EmojiPicker } from "./EmojiPicker";
 
 interface MessageContextMenuProps {
   children: React.ReactNode;
@@ -97,9 +97,6 @@ export function MessageContextMenu({
 }
 
 /* Inline emoji grid (not using the Popover-based EmojiPicker component to avoid nested popovers) */
-import { useMemo, useCallback } from "react";
-import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
 
 const EMOJI_CATEGORIES: { label: string; emojis: string[] }[] = [
   { label: "Frequentes", emojis: ["😂", "❤️", "👍", "🔥", "😍", "🙏", "😊", "😭", "🥰", "😘", "💕", "🤣", "😁", "👏", "🎉", "💯"] },

@@ -900,6 +900,7 @@ export type Database = {
           muted_until: string | null
           pinned: boolean
           profile_picture_url: string | null
+          push_name: string | null
           remote_jid: string
           status: string | null
           tenant_id: string
@@ -922,6 +923,7 @@ export type Database = {
           muted_until?: string | null
           pinned?: boolean
           profile_picture_url?: string | null
+          push_name?: string | null
           remote_jid: string
           status?: string | null
           tenant_id: string
@@ -944,6 +946,7 @@ export type Database = {
           muted_until?: string | null
           pinned?: boolean
           profile_picture_url?: string | null
+          push_name?: string | null
           remote_jid?: string
           status?: string | null
           tenant_id?: string
