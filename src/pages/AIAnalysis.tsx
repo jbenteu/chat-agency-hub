@@ -131,7 +131,7 @@ interface ChatMessage {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const AIAnalysis: React.FC = () => {
-  const { getDashboard, generateScript, askAI, getInsights, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, analyzeAllConversations } = useAIAnalysis();
+  const { getDashboard, generateScript, askAI, getInsights, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, analyzeAllConversations, processQueue } = useAIAnalysis();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -147,6 +147,8 @@ const AIAnalysis: React.FC = () => {
   // Analysis coverage monitor
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [bgProcessing, setBgProcessing] = useState(false);
+  const processIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Insights
   const [insights, setInsights] = useState<AIInsight[]>([]);
@@ -294,10 +296,62 @@ const AIAnalysis: React.FC = () => {
     }
   };
 
+  // ── Background queue processor ───────────────────────────────────────────
+  const runProcessQueue = useRef<(instId: string | null) => Promise<void>>();
+  runProcessQueue.current = async (instId: string | null) => {
+    if (bgProcessing) return;
+    setBgProcessing(true);
+    try {
+      let remaining = Infinity;
+      let rounds = 0;
+      while (remaining > 0 && rounds < 10) {
+        const result = await processQueue(instId, 4);
+        remaining = result.remaining ?? 0;
+        rounds++;
+        if (result.processed > 0) {
+          // Refresh status and dashboard after each batch
+          loadAnalysisStatus(instId);
+          if (rounds === 1 || remaining === 0) loadDashboard(true);
+        }
+        if (remaining > 0) {
+          // Small pause between batches to avoid overwhelming the API
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+    } catch { /* silent — will retry on next interval */ }
+    finally { setBgProcessing(false); }
+  };
+
   useEffect(() => {
     loadInstances();
     loadDashboard();
     loadAnalysisStatus(null);
+
+    // Auto-process queue on mount
+    runProcessQueue.current?.(null);
+
+    // Re-run every 5 minutes
+    processIntervalRef.current = setInterval(() => {
+      runProcessQueue.current?.(null);
+    }, 5 * 60 * 1000);
+
+    // Subscribe to realtime ai_conversation_analysis updates
+    const channel = supabase
+      .channel("ai_analysis_rt")
+      .on(
+        "postgres_changes" as any,
+        { event: "*", schema: "public", table: "ai_conversation_analysis" },
+        () => {
+          loadAnalysisStatus(null);
+          loadDashboard(true);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (processIntervalRef.current) clearInterval(processIntervalRef.current);
+    };
   }, []);
 
   // Reload everything when instance changes
@@ -311,6 +365,8 @@ const AIAnalysis: React.FC = () => {
     setScoresData([]);
     loadDashboard();
     loadAnalysisStatus(selectedInstanceId);
+    // Re-process queue for the selected instance
+    runProcessQueue.current?.(selectedInstanceId);
   }, [selectedInstanceId]);
 
   const handleTabChange = (value: string) => {
@@ -495,19 +551,17 @@ const AIAnalysis: React.FC = () => {
                   />
                 </div>
                 {analysisStatus.coverage_pct < 100 ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleAnalyzeAll}
-                    disabled={analyzing}
-                    className="shrink-0 text-primary hover:text-primary/80 h-6 px-2 text-[11px] font-medium"
-                  >
-                    {analyzing ? (
-                      <><Loader2 size={12} className="animate-spin mr-1" />Analisando...</>
-                    ) : (
-                      <><PlayCircle size={12} className="mr-1" />Analisar</>
-                    )}
-                  </Button>
+                  bgProcessing ? (
+                    <span className="flex items-center gap-1 text-[11px] text-violet-600 font-medium shrink-0">
+                      <Loader2 size={12} className="animate-spin" />
+                      Analisando...
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0">
+                      <Sparkles size={12} />
+                      IA ativa
+                    </span>
+                  )
                 ) : (
                   <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium shrink-0">
                     <CheckCircle2 size={12} />

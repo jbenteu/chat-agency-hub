@@ -120,6 +120,20 @@ Deno.serve(async (req) => {
     return query.in("conversation_id", convIds);
   };
 
+  // Extracts JSON from Anthropic response text — handles markdown code blocks
+  const extractJson = (text: string): Record<string, unknown> => {
+    const clean = text.trim()
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```\s*$/, "")
+      .trim();
+    // Try clean first, then try to extract first { ... } block
+    try { return JSON.parse(clean); } catch { /* fall through */ }
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error("No valid JSON found");
+  };
+
   // ─── Anthropic helper ──────────────────────────────────────────────────────
   const callAnthropic = async (
     model: string,
@@ -224,8 +238,7 @@ ${transcript}`;
 
       let analysis: Record<string, unknown>;
       try {
-        const rawText = data.content[0].text;
-        analysis = JSON.parse(rawText);
+        analysis = extractJson(data.content[0].text);
       } catch {
         return jsonResponse({ error: "Failed to parse AI response as JSON" }, 422);
       }
@@ -274,6 +287,228 @@ ${transcript}`;
         .eq("tenant_id", tenantId);
 
       return jsonResponse({ success: true, analysis });
+    }
+
+    // ─── process_queue ────────────────────────────────────────────────────
+    if (action === "process_queue") {
+      const instanceId = (payload.instance_id as string | undefined) || null;
+      const limit = Math.min((payload.limit as number | undefined) || 2, 4);
+
+      // Helper: analyze a single conversation and save result
+      const analyzeOne = async (conversationId: string): Promise<boolean> => {
+        try {
+          // Skip if already has a recent analysis (< 1 hour old) to avoid redundant Anthropic calls
+          const { data: existing } = await supabaseAdmin
+            .from("ai_conversation_analysis")
+            .select("analyzed_at")
+            .eq("conversation_id", conversationId)
+            .maybeSingle();
+          if (existing?.analyzed_at) {
+            const ageMs = Date.now() - new Date(existing.analyzed_at).getTime();
+            if (ageMs < 3600000) return true; // already fresh — skip
+          }
+
+          const { data: messages } = await supabaseAdmin
+            .from("whatsapp_messages")
+            .select("direction, content, created_at")
+            .eq("tenant_id", tenantId!)
+            .eq("conversation_id", conversationId)
+            .order("created_at", { ascending: true })
+            .limit(60);
+
+          if (!messages || messages.length === 0) return false;
+
+          const lastInbound = [...messages].reverse().find((m: { direction: string }) => m.direction === "inbound");
+          const horasSemResposta = lastInbound
+            ? (Date.now() - new Date((lastInbound as { created_at: string }).created_at).getTime()) / 3600000
+            : 0;
+
+          const transcript = messages
+            .map((m: { direction: string; content: string | null }) =>
+              `${m.direction === "outbound" ? "Atendente" : "Cliente"}: ${m.content || "[mídia]"}`)
+            .join("\n");
+
+          const aiData = await callAnthropic(
+            "claude-haiku-4-5-20251001",
+            600,
+            "Você analisa conversas de WhatsApp de joalherias. Responda APENAS com JSON válido, sem texto extra, sem markdown.",
+            `Analise esta conversa de joalheria e retorne JSON com exatamente estas chaves:
+{"sentimento":"positivo"|"neutro"|"frustrado","produto_interesse":string|null,"objecao_detectada":string|null,"score_qualidade":1-10,"score_empatia":1-10,"score_clareza":1-10,"score_velocidade":1-10,"score_followup":1-10,"score_contorno_objecao":1-10,"score_cta":1-10,"score_personalizacao":1-10,"status_lead":"quente"|"morno"|"frio"|"perdido","resumo":string}
+Velocidade baseada em ${horasSemResposta.toFixed(1)}h sem resposta.
+Conversa (${messages.length} msgs):\n${transcript}`,
+          );
+
+          let analysis: Record<string, unknown>;
+          try { analysis = extractJson(aiData.content[0].text); } catch (e) {
+            console.error("[analyzeOne] JSON parse error:", e, "raw:", aiData.content?.[0]?.text?.substring(0, 200));
+            return false;
+          }
+
+          const analysisRecord = {
+            conversation_id: conversationId,
+            tenant_id: tenantId!,
+            sentimento: analysis.sentimento,
+            produto_interesse: analysis.produto_interesse,
+            objecao_detectada: analysis.objecao_detectada,
+            score_qualidade: analysis.score_qualidade,
+            score_empatia: analysis.score_empatia,
+            score_clareza: analysis.score_clareza,
+            score_velocidade: analysis.score_velocidade,
+            score_followup: analysis.score_followup,
+            score_contorno_objecao: analysis.score_contorno_objecao,
+            score_cta: analysis.score_cta,
+            score_personalizacao: analysis.score_personalizacao,
+            status_lead: analysis.status_lead,
+            resumo: analysis.resumo,
+            horas_sem_resposta: Math.round(horasSemResposta * 10) / 10,
+            analyzed_at: new Date().toISOString(),
+          };
+
+          if (existing) {
+            // Row exists — UPDATE
+            const { error: updateErr } = await supabaseAdmin
+              .from("ai_conversation_analysis")
+              .update(analysisRecord)
+              .eq("conversation_id", conversationId)
+              .eq("tenant_id", tenantId!);
+            if (updateErr) {
+              console.error("[analyzeOne] update error:", updateErr.message);
+              return false;
+            }
+          } else {
+            // No row — INSERT
+            const { error: insertErr } = await supabaseAdmin
+              .from("ai_conversation_analysis")
+              .insert(analysisRecord);
+            if (insertErr) {
+              // Could be a race (another process inserted) — try update as fallback
+              const { error: fallbackErr } = await supabaseAdmin
+                .from("ai_conversation_analysis")
+                .update(analysisRecord)
+                .eq("conversation_id", conversationId)
+                .eq("tenant_id", tenantId!);
+              if (fallbackErr) {
+                console.error("[analyzeOne] insert+fallback error:", insertErr.message, fallbackErr.message);
+                return false;
+              }
+            }
+          }
+          return true;
+        } catch (e) {
+          console.error("[analyzeOne] error:", e);
+          return false;
+        }
+      };
+
+      // Reset "processing" items (abandoned) and "error" items (retry) back to pending.
+      await supabaseAdmin.from("ai_analysis_queue")
+        .update({ status: "pending" })
+        .eq("tenant_id", tenantId!)
+        .in("status", ["processing", "error"]);
+
+      // Get pending queue items for this tenant (optionally filtered by instance)
+      let queueQuery = supabaseAdmin
+        .from("ai_analysis_queue")
+        .select("id, conversation_id")
+        .eq("tenant_id", tenantId!)
+        .eq("status", "pending")
+        .order("created_at", { ascending: true })
+        .limit(limit * 2); // fetch extra to account for instance filter
+
+      const { data: queueItems } = await queueQuery;
+
+      if (!queueItems || queueItems.length === 0) {
+        // Queue empty — find unanalyzed conversations and queue them
+        let convQuery = supabaseAdmin
+          .from("whatsapp_conversations")
+          .select("id")
+          .eq("tenant_id", tenantId!)
+          .order("last_message_at", { ascending: false })
+          .limit(50);
+        if (instanceId) convQuery = convQuery.eq("instance_id", instanceId);
+
+        const { data: allConvs } = await convQuery;
+        if (!allConvs || allConvs.length === 0) {
+          return jsonResponse({ processed: 0, remaining: 0 });
+        }
+
+        // Find which ones have no analysis
+        const { data: existingAnalyses } = await supabaseAdmin
+          .from("ai_conversation_analysis")
+          .select("conversation_id")
+          .eq("tenant_id", tenantId!)
+          .in("conversation_id", allConvs.map((c: { id: string }) => c.id));
+
+        const analyzedSet = new Set((existingAnalyses || []).map((a: { conversation_id: string }) => a.conversation_id));
+        const toQueue = allConvs
+          .filter((c: { id: string }) => !analyzedSet.has(c.id))
+          .slice(0, limit);
+
+        if (toQueue.length === 0) return jsonResponse({ processed: 0, remaining: 0 });
+
+        // Insert to queue
+        await supabaseAdmin.from("ai_analysis_queue").upsert(
+          toQueue.map((c: { id: string }) => ({
+            conversation_id: c.id,
+            tenant_id: tenantId!,
+            status: "pending",
+            priority: "normal",
+          })),
+          { onConflict: "conversation_id" }
+        );
+
+        // Process immediately
+        let processed = 0;
+        for (const conv of toQueue.slice(0, limit)) {
+          const ok = await analyzeOne(conv.id);
+          await supabaseAdmin.from("ai_analysis_queue").update({ status: ok ? "done" : "error" }).eq("conversation_id", conv.id);
+          if (ok) processed++;
+        }
+
+        if (processed > 0) {
+          await supabaseAdmin.from("ai_dashboard_cache").delete().eq("tenant_id", tenantId!);
+        }
+
+        // Count remaining unanalyzed in the full set
+        const remaining = allConvs.filter((c: { id: string }) => !analyzedSet.has(c.id)).length - processed;
+        return jsonResponse({ processed, remaining: Math.max(0, remaining) });
+      }
+
+      // Filter by instance if needed
+      let filteredItems = queueItems;
+      if (instanceId) {
+        const filterConvIds = await getInstanceConvIds(instanceId);
+        if (filterConvIds !== null) {
+          const filterSet = new Set(filterConvIds);
+          filteredItems = queueItems.filter((item: { conversation_id: string }) => filterSet.has(item.conversation_id));
+        }
+      }
+      filteredItems = filteredItems.slice(0, limit);
+
+      let processed = 0;
+      for (const item of filteredItems) {
+        // Mark as processing to prevent double-processing
+        await supabaseAdmin.from("ai_analysis_queue").update({ status: "processing" }).eq("id", item.id);
+
+        const ok = await analyzeOne(item.conversation_id as string);
+        await supabaseAdmin.from("ai_analysis_queue")
+          .update({ status: ok ? "done" : "error" })
+          .eq("id", item.id);
+        if (ok) processed++;
+      }
+
+      // Get remaining count
+      const { count: remaining } = await supabaseAdmin
+        .from("ai_analysis_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId!)
+        .eq("status", "pending");
+
+      if (processed > 0) {
+        await supabaseAdmin.from("ai_dashboard_cache").delete().eq("tenant_id", tenantId!);
+      }
+
+      return jsonResponse({ processed, remaining: remaining ?? 0 });
     }
 
     // ─── Helper: build dashboard context ─────────────────────────────────
@@ -491,7 +726,7 @@ Conversa (${messages.length} msgs):\n${transcript}`,
 
           let analysis: Record<string, unknown>;
           try {
-            analysis = JSON.parse(aiData.content[0].text);
+            analysis = extractJson(aiData.content[0].text);
           } catch {
             continue;
           }

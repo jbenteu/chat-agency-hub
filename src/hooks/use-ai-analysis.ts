@@ -158,6 +158,9 @@ export function useAIAnalysis() {
   const analyzeAllConversations = (instanceId?: string | null): Promise<{ analyzed: number; total_queued: number; errors: number; message: string }> =>
     invokeAI("analyze_all_conversations", { instance_id: instanceId ?? null, limit: 20 });
 
+  const processQueue = (instanceId?: string | null, limit = 2): Promise<{ processed: number; remaining: number }> =>
+    invokeAI("process_queue", { instance_id: instanceId ?? null, limit });
+
   const getConversationAnalysis = async (conversationId: string): Promise<AIConversationAnalysis | null> => {
     const { data, error } = await supabase
       .from("ai_conversation_analysis" as any)
@@ -179,6 +182,7 @@ export function useAIAnalysis() {
     listInstances,
     getAnalysisStatus,
     analyzeAllConversations,
+    processQueue,
     getConversationAnalysis,
   };
 }
