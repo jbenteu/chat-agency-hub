@@ -283,7 +283,7 @@ ${transcript}`;
 
       // Base conversation query with optional instance filter
       const convBase = () => {
-        let q = supabaseAdmin.from("whatsapp_conversations").eq("tenant_id", tenantId!);
+        let q = supabaseAdmin.from("whatsapp_conversations").select("*", { count: "exact", head: true }).eq("tenant_id", tenantId!);
         if (instanceId) q = q.eq("instance_id", instanceId);
         return q;
       };
