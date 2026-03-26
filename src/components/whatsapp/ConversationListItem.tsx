@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Users, Pin, ImageIcon, Mic, Video, FileText, MapPin, Sticker } from "lucide-react";
@@ -73,7 +74,7 @@ function getMediaPreviewIcon(content: string | null) {
 
 const isGroupJid = (jid: string) => jid.endsWith("@g.us");
 
-export function ConversationListItem({
+export const ConversationListItem = memo(function ConversationListItem({
   conversation: c, isSelected, profilePicUrl, isTyping, onClick, formatTime,
 }: ConversationListItemProps) {
   const lastMsg = isHiddenMessage(c.last_message) ? null : c.last_message;
@@ -128,4 +129,4 @@ export function ConversationListItem({
       </div>
     </button>
   );
-}
+});

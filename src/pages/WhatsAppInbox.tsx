@@ -144,6 +144,8 @@ const WhatsAppInbox = () => {
   const conversationsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const conversationsRefreshInFlightRef = useRef(false);
   const lastMessageAtRef = useRef<string | null>(null);
+  const messageCountRef = useRef(0);
+  const lastScrolledConvRef = useRef<string | null>(null);
 
   const isSending = sendingCount > 0;
 
@@ -309,7 +311,20 @@ const WhatsAppInbox = () => {
     markConversationRead(selectedConv.id).catch(() => {});
   }, [selectedConv?.id]);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  // Scroll to bottom only when: conversation first opens, or new messages arrive (not status updates)
+  useEffect(() => {
+    const convChanged = lastScrolledConvRef.current !== selectedConv?.id;
+    const countIncreased = messages.length > messageCountRef.current;
+    messageCountRef.current = messages.length;
+
+    if (convChanged) {
+      lastScrolledConvRef.current = selectedConv?.id ?? null;
+      // Immediate scroll when switching conversations
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
+    } else if (countIncreased) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, selectedConv?.id]);
 
   const scheduleSilentConversationsRefresh = useCallback(() => {
     if (conversationsRefreshTimerRef.current) return;
@@ -357,7 +372,7 @@ const WhatsAppInbox = () => {
 
     const convId = selectedConv.id;
     let cancelled = false;
-    let pollDelay = 2500;
+    let pollDelay = 8000;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
     const mergeNewMessages = (incoming: WhatsAppMessage[]) => {
@@ -471,9 +486,9 @@ const WhatsAppInbox = () => {
           : await queryMessagesSince(convId, since, 150);
 
         const hasChanges = mergeNewMessages(delta);
-        pollDelay = hasChanges ? 1500 : Math.min(pollDelay + 800, 8000);
+        pollDelay = hasChanges ? 5000 : Math.min(pollDelay + 2000, 20000);
       } catch {
-        pollDelay = Math.min(pollDelay + 1500, 10000);
+        pollDelay = Math.min(pollDelay + 3000, 20000);
       } finally {
         if (!cancelled) {
           pollTimer = setTimeout(pollForMissedMessages, pollDelay);
@@ -488,7 +503,7 @@ const WhatsAppInbox = () => {
         { event: "INSERT", schema: "public", table: "whatsapp_messages", filter: `conversation_id=eq.${convId}` },
         (payload) => {
           mergeNewMessages([payload.new as WhatsAppMessage]);
-          pollDelay = 1800;
+          pollDelay = 8000;
         }
       )
       .on(
@@ -672,7 +687,9 @@ const WhatsAppInbox = () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [profilePictureSupported, selectedInstanceId, conversations, instances, profilePics, selectedConv?.id, getProfilePicture]);
+  // profilePics intentionally excluded: profilePicsResolvedRef tracks what's already fetched
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profilePictureSupported, selectedInstanceId, conversations, instances, selectedConv?.id, getProfilePicture]);
 
   // ── Fetch group info when selecting a group conversation ──
   useEffect(() => {
@@ -1375,7 +1392,7 @@ const WhatsAppInbox = () => {
                             const onReplyClick = () => setReplyTarget({ messageId: msg.message_id || msg.id, content: msg.content || "[Mídia]", senderName: senderName || (isOutbound ? "Você" : selectedConv.contact_name || "") });
 
                             const bubbleContent = (
-                              <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group/msg flex animate-fade-in ${isOutbound ? "justify-end" : "justify-start"}`}>
+                              <div key={msg.id} data-message-id={msg.message_id || msg.id} className={`group/msg flex ${isOutbound ? "justify-end" : "justify-start"}`}>
                                 {isGrp && !isOutbound && (
                                   <Avatar className="mr-2 mt-1 h-7 w-7 shrink-0">
                                     {senderPhone && profilePics[`${senderPhone}@s.whatsapp.net`] && <AvatarImage src={profilePics[`${senderPhone}@s.whatsapp.net`]} />}

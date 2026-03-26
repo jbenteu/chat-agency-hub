@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { memo, useState, useRef } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,7 @@ function getInitials(name: string | null) {
   return name.split(" ").map((p) => p[0]).join("").substring(0, 2).toUpperCase();
 }
 
-export function ChatHeader({
+export const ChatHeader = memo(function ChatHeader({
   conversation, profilePicUrl, groupInfo, isTyping, showContactPanel,
   onToggleContactPanel, onRename, onArchive, onPin, onSearchClick, onAnalyze, analyzing,
 }: ChatHeaderProps) {
@@ -151,4 +151,4 @@ export function ChatHeader({
       </div>
     </div>
   );
-}
+});
