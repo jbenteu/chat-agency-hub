@@ -89,9 +89,10 @@ export const ConversationListItem = memo(function ConversationListItem({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 overflow-hidden max-w-full ${
+      className={`flex w-full items-start gap-2.5 border-b border-border/50 px-3 py-2.5 text-left transition-colors hover:bg-muted/50 ${
         isSelected ? "bg-muted" : ""
       }`}
+      style={{ minWidth: 0 }}
     >
       <Avatar className="h-9 w-9 shrink-0">
         {profilePicUrl && <AvatarImage src={profilePicUrl} alt={c.contact_name || ""} />}
@@ -101,8 +102,8 @@ export const ConversationListItem = memo(function ConversationListItem({
           )}
         </AvatarFallback>
       </Avatar>
-      <div className="flex-1 min-w-0 overflow-hidden">
-        <div className="flex items-center justify-between gap-1">
+      <div className="flex-1 overflow-hidden" style={{ minWidth: 0 }}>
+        <div className="flex items-center gap-1">
           <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
             {c.pinned && <Pin className="h-3 w-3 shrink-0 text-muted-foreground rotate-45" />}
             <p className="truncate text-sm font-medium leading-tight">{displayName}</p>
@@ -111,9 +112,9 @@ export const ConversationListItem = memo(function ConversationListItem({
             {formatTime(c.last_message_at)}
           </span>
         </div>
-        <div className="mt-0.5 flex items-center justify-between gap-1 overflow-hidden">
+        <div className="mt-0.5 flex items-center gap-1">
           {isTyping ? (
-            <p className="text-xs text-primary italic animate-pulse truncate">digitando...</p>
+            <p className="text-xs text-primary italic animate-pulse truncate flex-1 min-w-0">digitando...</p>
           ) : (
             <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
               {mediaIcon}

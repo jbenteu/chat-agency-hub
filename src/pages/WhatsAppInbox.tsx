@@ -323,6 +323,8 @@ const WhatsAppInbox = () => {
 
   useEffect(() => {
     if (!selectedConv?.id) return;
+    // Update local state immediately to show badge removal
+    setConversations((prev) => prev.map((c) => c.id === selectedConv.id ? { ...c, unread_count: 0 } : c));
     markConversationRead(selectedConv.id).catch(() => {});
   }, [selectedConv?.id]);
 

@@ -74,11 +74,11 @@ export function InfoPanel({
     load();
   }, [conversation.contact_id, isGroup, getContact]);
 
-  // Shared media
+  // Shared media — include messages with media_type even if media_url not yet resolved
   const sharedMedia = messages.filter(
-    (m) => m.media_type && ["image", "video", "sticker"].includes(m.media_type) && m.media_url
+    (m) => m.media_type && ["image", "video", "sticker"].includes(m.media_type)
   );
-  const sharedDocs = messages.filter((m) => m.media_type === "document" && m.media_url);
+  const sharedDocs = messages.filter((m) => m.media_type === "document");
 
   const getInitials = (name: string | null) => {
     if (!name) return "?";
