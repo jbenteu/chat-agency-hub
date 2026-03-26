@@ -1179,10 +1179,8 @@ Deno.serve(async (req) => {
         {
           method: "POST",
           body: JSON.stringify({
-            reactionMessage: {
-              key: { remoteJid, id: messageId },
-              reaction: reaction || "",
-            },
+            key: { remoteJid, id: messageId, fromMe: false },
+            reaction: reaction || "",
           }),
         },
         "send_reaction",
