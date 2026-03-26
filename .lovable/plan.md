@@ -1,45 +1,30 @@
 
 
-## Implementar Upload de Foto de Perfil
+## Plano: Limpeza de dados do CRM
 
-### Situacao Atual
-O botao "Alterar foto" em `/configuracoes` esta desabilitado (`disabled`). Nao existe bucket de Storage nem logica de upload.
+Preservar apenas o administrador `operacional@advanced-mkt.com.br` e remover todos os outros usuários e registros de instâncias.
 
-### Plano
+### Ordem de execução (respeitando foreign keys)
 
-**1. Criar bucket `avatars` no Supabase Storage (migration SQL)**
-- Bucket publico para leitura
-- RLS: usuarios autenticados podem fazer upload/update/delete apenas no proprio path (`{user_id}/`)
+1. **Identificar o admin** — consultar `profiles` e `auth.users` para confirmar o UUID do admin
+2. **Deletar dados dependentes** (na ordem correta):
+   - `whatsapp_messages` — todas as mensagens de tenants que não pertencem ao admin
+   - `whatsapp_conversations` — todas as conversas
+   - `conversation_ai_analysis`, `ai_conversation_analysis`, `ai_analysis_queue`, `ai_dashboard_cache`
+   - `activities`, `tasks`, `deals`, `contacts`
+   - `quick_replies`, `tags`, `pipeline_stages`
+   - `tenant_assignments` — exceto as do admin
+   - `user_relationships` — exceto as do admin
+   - `import_progress`
+3. **Deletar instâncias WhatsApp** — todas de tenants de outros usuários
+4. **Deletar user_roles** — de todos os usuários exceto o admin
+5. **Deletar profiles** — de todos exceto o admin
+6. **Deletar tenants** — de todos os outros usuários
+7. **Deletar usuários do auth.users** — via Edge Function com service_role (não é possível via SQL direto)
 
-```sql
-INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true);
+### Detalhes técnicos
 
-CREATE POLICY "Users can upload own avatar"
-ON storage.objects FOR INSERT TO authenticated
-WITH CHECK (bucket_id = 'avatars' AND (storage.foldername(name))[1] = auth.uid()::text);
-
-CREATE POLICY "Users can update own avatar"
-ON storage.objects FOR UPDATE TO authenticated
-USING (bucket_id = 'avatars' AND (storage.foldername(name))[1] = auth.uid()::text);
-
-CREATE POLICY "Users can delete own avatar"
-ON storage.objects FOR DELETE TO authenticated
-USING (bucket_id = 'avatars' AND (storage.foldername(name))[1] = auth.uid()::text);
-
-CREATE POLICY "Public avatar read"
-ON storage.objects FOR SELECT TO public
-USING (bucket_id = 'avatars');
-```
-
-**2. Atualizar `Settings.tsx`**
-- Habilitar o botao "Alterar foto"
-- Adicionar `<input type="file" accept="image/*">` oculto, acionado pelo botao
-- Preview da imagem antes de salvar
-- Ao salvar: upload para `avatars/{user_id}/profile.{ext}` via Supabase Storage SDK
-- Atualizar `profiles.avatar_url` com a URL publica
-- Chamar `refreshProfile()` para atualizar o avatar no sidebar
-
-**3. Arquivos afetados**
-- Nova migration SQL (bucket + policies)
-- `src/pages/Settings.tsx` (logica de upload e preview)
+- As deleções serão feitas via `psql` (INSERT tool tem acesso a DELETE) e uma Edge Function temporária para remover usuários de `auth.users`
+- Todas as queries filtrarão com `WHERE user_id != '<admin_uuid>'` ou `WHERE tenant_id NOT IN (select tenant do admin)`
+- O admin e seu tenant, roles, profile e instâncias serão preservados integralmente
 
