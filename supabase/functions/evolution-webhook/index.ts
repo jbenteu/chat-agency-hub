@@ -717,8 +717,7 @@ Deno.serve(async (req) => {
             priority: 'high',
             status: 'pending',
           }, { onConflict: 'conversation_id', ignoreDuplicates: false })
-          .then(() => {})
-          .catch(() => {});
+          .then(() => {}, () => {});
         }
 
         processed++;
