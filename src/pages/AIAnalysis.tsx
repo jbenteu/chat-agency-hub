@@ -472,53 +472,46 @@ const AIAnalysis: React.FC = () => {
 
             {/* Analysis coverage bar */}
             {analysisStatus && (
-              <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-medium text-foreground">
-                      Cobertura de análise
-                      {selectedInstanceId && instances.find(i => i.id === selectedInstanceId) && (
-                        <span className="text-muted-foreground font-normal ml-1">
-                          — {instances.find(i => i.id === selectedInstanceId)?.display_name || instances.find(i => i.id === selectedInstanceId)?.instance_name}
-                        </span>
-                      )}
+              <div className="flex items-center gap-2.5 bg-muted/40 border border-border rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`size-2 rounded-full shrink-0 ${
+                    analysisStatus.coverage_pct >= 80 ? "bg-emerald-500" :
+                    analysisStatus.coverage_pct >= 40 ? "bg-amber-500" : "bg-red-500"
+                  }`} />
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                    <span className="font-medium text-foreground">{analysisStatus.analyzed_conversations}/{analysisStatus.total_conversations}</span> analisadas
+                    <span className="ml-1 font-medium" style={{ color: analysisStatus.coverage_pct >= 80 ? 'var(--success, #10b981)' : analysisStatus.coverage_pct >= 40 ? '#d97706' : '#ef4444' }}>
+                      ({analysisStatus.coverage_pct}%)
                     </span>
-                    <span className={`text-xs font-bold ${
-                      analysisStatus.coverage_pct >= 80 ? "text-emerald-600" :
-                      analysisStatus.coverage_pct >= 40 ? "text-amber-600" : "text-red-600"
-                    }`}>
-                      {analysisStatus.analyzed_conversations}/{analysisStatus.total_conversations} conversas ({analysisStatus.coverage_pct}%)
-                    </span>
-                  </div>
-                  <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-700 ${
-                        analysisStatus.coverage_pct >= 80 ? "bg-emerald-500" :
-                        analysisStatus.coverage_pct >= 40 ? "bg-amber-500" : "bg-red-500"
-                      }`}
-                      style={{ width: `${analysisStatus.coverage_pct}%` }}
-                    />
-                  </div>
+                  </span>
                 </div>
-                {analysisStatus.coverage_pct < 100 && (
+                <div className="h-1.5 w-20 bg-muted rounded-full overflow-hidden shrink-0">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${
+                      analysisStatus.coverage_pct >= 80 ? "bg-emerald-500" :
+                      analysisStatus.coverage_pct >= 40 ? "bg-amber-500" : "bg-red-500"
+                    }`}
+                    style={{ width: `${analysisStatus.coverage_pct}%` }}
+                  />
+                </div>
+                {analysisStatus.coverage_pct < 100 ? (
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
                     onClick={handleAnalyzeAll}
                     disabled={analyzing}
-                    className="shrink-0 border-violet-200 text-violet-600 hover:bg-violet-50 text-xs"
+                    className="shrink-0 text-primary hover:text-primary/80 h-6 px-2 text-[11px] font-medium"
                   >
                     {analyzing ? (
-                      <><Loader2 size={13} className="animate-spin mr-1.5" />Analisando...</>
+                      <><Loader2 size={12} className="animate-spin mr-1" />Analisando...</>
                     ) : (
-                      <><PlayCircle size={13} className="mr-1.5" />Analisar conversas</>
+                      <><PlayCircle size={12} className="mr-1" />Analisar</>
                     )}
                   </Button>
-                )}
-                {analysisStatus.coverage_pct === 100 && (
-                  <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium shrink-0">
-                    <CheckCircle2 size={14} />
-                    Todas analisadas
+                ) : (
+                  <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium shrink-0">
+                    <CheckCircle2 size={12} />
+                    Completo
                   </span>
                 )}
               </div>
