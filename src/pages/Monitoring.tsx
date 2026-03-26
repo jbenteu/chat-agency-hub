@@ -196,13 +196,27 @@ const Monitoring: React.FC = () => {
         }
         setTeamMembers(members);
 
-        // Load all accessible tenants
-        const { data: tenants } = await supabase
-          .from("tenants")
-          .select("id, name")
-          .order("name");
-        setAllClients((tenants || []).map(t => ({ id: t.id, name: t.name })));
-        setClients((tenants || []).map(t => ({ id: t.id, name: t.name })));
+        // Load accessible tenants based on role
+        let tenantList: { id: string; name: string }[] = [];
+        if (isSuperAdmin || profile?.role === "admin" || profile?.role === "gerente") {
+          const { data: tenants } = await supabase
+            .from("tenants")
+            .select("id, name")
+            .order("name");
+          tenantList = (tenants || []).map(t => ({ id: t.id, name: t.name }));
+        } else {
+          // Gestors/CS only see their assigned tenants
+          const { data: assignments } = await supabase
+            .from("tenant_assignments")
+            .select("tenant_id, tenants(id, name)")
+            .eq("manager_id", profile?.id || "");
+          tenantList = (assignments || [])
+            .map((a: any) => a.tenants as { id: string; name: string })
+            .filter(Boolean);
+          tenantList.sort((a, b) => a.name.localeCompare(b.name));
+        }
+        setAllClients(tenantList);
+        setClients(tenantList);
       } catch (err) {
         console.error("Error loading filters:", err);
       }

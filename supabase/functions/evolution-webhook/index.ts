@@ -490,7 +490,7 @@ Deno.serve(async (req) => {
         const [{ data: conversation }, { data: contactByPhone }] = await Promise.all([
           supabase
             .from("whatsapp_conversations")
-            .select("id, contact_id, contact_name, unread_count")
+            .select("id, contact_id, contact_name, unread_count, push_name")
             .eq("tenant_id", tenantId)
             .eq("instance_id", instanceId)
             .eq("remote_jid", remoteJid)
