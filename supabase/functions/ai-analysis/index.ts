@@ -380,24 +380,42 @@ ${transcript}`;
     if (action === "get_analysis_status") {
       const instanceId = (payload.instance_id as string | undefined) || null;
 
+      // Count total conversations
       let convQuery = supabaseAdmin
         .from("whatsapp_conversations")
         .select("id", { count: "exact", head: true })
         .eq("tenant_id", tenantId!);
       if (instanceId) convQuery = convQuery.eq("instance_id", instanceId);
-      const { count: totalConvs } = await convQuery;
+      const convResult = await convQuery;
+      const totalConvs = convResult.count ?? 0;
 
-      const convIds = await getInstanceConvIds(instanceId);
-      const analysisQ = applyConvFilter(
-        supabaseAdmin.from("ai_conversation_analysis").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId!),
-        convIds,
-      );
-      const { count: analyzedConvs } = await analysisQ;
+      console.log("[get_analysis_status] tenant:", tenantId, "instance:", instanceId, "totalConvs:", totalConvs, "convError:", convResult.error?.message);
+
+      // Count analyzed conversations
+      let analysisQuery = supabaseAdmin
+        .from("ai_conversation_analysis")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId!);
+      
+      if (instanceId) {
+        // Need to filter by instance - get conv IDs first
+        const filterConvIds = await getInstanceConvIds(instanceId);
+        if (filterConvIds !== null) {
+          if (filterConvIds.length === 0) {
+            return jsonResponse({ total_conversations: 0, analyzed_conversations: 0, coverage_pct: 0 });
+          }
+          analysisQuery = analysisQuery.in("conversation_id", filterConvIds);
+        }
+      }
+      const analysisResult = await analysisQuery;
+      const analyzedConvs = analysisResult.count ?? 0;
+
+      console.log("[get_analysis_status] analyzedConvs:", analyzedConvs, "analysisError:", analysisResult.error?.message);
 
       return jsonResponse({
-        total_conversations: totalConvs || 0,
-        analyzed_conversations: analyzedConvs || 0,
-        coverage_pct: totalConvs ? Math.round(((analyzedConvs || 0) / totalConvs) * 100) : 0,
+        total_conversations: totalConvs,
+        analyzed_conversations: analyzedConvs,
+        coverage_pct: totalConvs > 0 ? Math.round((analyzedConvs / totalConvs) * 100) : 0,
       });
     }
 
