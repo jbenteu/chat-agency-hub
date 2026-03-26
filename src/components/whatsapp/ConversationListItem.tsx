@@ -80,7 +80,7 @@ export function ConversationListItem({
   const mediaIcon = getMediaPreviewIcon(lastMsg);
   const isGroup = isGroupJid(c.remote_jid);
 
-  const displayName = c.contact_name || (c.contact_phone ? formatPhoneWhatsApp(c.contact_phone) : (() => {
+  const displayName = c.contact_name || c.push_name || (c.contact_phone ? formatPhoneWhatsApp(c.contact_phone) : (() => {
     const jidPhone = c.remote_jid.split("@")[0];
     return jidPhone ? formatPhoneWhatsApp(jidPhone) : "Desconhecido";
   })());

@@ -22,7 +22,8 @@ interface MediaMessageProps {
 }
 
 function isExpirableUrl(url: string): boolean {
-  // URLs do MinIO sem assinatura AWS são permanentes — usar diretamente
+  // URLs do MinIO (mesmo com X-Amz-) são tratadas como permanentes — fixMinioUrl remove os params
+  if (url.includes("chatwoot-evo-minio.fd6j1o.easypanel.host")) return false;
   if (!url.includes("X-Amz-")) return false;
   return (
     url.includes("mmg.whatsapp.net") ||
@@ -31,11 +32,22 @@ function isExpirableUrl(url: string): boolean {
   );
 }
 
-/** Transform internal Docker MinIO URLs to public-facing URLs */
+/** Transform internal Docker MinIO URLs to public-facing URLs and strip AWS presign params */
 function fixMinioUrl(url: string): string {
-  return url
+  let fixed = url
     .replace(/^http:\/\/minio:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/")
     .replace(/^http:\/\/82\.25\.70\.124:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/");
+  // Remove parâmetros de assinatura AWS (bucket é público no MinIO)
+  if (fixed.includes("X-Amz-")) {
+    try {
+      const u = new URL(fixed);
+      for (const key of [...u.searchParams.keys()]) {
+        if (key.startsWith("X-Amz-") || key === "X-Amz-Signature") u.searchParams.delete(key);
+      }
+      fixed = u.toString();
+    } catch { /* mantém como está */ }
+  }
+  return fixed;
 }
 
 // ── WhatsApp-style Audio Player ──

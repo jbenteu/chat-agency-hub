@@ -36,6 +36,7 @@ interface Conversation {
   profile_picture_url: string | null;
   pinned: boolean;
   archived: boolean;
+  push_name: string | null;
   typing_presence: string | null;
   typing_updated_at: string | null;
   muted_until: string | null;
@@ -123,8 +124,8 @@ export function useEvolutionApi() {
   );
 
   const createInstance = useCallback(
-    (instanceName: string, displayName?: string) =>
-      callEvolution({ action: "create_instance", instanceName, displayName }),
+    (instanceName: string, displayName?: string, options?: { importContacts?: boolean; ignoreGroups?: boolean }) =>
+      callEvolution({ action: "create_instance", instanceName, displayName, ...options }),
     [callEvolution]
   );
 

@@ -31,6 +31,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -124,6 +125,8 @@ const WhatsAppInbox = () => {
   // (Contact details, editing, invite link now managed by InfoPanel)
   // Setup flow state (no instances)
   const [setupDisplayName, setSetupDisplayName] = useState("");
+  const [setupImportContacts, setSetupImportContacts] = useState(true);
+  const [setupIgnoreGroups, setSetupIgnoreGroups] = useState(false);
   const [setupQrCode, setSetupQrCode] = useState<string | null>(null);
   const [setupInstanceName, setSetupInstanceName] = useState<string | null>(null);
   const [setupCreating, setSetupCreating] = useState(false);
@@ -992,7 +995,7 @@ const WhatsAppInbox = () => {
     const label = setupDisplayName.trim() || undefined;
     setSetupCreating(true);
     try {
-      const data = await createInstance(internalName, label);
+      const data = await createInstance(internalName, label, { importContacts: setupImportContacts, ignoreGroups: setupIgnoreGroups });
       toast({ title: "Conexão criada!", description: "Escaneie o QR Code para conectar." });
       const qr = data.qrcode?.base64;
       if (qr) {
@@ -1109,6 +1112,29 @@ const WhatsAppInbox = () => {
                 <p className="text-xs text-muted-foreground">
                   Um nome amigável para identificar esta conexão.
                 </p>
+              </div>
+              <div className="space-y-3 pt-1">
+                <p className="text-sm font-medium">Configurações</p>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="setup-import-contacts"
+                    checked={setupImportContacts}
+                    onCheckedChange={(v) => setSetupImportContacts(Boolean(v))}
+                  />
+                  <label htmlFor="setup-import-contacts" className="text-sm cursor-pointer">
+                    Importar contatos da agenda
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="setup-ignore-groups"
+                    checked={setupIgnoreGroups}
+                    onCheckedChange={(v) => setSetupIgnoreGroups(Boolean(v))}
+                  />
+                  <label htmlFor="setup-ignore-groups" className="text-sm cursor-pointer">
+                    Ignorar mensagens de grupos
+                  </label>
+                </div>
               </div>
               <Button className="w-full" onClick={handleSetupCreate} disabled={setupCreating || evoLoading}>
                 {setupCreating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <QrCode className="mr-1.5 h-4 w-4" />}

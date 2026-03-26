@@ -135,6 +135,8 @@ Deno.serve(async (req) => {
     const action = body.action as string | undefined;
     const instanceName = body.instanceName as string | undefined;
     const displayName = body.displayName as string | undefined;
+    const importContacts = body.importContacts as boolean | undefined;
+    const ignoreGroups = body.ignoreGroups as boolean | undefined;
     if (!action) return jsonResponse({ error: "action is required" }, 400);
 
     const normalizedUrl = EVOLUTION_API_URL.trim().replace(/\/$/, "");
@@ -274,11 +276,12 @@ Deno.serve(async (req) => {
         instanceName,
         integration: "WHATSAPP-BAILEYS",
         qrcode: true,
+        groupsIgnore: ignoreGroups === true,
         webhook: {
           url: webhookUrl,
           byEvents: false,
           base64: false,
-        events: [
+          events: [
             "MESSAGES_UPSERT",
             "MESSAGES_UPDATE",
             "CONNECTION_UPDATE",
@@ -336,6 +339,10 @@ Deno.serve(async (req) => {
         status: "connecting",
         phone_number: phoneNumber,
         qr_code: evoData.qrcode?.base64 || null,
+        settings: {
+          importContacts: importContacts === true,
+          ignoreGroups: ignoreGroups === true,
+        },
       });
       if (dbError) throw new Error(`Failed to persist instance: ${dbError.message}`);
       return jsonResponse({ success: true, instance: evoData.instance, qrcode: evoData.qrcode });
@@ -878,8 +885,21 @@ Deno.serve(async (req) => {
         url.includes("media.whatsapp.net") ||
         url.includes(".enc?");
 
-      const fixMinioUrl = (url: string) =>
-        url.replace(/^http:\/\/minio:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/").replace(/^http:\/\/82\.25\.70\.124:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/");
+      const fixMinioUrl = (url: string) => {
+        let u = url
+          .replace(/^http:\/\/minio:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/")
+          .replace(/^http:\/\/82\.25\.70\.124:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/");
+        if (u.includes("X-Amz-")) {
+          try {
+            const parsed = new URL(u);
+            for (const k of [...parsed.searchParams.keys()]) {
+              if (k.startsWith("X-Amz-")) parsed.searchParams.delete(k);
+            }
+            u = parsed.toString();
+          } catch { /* keep as-is */ }
+        }
+        return u;
+      };
 
       // Busca a mensagem com escopo de tenant (+ conversa se disponível)
       let msgQuery = supabaseAdmin

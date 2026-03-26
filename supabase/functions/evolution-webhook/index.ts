@@ -81,10 +81,23 @@ const isExpirableWhatsAppUrl = (url: string | null | undefined): boolean => {
   );
 };
 
-/** Converte hostname interno do Docker para o IP público do MinIO */
+/** Converte hostname interno do Docker para o IP público do MinIO e remove assinaturas AWS */
 const fixMinioUrl = (url: string | null): string | null => {
   if (!url) return url;
-  return url.replace(/^http:\/\/minio:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/").replace(/^http:\/\/82\.25\.70\.124:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/");
+  let u = url
+    .replace(/^http:\/\/minio:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/")
+    .replace(/^http:\/\/82\.25\.70\.124:9000\//, "https://chatwoot-evo-minio.fd6j1o.easypanel.host/");
+  // Remove parâmetros de assinatura AWS pré-assinados (bucket MinIO é público)
+  if (u.includes("X-Amz-")) {
+    try {
+      const parsed = new URL(u);
+      for (const k of [...parsed.searchParams.keys()]) {
+        if (k.startsWith("X-Amz-")) parsed.searchParams.delete(k);
+      }
+      u = parsed.toString();
+    } catch { /* mantém como está */ }
+  }
+  return u;
 };
 
 /**
@@ -379,7 +392,7 @@ Deno.serve(async (req) => {
     // Busca instância UMA única vez
     const { data: instance } = await supabase
       .from("whatsapp_instances")
-      .select("id, tenant_id, phone_number")
+      .select("id, tenant_id, phone_number, settings")
       .eq("instance_name", instanceName)
       .limit(1)
       .maybeSingle();
@@ -390,6 +403,7 @@ Deno.serve(async (req) => {
     }
 
     const { id: instanceId, tenant_id: tenantId, phone_number: instancePhone } = instance;
+    const instanceSettings = (instance.settings || {}) as Record<string, unknown>;
 
     // ─── messages.upsert ──────────────────────────────────────────────────────
     if (event === "messages.upsert") {
@@ -405,6 +419,9 @@ Deno.serve(async (req) => {
         if (!remoteJid || remoteJid === "status@broadcast") continue;
 
         const isGroup = remoteJid.endsWith("@g.us");
+
+        // Ignora grupos se configurado na instância
+        if (isGroup && instanceSettings.ignoreGroups === true) continue;
 
         // Ignora eco da própria instância
         if (fromMe && !isGroup) {
@@ -593,6 +610,9 @@ Deno.serve(async (req) => {
         // ── Upsert da conversa ────────────────────────────────────────────────
         let conversationId: string;
 
+        // push_name: nome bruto do WhatsApp (sem ser o nome salvo no CRM)
+        const rawPushName = !fromMe ? (entry?.pushName || data?.pushName || null) : null;
+
         if (!conversation) {
           const { data: newConv, error: convErr } = await supabase
             .from("whatsapp_conversations")
@@ -603,6 +623,7 @@ Deno.serve(async (req) => {
               remote_jid: remoteJid,
               contact_name: resolvedContactName,
               contact_phone: conversationPhone,
+              push_name: rawPushName,
               last_message: conversationPreview,
               last_message_at: nowIso,
               unread_count: fromMe ? 0 : 1,
@@ -638,6 +659,10 @@ Deno.serve(async (req) => {
               updatePayload.contact_name = resolvedContactName;
             } else if (!fromMe && !newIsNumeric && resolvedContactName !== conversation.contact_name) {
               updatePayload.contact_name = resolvedContactName;
+            }
+            // Persiste push_name de mensagens recebidas se ainda não tiver
+            if (rawPushName && !conversation.push_name) {
+              updatePayload.push_name = rawPushName;
             }
           } else if (
             !isPlaceholderGroupName(resolvedContactName) &&
