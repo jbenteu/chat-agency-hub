@@ -97,6 +97,28 @@ Deno.serve(async (req) => {
     tenantId = roleData.tenant_id;
   }
 
+  // ─── Instance helper ───────────────────────────────────────────────────────
+  // Returns conversation IDs for a specific instance, or null (= no filter)
+  const getInstanceConvIds = async (instanceId: string | null): Promise<string[] | null> => {
+    if (!instanceId) return null;
+    const { data } = await supabaseAdmin
+      .from("whatsapp_conversations")
+      .select("id")
+      .eq("tenant_id", tenantId!)
+      .eq("instance_id", instanceId);
+    return (data || []).map((c: { id: string }) => c.id);
+  };
+
+  // Applies instance filter to an analysis query
+  const applyConvFilter = (
+    query: ReturnType<typeof supabaseAdmin.from>,
+    convIds: string[] | null,
+  ) => {
+    if (convIds === null) return query;
+    if (convIds.length === 0) return query.eq("conversation_id", "00000000-0000-0000-0000-000000000000"); // impossible match
+    return query.in("conversation_id", convIds);
+  };
+
   // ─── Anthropic helper ──────────────────────────────────────────────────────
   const callAnthropic = async (
     model: string,
@@ -254,52 +276,31 @@ ${transcript}`;
     }
 
     // ─── Helper: build dashboard context ─────────────────────────────────
-    const buildDashboardContext = async () => {
+    const buildDashboardContext = async (convIds: string[] | null = null, instanceId: string | null = null) => {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
       const twoHoursAgo = new Date(Date.now() - 2 * 3600000).toISOString();
 
+      // Base conversation query with optional instance filter
+      const convBase = () => {
+        let q = supabaseAdmin.from("whatsapp_conversations").eq("tenant_id", tenantId!);
+        if (instanceId) q = q.eq("instance_id", instanceId);
+        return q;
+      };
+      // Base analysis query with optional conv_id filter
+      const analysisBase = () => applyConvFilter(
+        supabaseAdmin.from("ai_conversation_analysis").eq("tenant_id", tenantId!),
+        convIds,
+      );
+
       const [convCount, leadsNoReply, avgScore, topProdutos, topObjecoes, leadsByStatus, avgScores] =
         await Promise.all([
-          supabaseAdmin
-            .from("whatsapp_conversations")
-            .select("id", { count: "exact", head: true })
-            .eq("tenant_id", tenantId!)
-            .gte("last_message_at", thirtyDaysAgo),
-          supabaseAdmin
-            .from("whatsapp_conversations")
-            .select("id", { count: "exact", head: true })
-            .eq("tenant_id", tenantId!)
-            .lt("last_message_at", twoHoursAgo)
-            .gte("last_message_at", thirtyDaysAgo),
-          supabaseAdmin
-            .from("ai_conversation_analysis")
-            .select("score_qualidade")
-            .eq("tenant_id", tenantId!)
-            .gte("analyzed_at", thirtyDaysAgo),
-          supabaseAdmin
-            .from("ai_conversation_analysis")
-            .select("produto_interesse")
-            .eq("tenant_id", tenantId!)
-            .gte("analyzed_at", thirtyDaysAgo)
-            .not("produto_interesse", "is", null),
-          supabaseAdmin
-            .from("ai_conversation_analysis")
-            .select("objecao_detectada")
-            .eq("tenant_id", tenantId!)
-            .gte("analyzed_at", thirtyDaysAgo)
-            .not("objecao_detectada", "is", null),
-          supabaseAdmin
-            .from("ai_conversation_analysis")
-            .select("status_lead")
-            .eq("tenant_id", tenantId!)
-            .gte("analyzed_at", thirtyDaysAgo),
-          supabaseAdmin
-            .from("ai_conversation_analysis")
-            .select(
-              "score_empatia, score_clareza, score_velocidade, score_followup, score_contorno_objecao, score_cta, score_personalizacao",
-            )
-            .eq("tenant_id", tenantId!)
-            .gte("analyzed_at", thirtyDaysAgo),
+          convBase().select("id", { count: "exact", head: true }).gte("last_message_at", thirtyDaysAgo),
+          convBase().select("id", { count: "exact", head: true }).lt("last_message_at", twoHoursAgo).gte("last_message_at", thirtyDaysAgo),
+          analysisBase().select("score_qualidade").gte("analyzed_at", thirtyDaysAgo),
+          analysisBase().select("produto_interesse").gte("analyzed_at", thirtyDaysAgo).not("produto_interesse", "is", null),
+          analysisBase().select("objecao_detectada").gte("analyzed_at", thirtyDaysAgo).not("objecao_detectada", "is", null),
+          analysisBase().select("status_lead").gte("analyzed_at", thirtyDaysAgo),
+          analysisBase().select("score_empatia, score_clareza, score_velocidade, score_followup, score_contorno_objecao, score_cta, score_personalizacao").gte("analyzed_at", thirtyDaysAgo),
         ]);
 
       // Compute averages
@@ -364,36 +365,194 @@ ${transcript}`;
       };
     };
 
+    // ─── list_instances ──────────────────────────────────────────────────
+    if (action === "list_instances") {
+      const { data: instances } = await supabaseAdmin
+        .from("whatsapp_instances")
+        .select("id, instance_name, display_name, status, phone_number")
+        .eq("tenant_id", tenantId!)
+        .order("created_at", { ascending: true });
+      return jsonResponse({ instances: instances || [] });
+    }
+
+    // ─── get_analysis_status ─────────────────────────────────────────────
+    if (action === "get_analysis_status") {
+      const instanceId = (payload.instance_id as string | undefined) || null;
+
+      let convQuery = supabaseAdmin
+        .from("whatsapp_conversations")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId!);
+      if (instanceId) convQuery = convQuery.eq("instance_id", instanceId);
+      const { count: totalConvs } = await convQuery;
+
+      const convIds = await getInstanceConvIds(instanceId);
+      const analysisQ = applyConvFilter(
+        supabaseAdmin.from("ai_conversation_analysis").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId!),
+        convIds,
+      );
+      const { count: analyzedConvs } = await analysisQ;
+
+      return jsonResponse({
+        total_conversations: totalConvs || 0,
+        analyzed_conversations: analyzedConvs || 0,
+        coverage_pct: totalConvs ? Math.round(((analyzedConvs || 0) / totalConvs) * 100) : 0,
+      });
+    }
+
+    // ─── analyze_all_conversations ────────────────────────────────────────
+    if (action === "analyze_all_conversations") {
+      const instanceId = (payload.instance_id as string | undefined) || null;
+      const limit = Math.min((payload.limit as number | undefined) || 20, 50);
+
+      // Get conversations not yet analyzed (or analyzed > 7 days ago)
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+      const { data: analyzed } = await supabaseAdmin
+        .from("ai_conversation_analysis")
+        .select("conversation_id, analyzed_at")
+        .eq("tenant_id", tenantId!);
+
+      const recentlyAnalyzed = new Set(
+        (analyzed || [])
+          .filter((a: { analyzed_at: string }) => new Date(a.analyzed_at) > new Date(sevenDaysAgo))
+          .map((a: { conversation_id: string }) => a.conversation_id),
+      );
+
+      let convQuery = supabaseAdmin
+        .from("whatsapp_conversations")
+        .select("id")
+        .eq("tenant_id", tenantId!)
+        .order("last_message_at", { ascending: false })
+        .limit(200);
+      if (instanceId) convQuery = convQuery.eq("instance_id", instanceId);
+
+      const { data: allConvs } = await convQuery;
+      const toAnalyze = (allConvs || [])
+        .filter((c: { id: string }) => !recentlyAnalyzed.has(c.id))
+        .slice(0, limit);
+
+      if (toAnalyze.length === 0) {
+        return jsonResponse({ analyzed: 0, message: "Todas as conversas já foram analisadas recentemente." });
+      }
+
+      let successCount = 0;
+      const errors: string[] = [];
+
+      for (const conv of toAnalyze) {
+        try {
+          const { data: messages } = await supabaseAdmin
+            .from("whatsapp_messages")
+            .select("direction, content, created_at")
+            .eq("tenant_id", tenantId!)
+            .eq("conversation_id", conv.id)
+            .order("created_at", { ascending: true })
+            .limit(60);
+
+          if (!messages || messages.length === 0) continue;
+
+          const lastInbound = [...messages].reverse().find((m: { direction: string }) => m.direction === "inbound");
+          const horasSemResposta = lastInbound
+            ? (Date.now() - new Date((lastInbound as { created_at: string }).created_at).getTime()) / 3600000
+            : 0;
+
+          const transcript = messages
+            .map((m: { direction: string; content: string | null }) =>
+              `${m.direction === "outbound" ? "Atendente" : "Cliente"}: ${m.content || "[mídia]"}`)
+            .join("\n");
+
+          const aiData = await callAnthropic(
+            "claude-haiku-4-5-20251001",
+            600,
+            "Você analisa conversas de WhatsApp de joalherias. Responda APENAS com JSON válido, sem texto extra, sem markdown.",
+            `Analise esta conversa de joalheria e retorne JSON com exatamente estas chaves:
+{"sentimento":"positivo"|"neutro"|"frustrado","produto_interesse":string|null,"objecao_detectada":string|null,"score_qualidade":1-10,"score_empatia":1-10,"score_clareza":1-10,"score_velocidade":1-10,"score_followup":1-10,"score_contorno_objecao":1-10,"score_cta":1-10,"score_personalizacao":1-10,"status_lead":"quente"|"morno"|"frio"|"perdido","resumo":string}
+Velocidade baseada em ${horasSemResposta.toFixed(1)}h sem resposta.
+Conversa (${messages.length} msgs):\n${transcript}`,
+          );
+
+          let analysis: Record<string, unknown>;
+          try {
+            analysis = JSON.parse(aiData.content[0].text);
+          } catch {
+            continue;
+          }
+
+          await supabaseAdmin.from("ai_conversation_analysis").upsert({
+            conversation_id: conv.id,
+            tenant_id: tenantId,
+            sentimento: analysis.sentimento,
+            produto_interesse: analysis.produto_interesse,
+            objecao_detectada: analysis.objecao_detectada,
+            score_qualidade: analysis.score_qualidade,
+            score_empatia: analysis.score_empatia,
+            score_clareza: analysis.score_clareza,
+            score_velocidade: analysis.score_velocidade,
+            score_followup: analysis.score_followup,
+            score_contorno_objecao: analysis.score_contorno_objecao,
+            score_cta: analysis.score_cta,
+            score_personalizacao: analysis.score_personalizacao,
+            status_lead: analysis.status_lead,
+            resumo: analysis.resumo,
+            horas_sem_resposta: Math.round(horasSemResposta * 10) / 10,
+            analyzed_at: new Date().toISOString(),
+          }, { onConflict: "conversation_id" });
+
+          successCount++;
+        } catch (e) {
+          errors.push(conv.id);
+        }
+      }
+
+      // Invalidate cache
+      await supabaseAdmin.from("ai_dashboard_cache").delete().eq("tenant_id", tenantId!);
+
+      return jsonResponse({
+        analyzed: successCount,
+        total_queued: toAnalyze.length,
+        errors: errors.length,
+        message: `${successCount} conversas analisadas com sucesso.`,
+      });
+    }
+
     // ─── ask_ai ──────────────────────────────────────────────────────────
     if (action === "ask_ai") {
       const question = payload.question as string;
       if (!question) return jsonResponse({ error: "question is required" }, 400);
+      const instanceId = (payload.instance_id as string | undefined) || null;
+      const convIds = await getInstanceConvIds(instanceId);
 
-      // Check cache
+      // Use cache only for all-instances queries
       let context: Record<string, unknown> | null = null;
-      const { data: cache } = await supabaseAdmin
-        .from("ai_dashboard_cache")
-        .select("data, generated_at")
-        .eq("tenant_id", tenantId!)
-        .maybeSingle();
-
-      if (cache && Date.now() - new Date(cache.generated_at).getTime() < 30 * 60000) {
-        context = cache.data as Record<string, unknown>;
-      } else {
-        context = await buildDashboardContext();
-        await supabaseAdmin
+      if (!instanceId) {
+        const { data: cache } = await supabaseAdmin
           .from("ai_dashboard_cache")
-          .upsert(
+          .select("data, generated_at")
+          .eq("tenant_id", tenantId!)
+          .maybeSingle();
+        if (cache && Date.now() - new Date(cache.generated_at).getTime() < 30 * 60000) {
+          context = cache.data as Record<string, unknown>;
+        }
+      }
+      if (!context) {
+        context = await buildDashboardContext(convIds, instanceId);
+        if (!instanceId) {
+          await supabaseAdmin.from("ai_dashboard_cache").upsert(
             { tenant_id: tenantId!, data: context, generated_at: new Date().toISOString() },
             { onConflict: "tenant_id" },
           );
+        }
       }
+
+      const { data: instRow } = instanceId
+        ? await supabaseAdmin.from("whatsapp_instances").select("display_name, instance_name").eq("id", instanceId).maybeSingle()
+        : { data: null };
+      const instLabel = instRow ? (instRow.display_name || instRow.instance_name) : "todas as instâncias";
 
       const data = await callAnthropic(
         "claude-sonnet-4-6",
         1024,
         "Você é um consultor especialista em vendas de joalherias. Analise os dados fornecidos e responda de forma direta, prática e em português brasileiro. Seja específico com números quando disponíveis.",
-        `Dados da joalheria (últimos 30 dias):\n${JSON.stringify(context, null, 2)}\n\nPergunta do gestor: ${question}`,
+        `Dados da joalheria (últimos 30 dias) — instância: ${instLabel}:\n${JSON.stringify(context, null, 2)}\n\nPergunta do gestor: ${question}`,
       );
 
       return jsonResponse({ answer: data.content[0].text });
@@ -416,8 +575,10 @@ Regras: tom amigável e consultivo, sem pressão, máximo 3 linhas, sem emojis e
     // ─── get_dashboard ───────────────────────────────────────────────────
     if (action === "get_dashboard") {
       const forceRefresh = payload.force_refresh === true;
+      const instanceId = (payload.instance_id as string | undefined) || null;
+      const convIds = await getInstanceConvIds(instanceId);
 
-      if (!forceRefresh) {
+      if (!forceRefresh && !instanceId) {
         const { data: cache } = await supabaseAdmin
           .from("ai_dashboard_cache")
           .select("data, generated_at")
@@ -430,7 +591,7 @@ Regras: tom amigável e consultivo, sem pressão, máximo 3 linhas, sem emojis e
       }
 
       // Build fresh context
-      const context = await buildDashboardContext();
+      const context = await buildDashboardContext(convIds, instanceId);
 
       // Additional queries
       const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
@@ -445,26 +606,39 @@ Regras: tom amigável e consultivo, sem pressão, máximo 3 linhas, sem emojis e
       ]);
 
       // Fallback: direct queries
-      const { data: leadsList } = await supabaseAdmin
+      let leadsQuery = supabaseAdmin
         .from("whatsapp_conversations")
-        .select(
-          "id, contact_name, contact_phone, last_message, last_message_at",
-        )
+        .select("id, contact_name, contact_phone, last_message, last_message_at")
         .eq("tenant_id", tenantId!)
         .lt("last_message_at", twoHoursAgo)
         .gte("last_message_at", sevenDaysAgo)
         .order("last_message_at", { ascending: true })
         .limit(20);
+      if (instanceId) leadsQuery = leadsQuery.eq("instance_id", instanceId);
+      const { data: leadsList } = await leadsQuery;
+
+      // Best approaches
+      let bestApproachesQuery = applyConvFilter(
+        supabaseAdmin.from("ai_conversation_analysis")
+          .select("conversation_id, produto_interesse, score_qualidade, resumo, sentimento")
+          .eq("tenant_id", tenantId!)
+          .gte("score_qualidade", 8)
+          .eq("sentimento", "positivo")
+          .order("analyzed_at", { ascending: false })
+          .limit(6),
+        convIds,
+      );
+      const { data: bestApproaches } = await bestApproachesQuery;
 
       // Enrich with analysis data
       const enrichedLeads = [];
       if (leadsList) {
-        const convIds = leadsList.map((l: { id: string }) => l.id);
-        const { data: analyses } = convIds.length > 0
+        const leadsConvIds = leadsList.map((l: { id: string }) => l.id);
+        const { data: analyses } = leadsConvIds.length > 0
           ? await supabaseAdmin
               .from("ai_conversation_analysis")
               .select("conversation_id, produto_interesse, objecao_detectada, status_lead")
-              .in("conversation_id", convIds)
+              .in("conversation_id", leadsConvIds)
           : { data: [] };
 
         const analysisMap: Record<string, { produto_interesse: string | null; objecao_detectada: string | null; status_lead: string | null }> = {};
@@ -483,16 +657,6 @@ Regras: tom amigável e consultivo, sem pressão, máximo 3 linhas, sem emojis e
           });
         }
       }
-
-      // Best approaches
-      const { data: bestApproaches } = await supabaseAdmin
-        .from("ai_conversation_analysis")
-        .select("conversation_id, produto_interesse, score_qualidade, resumo, sentimento")
-        .eq("tenant_id", tenantId!)
-        .gte("score_qualidade", 8)
-        .eq("sentimento", "positivo")
-        .order("analyzed_at", { ascending: false })
-        .limit(6);
 
       let melhoresAbordagens: Array<Record<string, unknown>> = [];
       if (bestApproaches && bestApproaches.length > 0) {
@@ -522,36 +686,42 @@ Regras: tom amigável e consultivo, sem pressão, máximo 3 linhas, sem emojis e
         melhores_abordagens: melhoresAbordagens,
       };
 
-      // Save cache
-      await supabaseAdmin
-        .from("ai_dashboard_cache")
-        .upsert(
+      // Save cache only for all-instances queries
+      if (!instanceId) {
+        await supabaseAdmin.from("ai_dashboard_cache").upsert(
           { tenant_id: tenantId!, data: fullData, generated_at: new Date().toISOString() },
           { onConflict: "tenant_id" },
         );
+      }
 
       return jsonResponse({ data: fullData });
     }
 
     // ─── get_insights ─────────────────────────────────────────────────────
     if (action === "get_insights") {
-      const context = await buildDashboardContext();
+      const instanceId = (payload.instance_id as string | undefined) || null;
+      const convIds = await getInstanceConvIds(instanceId);
+      const context = await buildDashboardContext(convIds, instanceId);
 
       // Fetch extra detail: top conversion analysis
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
       const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
 
       const [recentAnalyses, weekAnalyses] = await Promise.all([
-        supabaseAdmin
-          .from("ai_conversation_analysis")
-          .select("status_lead, sentimento, score_qualidade, horas_sem_resposta, produto_interesse, objecao_detectada")
-          .eq("tenant_id", tenantId!)
-          .gte("analyzed_at", thirtyDaysAgo),
-        supabaseAdmin
-          .from("ai_conversation_analysis")
-          .select("status_lead, score_qualidade")
-          .eq("tenant_id", tenantId!)
-          .gte("analyzed_at", sevenDaysAgo),
+        applyConvFilter(
+          supabaseAdmin.from("ai_conversation_analysis")
+            .select("status_lead, sentimento, score_qualidade, horas_sem_resposta, produto_interesse, objecao_detectada")
+            .eq("tenant_id", tenantId!)
+            .gte("analyzed_at", thirtyDaysAgo),
+          convIds,
+        ),
+        applyConvFilter(
+          supabaseAdmin.from("ai_conversation_analysis")
+            .select("status_lead, score_qualidade")
+            .eq("tenant_id", tenantId!)
+            .gte("analyzed_at", sevenDaysAgo),
+          convIds,
+        ),
       ]);
 
       const allAnalyses = recentAnalyses.data || [];
@@ -614,12 +784,19 @@ Priorize: risco de receita, oportunidades de conversão, eficiência operacional
     // ─── get_temporal_patterns ─────────────────────────────────────────────
     if (action === "get_temporal_patterns") {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+      const instanceId = (payload.instance_id as string | undefined) || null;
+      const convIds = await getInstanceConvIds(instanceId);
 
-      const { data: messages } = await supabaseAdmin
+      let messagesQuery = supabaseAdmin
         .from("whatsapp_messages")
-        .select("created_at, direction")
+        .select("created_at, direction, conversation_id")
         .eq("tenant_id", tenantId!)
         .gte("created_at", thirtyDaysAgo);
+      if (convIds !== null) {
+        if (convIds.length === 0) return jsonResponse({ hours: [], days: [], total_messages: 0 });
+        messagesQuery = messagesQuery.in("conversation_id", convIds);
+      }
+      const { data: messages } = await messagesQuery;
 
       if (!messages || messages.length === 0) {
         return jsonResponse({ hours: [], days: [], total_messages: 0 });
@@ -673,15 +850,17 @@ Priorize: risco de receita, oportunidades de conversão, eficiência operacional
     // ─── get_pipeline ──────────────────────────────────────────────────────
     if (action === "get_pipeline") {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+      const instanceId = (payload.instance_id as string | undefined) || null;
+      const convIds = await getInstanceConvIds(instanceId);
 
-      const { data: analyses } = await supabaseAdmin
-        .from("ai_conversation_analysis")
-        .select(
-          "conversation_id, status_lead, produto_interesse, objecao_detectada, score_qualidade, horas_sem_resposta, resumo, sentimento, analyzed_at",
-        )
-        .eq("tenant_id", tenantId!)
-        .gte("analyzed_at", thirtyDaysAgo)
-        .in("status_lead", ["quente", "morno"]);
+      const { data: analyses } = await applyConvFilter(
+        supabaseAdmin.from("ai_conversation_analysis")
+          .select("conversation_id, status_lead, produto_interesse, objecao_detectada, score_qualidade, horas_sem_resposta, resumo, sentimento, analyzed_at")
+          .eq("tenant_id", tenantId!)
+          .gte("analyzed_at", thirtyDaysAgo)
+          .in("status_lead", ["quente", "morno"]),
+        convIds,
+      );
 
       if (!analyses || analyses.length === 0) {
         return jsonResponse({ hot_leads: [], warm_leads: [] });

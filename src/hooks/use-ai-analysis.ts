@@ -57,6 +57,20 @@ export interface AIDashboardData {
   }>;
 }
 
+export interface WhatsAppInstance {
+  id: string;
+  instance_name: string;
+  display_name: string | null;
+  status: string;
+  phone_number: string | null;
+}
+
+export interface AnalysisStatus {
+  total_conversations: number;
+  analyzed_conversations: number;
+  coverage_pct: number;
+}
+
 export interface AIInsight {
   tipo: 'urgente' | 'oportunidade' | 'alerta' | 'tendencia';
   titulo: string;
@@ -111,8 +125,8 @@ export function useAIAnalysis() {
   const analyzeConversation = (conversationId: string) =>
     invokeAI("analyze_conversation", { conversation_id: conversationId });
 
-  const askAI = (question: string): Promise<{ answer: string }> =>
-    invokeAI("ask_ai", { question });
+  const askAI = (question: string, instanceId?: string | null): Promise<{ answer: string }> =>
+    invokeAI("ask_ai", { question, instance_id: instanceId ?? null });
 
   const generateScript = (params: {
     lead_name: string;
@@ -123,17 +137,26 @@ export function useAIAnalysis() {
   }): Promise<{ script: string }> =>
     invokeAI("generate_script", params);
 
-  const getDashboard = (forceRefresh = false): Promise<{ data: AIDashboardData }> =>
-    invokeAI("get_dashboard", { force_refresh: forceRefresh });
+  const getDashboard = (forceRefresh = false, instanceId?: string | null): Promise<{ data: AIDashboardData }> =>
+    invokeAI("get_dashboard", { force_refresh: forceRefresh, instance_id: instanceId ?? null });
 
-  const getInsights = (): Promise<{ insights: AIInsight[] }> =>
-    invokeAI("get_insights", {});
+  const getInsights = (instanceId?: string | null): Promise<{ insights: AIInsight[] }> =>
+    invokeAI("get_insights", { instance_id: instanceId ?? null });
 
-  const getTemporalPatterns = (): Promise<TemporalPattern> =>
-    invokeAI("get_temporal_patterns", {});
+  const getTemporalPatterns = (instanceId?: string | null): Promise<TemporalPattern> =>
+    invokeAI("get_temporal_patterns", { instance_id: instanceId ?? null });
 
-  const getPipeline = (): Promise<{ hot_leads: PipelineLead[]; warm_leads: PipelineLead[] }> =>
-    invokeAI("get_pipeline", {});
+  const getPipeline = (instanceId?: string | null): Promise<{ hot_leads: PipelineLead[]; warm_leads: PipelineLead[] }> =>
+    invokeAI("get_pipeline", { instance_id: instanceId ?? null });
+
+  const listInstances = (): Promise<{ instances: WhatsAppInstance[] }> =>
+    invokeAI("list_instances", {});
+
+  const getAnalysisStatus = (instanceId?: string | null): Promise<AnalysisStatus> =>
+    invokeAI("get_analysis_status", { instance_id: instanceId ?? null });
+
+  const analyzeAllConversations = (instanceId?: string | null): Promise<{ analyzed: number; total_queued: number; errors: number; message: string }> =>
+    invokeAI("analyze_all_conversations", { instance_id: instanceId ?? null, limit: 20 });
 
   const getConversationAnalysis = async (conversationId: string): Promise<AIConversationAnalysis | null> => {
     const { data, error } = await supabase
@@ -153,6 +176,9 @@ export function useAIAnalysis() {
     getInsights,
     getTemporalPatterns,
     getPipeline,
+    listInstances,
+    getAnalysisStatus,
+    analyzeAllConversations,
     getConversationAnalysis,
   };
 }

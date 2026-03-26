@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import ReactMarkdown from "react-markdown";
 import {
@@ -7,6 +7,8 @@ import {
   type AIInsight,
   type TemporalPattern,
   type PipelineLead,
+  type WhatsAppInstance,
+  type AnalysisStatus,
 } from "@/hooks/use-ai-analysis";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,7 +26,7 @@ import {
   ArrowUpRight, MessageSquarePlus, Loader2, Tag, AlertTriangle,
   ChevronDown, Wand2, Send, User, Clock, TrendingUp,
   Zap, Target, ShieldAlert, TrendingDown, Gem, Users,
-  ChevronRight, Eye,
+  ChevronRight, Eye, Wifi, WifiOff, PlayCircle, CheckCircle2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -129,13 +131,22 @@ interface ChatMessage {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const AIAnalysis: React.FC = () => {
-  const { getDashboard, generateScript, askAI, getInsights, getTemporalPatterns, getPipeline } = useAIAnalysis();
+  const { getDashboard, generateScript, askAI, getInsights, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, analyzeAllConversations } = useAIAnalysis();
   const { toast } = useToast();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState("painel");
   const [dashboardData, setDashboardData] = useState<AIDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Instance selector
+  const [instances, setInstances] = useState<WhatsAppInstance[]>([]);
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
+  const [instancesLoading, setInstancesLoading] = useState(true);
+
+  // Analysis coverage monitor
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   // Insights
   const [insights, setInsights] = useState<AIInsight[]>([]);
@@ -172,10 +183,41 @@ const AIAnalysis: React.FC = () => {
 
   // ── Loaders ────────────────────────────────────────────────────────────────
 
+  const loadInstances = async () => {
+    try {
+      setInstancesLoading(true);
+      const result = await listInstances();
+      setInstances(result.instances || []);
+    } catch { /* silent */ } finally {
+      setInstancesLoading(false);
+    }
+  };
+
+  const loadAnalysisStatus = async (instId: string | null) => {
+    try {
+      const result = await getAnalysisStatus(instId);
+      setAnalysisStatus(result);
+    } catch { /* silent */ }
+  };
+
+  const handleAnalyzeAll = async () => {
+    try {
+      setAnalyzing(true);
+      const result = await analyzeAllConversations(selectedInstanceId);
+      toast({ title: "Análise concluída", description: result.message });
+      await loadAnalysisStatus(selectedInstanceId);
+      await loadDashboard(true);
+    } catch (err) {
+      toast({ title: "Erro na análise", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   const loadDashboard = async (force = false) => {
     try {
       setLoading(true);
-      const result = await getDashboard(force);
+      const result = await getDashboard(force, selectedInstanceId);
       setDashboardData(result.data);
     } catch (err) {
       toast({ title: "Erro ao carregar dados", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
@@ -188,7 +230,7 @@ const AIAnalysis: React.FC = () => {
     try {
       setInsightsLoading(true);
       setInsights([]);
-      const result = await getInsights();
+      const result = await getInsights(selectedInstanceId);
       setInsights(result.insights || []);
       setInsightsLoaded(true);
     } catch (err) {
@@ -201,7 +243,7 @@ const AIAnalysis: React.FC = () => {
   const loadPipeline = async () => {
     try {
       setPipelineLoading(true);
-      const result = await getPipeline();
+      const result = await getPipeline(selectedInstanceId);
       setHotLeads(result.hot_leads || []);
       setWarmLeads(result.warm_leads || []);
     } catch {
@@ -214,7 +256,7 @@ const AIAnalysis: React.FC = () => {
   const loadPatterns = async () => {
     try {
       setPatternsLoading(true);
-      const result = await getTemporalPatterns();
+      const result = await getTemporalPatterns(selectedInstanceId);
       setPatterns(result);
     } catch {
       // silent
@@ -252,7 +294,24 @@ const AIAnalysis: React.FC = () => {
     }
   };
 
-  useEffect(() => { loadDashboard(); }, []);
+  useEffect(() => {
+    loadInstances();
+    loadDashboard();
+    loadAnalysisStatus(null);
+  }, []);
+
+  // Reload everything when instance changes
+  useEffect(() => {
+    setDashboardData(null);
+    setInsights([]);
+    setInsightsLoaded(false);
+    setHotLeads([]);
+    setWarmLeads([]);
+    setPatterns(null);
+    setScoresData([]);
+    loadDashboard();
+    loadAnalysisStatus(selectedInstanceId);
+  }, [selectedInstanceId]);
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
@@ -274,7 +333,7 @@ const AIAnalysis: React.FC = () => {
     scrollToBottom();
     try {
       setAskLoading(true);
-      const result = await askAI(userMsg.content);
+      const result = await askAI(userMsg.content, selectedInstanceId);
       setChatMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: result.answer, timestamp: new Date() }]);
       scrollToBottom();
     } catch (err) {
@@ -372,6 +431,100 @@ const AIAnalysis: React.FC = () => {
             Atualizar
           </Button>
         </div>
+
+        {/* Instance Selector */}
+        {!instancesLoading && instances.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide shrink-0">Instância:</span>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setSelectedInstanceId(null)}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-medium transition-all border ${
+                    selectedInstanceId === null
+                      ? "bg-violet-600 text-white border-violet-600"
+                      : "bg-white text-muted-foreground border-zinc-200 hover:border-violet-300 hover:text-violet-600"
+                  }`}
+                >
+                  <Users size={13} />
+                  Todas ({instances.length})
+                </button>
+                {instances.map((inst) => (
+                  <button
+                    key={inst.id}
+                    onClick={() => setSelectedInstanceId(inst.id)}
+                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-medium transition-all border ${
+                      selectedInstanceId === inst.id
+                        ? "bg-violet-600 text-white border-violet-600"
+                        : "bg-white text-muted-foreground border-zinc-200 hover:border-violet-300 hover:text-violet-600"
+                    }`}
+                  >
+                    {inst.status === "connected" ? (
+                      <Wifi size={12} className={selectedInstanceId === inst.id ? "text-white" : "text-emerald-500"} />
+                    ) : (
+                      <WifiOff size={12} className={selectedInstanceId === inst.id ? "text-white/70" : "text-zinc-400"} />
+                    )}
+                    {inst.display_name || inst.instance_name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Analysis coverage bar */}
+            {analysisStatus && (
+              <div className="flex items-center gap-3 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-medium text-foreground">
+                      Cobertura de análise
+                      {selectedInstanceId && instances.find(i => i.id === selectedInstanceId) && (
+                        <span className="text-muted-foreground font-normal ml-1">
+                          — {instances.find(i => i.id === selectedInstanceId)?.display_name || instances.find(i => i.id === selectedInstanceId)?.instance_name}
+                        </span>
+                      )}
+                    </span>
+                    <span className={`text-xs font-bold ${
+                      analysisStatus.coverage_pct >= 80 ? "text-emerald-600" :
+                      analysisStatus.coverage_pct >= 40 ? "text-amber-600" : "text-red-600"
+                    }`}>
+                      {analysisStatus.analyzed_conversations}/{analysisStatus.total_conversations} conversas ({analysisStatus.coverage_pct}%)
+                    </span>
+                  </div>
+                  <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${
+                        analysisStatus.coverage_pct >= 80 ? "bg-emerald-500" :
+                        analysisStatus.coverage_pct >= 40 ? "bg-amber-500" : "bg-red-500"
+                      }`}
+                      style={{ width: `${analysisStatus.coverage_pct}%` }}
+                    />
+                  </div>
+                </div>
+                {analysisStatus.coverage_pct < 100 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAnalyzeAll}
+                    disabled={analyzing}
+                    className="shrink-0 border-violet-200 text-violet-600 hover:bg-violet-50 text-xs"
+                  >
+                    {analyzing ? (
+                      <><Loader2 size={13} className="animate-spin mr-1.5" />Analisando...</>
+                    ) : (
+                      <><PlayCircle size={13} className="mr-1.5" />Analisar conversas</>
+                    )}
+                  </Button>
+                )}
+                {analysisStatus.coverage_pct === 100 && (
+                  <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium shrink-0">
+                    <CheckCircle2 size={14} />
+                    Todas analisadas
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {isEmpty && !loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
