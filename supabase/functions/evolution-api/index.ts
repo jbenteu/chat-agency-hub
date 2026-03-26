@@ -1045,8 +1045,7 @@ Deno.serve(async (req) => {
           .update({ contact_name: patch.name as string })
           .eq("tenant_id", tenantId)
           .eq("contact_id", contactId)
-          .then(() => {})
-          .catch(console.error);
+          .then(() => {}, console.error);
       }
       return jsonResponse({ success: true });
     }

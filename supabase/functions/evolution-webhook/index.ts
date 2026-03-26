@@ -866,8 +866,8 @@ Deno.serve(async (req) => {
       // Atualiza todos em paralelo
       await Promise.all(
         updates
-          .filter((u) => u?.key?.id !== undefined && u?.update?.status !== undefined)
-          .map((u) =>
+          .filter((u: any) => u?.key?.id !== undefined && u?.update?.status !== undefined)
+          .map((u: any) =>
             supabase
               .from("whatsapp_messages")
               .update({ status: statusMap[u.update.status] || "sent" })

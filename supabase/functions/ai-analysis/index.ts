@@ -867,11 +867,11 @@ Priorize: risco de receita, oportunidades de conversão, eficiência operacional
         return jsonResponse({ hot_leads: [], warm_leads: [] });
       }
 
-      const convIds = analyses.map((a: Record<string, unknown>) => a.conversation_id as string);
+      const pipelineConvIds = analyses.map((a: Record<string, unknown>) => a.conversation_id as string);
       const { data: convs } = await supabaseAdmin
         .from("whatsapp_conversations")
         .select("id, contact_name, contact_phone, last_message, last_message_at")
-        .in("id", convIds);
+        .in("id", pipelineConvIds);
 
       const convMap: Record<string, Record<string, unknown>> = {};
       (convs || []).forEach((c: Record<string, unknown>) => {
