@@ -19,9 +19,7 @@ import Admin from "./pages/Admin";
 import ConversationMonitoring from "./pages/ConversationMonitoring";
 import Monitoring from "./pages/Monitoring";
 import NotFound from "./pages/NotFound";
-import React, { Suspense } from "react";
-
-const AIAnalysis = React.lazy(() => import("./pages/AIAnalysis"));
+import AIAnalysis from "./pages/AIAnalysis";
 
 const queryClient = new QueryClient();
 
