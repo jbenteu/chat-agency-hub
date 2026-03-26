@@ -57,6 +57,48 @@ export interface AIDashboardData {
   }>;
 }
 
+export interface AIInsight {
+  tipo: 'urgente' | 'oportunidade' | 'alerta' | 'tendencia';
+  titulo: string;
+  descricao: string;
+  acao: string;
+}
+
+export interface TemporalPattern {
+  hours: Array<{
+    hour: number;
+    label: string;
+    inbound: number;
+    outbound: number;
+    total: number;
+  }>;
+  days: Array<{
+    day: number;
+    label: string;
+    inbound: number;
+    outbound: number;
+    total: number;
+  }>;
+  peak_inbound_hour: number;
+  peak_outbound_hour: number;
+  total_messages: number;
+}
+
+export interface PipelineLead {
+  conversation_id: string;
+  status_lead: string;
+  produto_interesse: string | null;
+  objecao_detectada: string | null;
+  score_qualidade: number | null;
+  horas_sem_resposta: number;
+  resumo: string | null;
+  sentimento: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  last_message: string | null;
+  last_message_at: string | null;
+}
+
 const invokeAI = async (action: string, payload: object) => {
   const { data, error } = await supabase.functions.invoke("ai-analysis", {
     body: { action, payload },
@@ -84,6 +126,15 @@ export function useAIAnalysis() {
   const getDashboard = (forceRefresh = false): Promise<{ data: AIDashboardData }> =>
     invokeAI("get_dashboard", { force_refresh: forceRefresh });
 
+  const getInsights = (): Promise<{ insights: AIInsight[] }> =>
+    invokeAI("get_insights", {});
+
+  const getTemporalPatterns = (): Promise<TemporalPattern> =>
+    invokeAI("get_temporal_patterns", {});
+
+  const getPipeline = (): Promise<{ hot_leads: PipelineLead[]; warm_leads: PipelineLead[] }> =>
+    invokeAI("get_pipeline", {});
+
   const getConversationAnalysis = async (conversationId: string): Promise<AIConversationAnalysis | null> => {
     const { data, error } = await supabase
       .from("ai_conversation_analysis" as any)
@@ -94,5 +145,14 @@ export function useAIAnalysis() {
     return data as AIConversationAnalysis | null;
   };
 
-  return { analyzeConversation, askAI, generateScript, getDashboard, getConversationAnalysis };
+  return {
+    analyzeConversation,
+    askAI,
+    generateScript,
+    getDashboard,
+    getInsights,
+    getTemporalPatterns,
+    getPipeline,
+    getConversationAnalysis,
+  };
 }

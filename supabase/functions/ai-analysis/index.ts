@@ -533,6 +533,198 @@ Regras: tom amigável e consultivo, sem pressão, máximo 3 linhas, sem emojis e
       return jsonResponse({ data: fullData });
     }
 
+    // ─── get_insights ─────────────────────────────────────────────────────
+    if (action === "get_insights") {
+      const context = await buildDashboardContext();
+
+      // Fetch extra detail: top conversion analysis
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+
+      const [recentAnalyses, weekAnalyses] = await Promise.all([
+        supabaseAdmin
+          .from("ai_conversation_analysis")
+          .select("status_lead, sentimento, score_qualidade, horas_sem_resposta, produto_interesse, objecao_detectada")
+          .eq("tenant_id", tenantId!)
+          .gte("analyzed_at", thirtyDaysAgo),
+        supabaseAdmin
+          .from("ai_conversation_analysis")
+          .select("status_lead, score_qualidade")
+          .eq("tenant_id", tenantId!)
+          .gte("analyzed_at", sevenDaysAgo),
+      ]);
+
+      const allAnalyses = recentAnalyses.data || [];
+      const weekData = weekAnalyses.data || [];
+
+      // Compute enriched stats for prompt
+      const totalAnalyzed = allAnalyses.length;
+      const hotCount = allAnalyses.filter((a: Record<string, unknown>) => a.status_lead === "quente").length;
+      const coldCount = allAnalyses.filter((a: Record<string, unknown>) => a.status_lead === "frio").length;
+      const lostCount = allAnalyses.filter((a: Record<string, unknown>) => a.status_lead === "perdido").length;
+      const avgResponseH = allAnalyses.filter((a: Record<string, unknown>) => a.horas_sem_resposta !== null)
+        .reduce((s: number, a: Record<string, unknown>) => s + (a.horas_sem_resposta as number), 0) /
+        (allAnalyses.filter((a: Record<string, unknown>) => a.horas_sem_resposta !== null).length || 1);
+      const frustratedCount = allAnalyses.filter((a: Record<string, unknown>) => a.sentimento === "frustrado").length;
+      const weekAvgScore = weekData.length > 0
+        ? weekData.reduce((s: number, a: Record<string, unknown>) => s + ((a.score_qualidade as number) || 0), 0) / weekData.length
+        : null;
+
+      const enrichedContext = {
+        ...context,
+        total_conversas_analisadas: totalAnalyzed,
+        leads_quentes: hotCount,
+        leads_frios: coldCount,
+        leads_perdidos: lostCount,
+        media_horas_sem_resposta: Math.round(avgResponseH * 10) / 10,
+        clientes_frustrados: frustratedCount,
+        score_medio_semana: weekAvgScore ? Math.round(weekAvgScore * 10) / 10 : null,
+        taxa_conversao_estimada_pct: totalAnalyzed > 0 ? Math.round((hotCount / totalAnalyzed) * 100) : 0,
+      };
+
+      const insightsData = await callAnthropic(
+        "claude-sonnet-4-6",
+        2000,
+        `Você é um consultor sênior de vendas especializado em joalherias de varejo.
+Analise os dados e gere exatamente 6 insights estratégicos e altamente acionáveis.
+Cada insight deve ser específico com os números fornecidos, não genérico.
+Retorne APENAS um JSON válido com o array "insights" onde cada item tem:
+{
+  "tipo": "urgente" | "oportunidade" | "alerta" | "tendencia",
+  "titulo": string (máx 55 chars, impactante),
+  "descricao": string (máx 220 chars, cite números reais dos dados),
+  "acao": string (máx 100 chars, ação concreta e específica)
+}
+Priorize: risco de receita, oportunidades de conversão, eficiência operacional, padrões sazonais de joalherias (datas comemorativas próximas), e coaching de equipe.`,
+        `Dados joalheria (30 dias):\n${JSON.stringify(enrichedContext, null, 2)}\n\nGere 6 insights estratégicos altamente acionáveis para o gestor.`,
+      );
+
+      let parsed: { insights: unknown[] };
+      try {
+        const raw = insightsData.content[0].text.trim();
+        const cleaned = raw.replace(/^```json\n?/, "").replace(/\n?```$/, "");
+        parsed = JSON.parse(cleaned);
+      } catch {
+        return jsonResponse({ error: "Failed to parse insights" }, 422);
+      }
+
+      return jsonResponse({ insights: parsed.insights });
+    }
+
+    // ─── get_temporal_patterns ─────────────────────────────────────────────
+    if (action === "get_temporal_patterns") {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+
+      const { data: messages } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .select("created_at, direction")
+        .eq("tenant_id", tenantId!)
+        .gte("created_at", thirtyDaysAgo);
+
+      if (!messages || messages.length === 0) {
+        return jsonResponse({ hours: [], days: [], total_messages: 0 });
+      }
+
+      const hourMap: Record<number, { inbound: number; outbound: number }> = {};
+      for (let i = 0; i < 24; i++) hourMap[i] = { inbound: 0, outbound: 0 };
+
+      const dayMap: Record<number, { inbound: number; outbound: number }> = {};
+      for (let i = 0; i < 7; i++) dayMap[i] = { inbound: 0, outbound: 0 };
+
+      messages.forEach((m: { created_at: string; direction: string }) => {
+        const d = new Date(m.created_at);
+        // Convert UTC to BRT (UTC-3)
+        const brtHour = (d.getUTCHours() - 3 + 24) % 24;
+        const day = d.getDay();
+        const dir = m.direction === "inbound" ? "inbound" : "outbound";
+        hourMap[brtHour][dir]++;
+        dayMap[day][dir]++;
+      });
+
+      const hours = Array.from({ length: 24 }, (_, i) => ({
+        hour: i,
+        label: `${String(i).padStart(2, "0")}h`,
+        inbound: hourMap[i].inbound,
+        outbound: hourMap[i].outbound,
+        total: hourMap[i].inbound + hourMap[i].outbound,
+      }));
+
+      const dayLabels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+      const days = Array.from({ length: 7 }, (_, i) => ({
+        day: i,
+        label: dayLabels[i],
+        inbound: dayMap[i].inbound,
+        outbound: dayMap[i].outbound,
+        total: dayMap[i].inbound + dayMap[i].outbound,
+      }));
+
+      const peakInbound = hours.reduce((max, h) => (h.inbound > max.inbound ? h : max), hours[0]);
+      const peakOutbound = hours.reduce((max, h) => (h.outbound > max.outbound ? h : max), hours[0]);
+
+      return jsonResponse({
+        hours,
+        days,
+        peak_inbound_hour: peakInbound.hour,
+        peak_outbound_hour: peakOutbound.hour,
+        total_messages: messages.length,
+      });
+    }
+
+    // ─── get_pipeline ──────────────────────────────────────────────────────
+    if (action === "get_pipeline") {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+
+      const { data: analyses } = await supabaseAdmin
+        .from("ai_conversation_analysis")
+        .select(
+          "conversation_id, status_lead, produto_interesse, objecao_detectada, score_qualidade, horas_sem_resposta, resumo, sentimento, analyzed_at",
+        )
+        .eq("tenant_id", tenantId!)
+        .gte("analyzed_at", thirtyDaysAgo)
+        .in("status_lead", ["quente", "morno"]);
+
+      if (!analyses || analyses.length === 0) {
+        return jsonResponse({ hot_leads: [], warm_leads: [] });
+      }
+
+      const convIds = analyses.map((a: Record<string, unknown>) => a.conversation_id as string);
+      const { data: convs } = await supabaseAdmin
+        .from("whatsapp_conversations")
+        .select("id, contact_name, contact_phone, last_message, last_message_at")
+        .in("id", convIds);
+
+      const convMap: Record<string, Record<string, unknown>> = {};
+      (convs || []).forEach((c: Record<string, unknown>) => {
+        convMap[c.id as string] = c;
+      });
+
+      const enriched = analyses.map((a: Record<string, unknown>) => {
+        const conv = convMap[a.conversation_id as string] || {};
+        const lastAt = conv.last_message_at as string | undefined;
+        return {
+          ...a,
+          contact_name: conv.contact_name || null,
+          contact_phone: conv.contact_phone || null,
+          last_message: conv.last_message || null,
+          last_message_at: lastAt || null,
+          horas_sem_resposta: lastAt
+            ? Math.round(((Date.now() - new Date(lastAt).getTime()) / 3600000) * 10) / 10
+            : (a.horas_sem_resposta as number) || 0,
+        };
+      });
+
+      const hotLeads = enriched
+        .filter((a: Record<string, unknown>) => a.status_lead === "quente")
+        .sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
+          (b.horas_sem_resposta as number) - (a.horas_sem_resposta as number));
+      const warmLeads = enriched
+        .filter((a: Record<string, unknown>) => a.status_lead === "morno")
+        .sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
+          (b.horas_sem_resposta as number) - (a.horas_sem_resposta as number));
+
+      return jsonResponse({ hot_leads: hotLeads, warm_leads: warmLeads });
+    }
+
     return jsonResponse({ error: `Unknown action: ${action}` }, 400);
   } catch (err) {
     console.error("ai-analysis error:", err);
