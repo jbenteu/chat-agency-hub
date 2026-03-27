@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -171,15 +172,19 @@ function FieldFormDialog({ open, onOpenChange, initial, onSave, title, loading }
   );
 }
 
-export function CustomFieldsManager() {
-  const { fields, isLoading, createField, updateField, deleteField, reorderFields } = useCustomFieldDefinitions("contact");
+interface CustomFieldsManagerProps {
+  entityType?: "contact" | "deal";
+}
+
+export function CustomFieldsManager({ entityType = "contact" }: CustomFieldsManagerProps) {
+  const { fields, isLoading, createField, updateField, deleteField, reorderFields } = useCustomFieldDefinitions(entityType);
   const [showCreate, setShowCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<CustomFieldDefinition | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CustomFieldDefinition | null>(null);
 
   const handleCreate = (form: FieldFormData) => {
     createField.mutate(
-      { ...form, entity_type: "contact", order: fields.length, default_value: null },
+      { ...form, entity_type: entityType, order: fields.length, default_value: null },
       {
         onSuccess: () => { toast.success("Campo criado"); setShowCreate(false); },
         onError: (e: unknown) => toast.error(`Erro: ${(e as Error).message}`),
@@ -206,13 +211,19 @@ export function CustomFieldsManager() {
     reorderFields.mutate(reordered.map((f) => f.id));
   };
 
-  if (isLoading) return <div className="text-sm text-muted-foreground py-4">Carregando...</div>;
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Campos adicionais para contatos. Arraste para reordenar.
+          Campos adicionais para {entityType === "contact" ? "contatos" : "negociações"}. Arraste para reordenar.
         </p>
         <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5">
           <Plus className="h-3.5 w-3.5" /> Novo Campo
@@ -226,7 +237,7 @@ export function CustomFieldsManager() {
       )}
 
       <DragDropContext onDragEnd={handleDragEnd}>
-        <Droppable droppableId="custom-fields">
+        <Droppable droppableId={`custom-fields-${entityType}`}>
           {(provided) => (
             <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2">
               {fields.map((field, index) => (
@@ -293,7 +304,7 @@ export function CustomFieldsManager() {
             <AlertDialogTitle>Excluir campo</AlertDialogTitle>
             <AlertDialogDescription>
               Tem certeza que deseja excluir "{deleteTarget?.field_label}"?
-              Os dados deste campo em todos os contatos serão perdidos.
+              Os dados deste campo em todos os {entityType === "contact" ? "contatos" : "negociações"} serão perdidos.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

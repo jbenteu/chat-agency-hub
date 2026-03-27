@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,7 +43,7 @@ export function SettingsTags() {
     },
   });
 
-  // Count usage per tag
+  // Count usage per tag across contacts
   const { data: contactTags = [] } = useQuery({
     queryKey: ["contacts-tags-count"],
     queryFn: async () => {
@@ -56,11 +56,19 @@ export function SettingsTags() {
     return contactTags.filter((c) => c.tags?.includes(tagName)).length;
   };
 
+  // Also collect tags used in contacts that may not have a record in tags table
+  const usedTagNames = new Set<string>();
+  contactTags.forEach((c) => {
+    c.tags?.forEach((t: string) => usedTagNames.add(t));
+  });
+  const registeredTagNames = new Set(tags.map((t) => t.name));
+  const orphanTags = Array.from(usedTagNames).filter((t) => !registeredTagNames.has(t));
+
   const createTag = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (params: { name: string; color: string }) => {
       const tenantId = await getTenantId();
       const { error } = await supabase.from("tags").insert({
-        name: formName.trim(), color: formColor, tenant_id: tenantId,
+        name: params.name.trim(), color: params.color, tenant_id: tenantId,
       });
       if (error) throw error;
     },
@@ -103,14 +111,25 @@ export function SettingsTags() {
     onError: () => toast.error("Erro ao excluir tag"),
   });
 
-  const filtered = tags.filter((t) =>
+  // Register an orphan tag (one that exists in contacts but not in tags table)
+  const registerOrphanTag = (name: string) => {
+    const color = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+    createTag.mutate({ name, color });
+  };
+
+  const allDisplayTags = [
+    ...tags.map((t) => ({ id: t.id, name: t.name, color: t.color || "#6366f1", isOrphan: false })),
+    ...orphanTags.map((name) => ({ id: `orphan-${name}`, name, color: "#78716C", isOrphan: true })),
+  ];
+
+  const filtered = allDisplayTags.filter((t) =>
     t.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const openEdit = (tag: { id: string; name: string; color: string | null }) => {
-    setEditTag({ id: tag.id, name: tag.name, color: tag.color || TAG_COLORS[0] });
+  const openEdit = (tag: { id: string; name: string; color: string }) => {
+    setEditTag({ id: tag.id, name: tag.name, color: tag.color });
     setFormName(tag.name);
-    setFormColor(tag.color || TAG_COLORS[0]);
+    setFormColor(tag.color);
   };
 
   const openCreate = () => {
@@ -161,20 +180,30 @@ export function SettingsTags() {
                     key={tag.id}
                     className="flex items-center gap-2 p-2.5 rounded-lg border border-border hover:bg-muted/30 group transition-colors"
                   >
-                    <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color || "#6366f1" }} />
+                    <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
                     <span className="text-sm font-medium flex-1 truncate">{tag.name}</span>
-                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{count}</Badge>
-                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => openEdit(tag)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground">
-                        <Pencil className="h-3 w-3" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteTag({ id: tag.id, name: tag.name, count })}
-                        className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-950 text-muted-foreground hover:text-destructive"
+                    {tag.isOrphan && (
+                      <Badge variant="outline" className="text-[10px] h-5 px-1.5 cursor-pointer hover:bg-primary/10"
+                        onClick={() => registerOrphanTag(tag.name)}
+                        title="Registrar esta tag"
                       >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
+                        Registrar
+                      </Badge>
+                    )}
+                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{count}</Badge>
+                    {!tag.isOrphan && (
+                      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => openEdit(tag)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground">
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTag({ id: tag.id, name: tag.name, count })}
+                          className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-950 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -222,7 +251,7 @@ export function SettingsTags() {
             <Button
               size="sm"
               disabled={!formName.trim() || createTag.isPending || updateTag.isPending}
-              onClick={() => editTag ? updateTag.mutate() : createTag.mutate()}
+              onClick={() => editTag ? updateTag.mutate() : createTag.mutate({ name: formName.trim(), color: formColor })}
             >
               {(createTag.isPending || updateTag.isPending) ? "Salvando..." : "Salvar"}
             </Button>
