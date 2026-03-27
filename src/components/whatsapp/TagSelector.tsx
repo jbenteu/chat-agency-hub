@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Check } from "lucide-react";
+import { Plus, Check, X, Pencil, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 const TAG_COLORS = [
   { name: "Azul", bg: "bg-blue-100 dark:bg-blue-900/40", text: "text-blue-700 dark:text-blue-300", dot: "bg-blue-500", hex: "#3b82f6" },
@@ -18,11 +19,11 @@ const TAG_COLORS = [
 ];
 
 interface TagRecord {
+  id?: string;
   name: string;
   color: string;
 }
 
-// Module-level cache
 let globalTagsCache: TagRecord[] | null = null;
 
 function getTagColorStyle(tag: string): typeof TAG_COLORS[number] {
@@ -34,6 +35,11 @@ function getTagColorStyle(tag: string): typeof TAG_COLORS[number] {
   let hash = 0;
   for (let i = 0; i < tag.length; i++) hash = ((hash << 5) - hash + tag.charCodeAt(i)) | 0;
   return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
+function getColorDot(hex: string): string {
+  const match = TAG_COLORS.find((c) => c.hex === hex);
+  return match?.dot || "bg-gray-500";
 }
 
 interface TagSelectorProps {
@@ -49,10 +55,13 @@ export function TagSelector({ tags, onChange, readOnly = false, onCreateTag }: T
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState(0);
   const [creating, setCreating] = useState(false);
+  const [editingTag, setEditingTag] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState(0);
 
   const loadGlobalTags = useCallback(async () => {
     try {
-      const { data } = await supabase.from("tags").select("name, color").order("name");
+      const { data } = await supabase.from("tags").select("id, name, color").order("name");
       if (data) {
         globalTagsCache = data;
         setGlobalTags(data);
@@ -91,6 +100,49 @@ export function TagSelector({ tags, onChange, readOnly = false, onCreateTag }: T
     finally { setCreating(false); }
   };
 
+  const handleEditTag = async (originalName: string) => {
+    const tag = globalTags.find((t) => t.name === originalName);
+    if (!tag?.id || !editName.trim()) return;
+    const newName = editName.trim().toLowerCase();
+    const newHex = TAG_COLORS[editColor].hex;
+    try {
+      await supabase.from("tags").update({ name: newName, color: newHex } as never).eq("id", tag.id);
+      // Update local state
+      setGlobalTags((prev) => prev.map((t) => t.id === tag.id ? { ...t, name: newName, color: newHex } : t));
+      globalTagsCache = globalTagsCache?.map((t) => t.id === tag.id ? { ...t, name: newName, color: newHex } : t) || null;
+      // Update selected tags if the name changed
+      if (originalName !== newName && tags.includes(originalName)) {
+        onChange(tags.map((t) => t === originalName ? newName : t));
+      }
+      toast.success("Tag atualizada");
+      setEditingTag(null);
+    } catch {
+      toast.error("Erro ao atualizar tag");
+    }
+  };
+
+  const handleDeleteTag = async (tagName: string) => {
+    const tag = globalTags.find((t) => t.name === tagName);
+    if (!tag?.id) return;
+    try {
+      await supabase.from("tags").delete().eq("id", tag.id);
+      setGlobalTags((prev) => prev.filter((t) => t.id !== tag.id));
+      globalTagsCache = globalTagsCache?.filter((t) => t.id !== tag.id) || null;
+      if (tags.includes(tagName)) onChange(tags.filter((t) => t !== tagName));
+      toast.success("Tag excluída");
+    } catch {
+      toast.error("Erro ao excluir tag");
+    }
+  };
+
+  const startEdit = (tagName: string) => {
+    const tag = globalTags.find((t) => t.name === tagName);
+    setEditingTag(tagName);
+    setEditName(tagName);
+    const colorIdx = TAG_COLORS.findIndex((c) => c.hex === tag?.color);
+    setEditColor(colorIdx >= 0 ? colorIdx : 0);
+  };
+
   const allTagNames = Array.from(new Set([...globalTags.map((t) => t.name), ...tags]));
 
   if (readOnly) {
@@ -126,23 +178,70 @@ export function TagSelector({ tags, onChange, readOnly = false, onCreateTag }: T
           })}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-2" align="start">
+      <PopoverContent className="w-64 p-2" align="start">
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground px-1">Tags disponíveis</p>
-          <div className="max-h-32 overflow-y-auto space-y-0.5">
+          <div className="max-h-40 overflow-y-auto space-y-0.5">
             {allTagNames.map((name) => {
               const isSelected = tags.includes(name);
               const color = getTagColorStyle(name);
+              const tag = globalTags.find((t) => t.name === name);
+
+              if (editingTag === name) {
+                return (
+                  <div key={name} className="p-1.5 rounded-md bg-muted/50 space-y-1">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="h-6 text-[11px] flex-1"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleEditTag(name);
+                          if (e.key === "Escape") setEditingTag(null);
+                        }}
+                      />
+                      <button onClick={() => handleEditTag(name)} className="p-0.5 hover:bg-muted rounded">
+                        <Check className="h-3 w-3 text-green-600" />
+                      </button>
+                      <button onClick={() => setEditingTag(null)} className="p-0.5 hover:bg-muted rounded">
+                        <X className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                    </div>
+                    <div className="flex gap-1 px-0.5">
+                      {TAG_COLORS.map((c, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setEditColor(i)}
+                          className={`h-3.5 w-3.5 rounded-full ${c.dot} ${editColor === i ? "ring-2 ring-primary ring-offset-1" : ""}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
               return (
-                <button
+                <div
                   key={name}
-                  onClick={() => toggleTag(name)}
-                  className="flex items-center gap-2 w-full rounded-md px-2 py-1 text-xs hover:bg-muted transition-colors"
+                  className="flex items-center gap-2 w-full rounded-md px-2 py-1 text-xs hover:bg-muted transition-colors group/tag"
                 >
-                  <span className={`h-2 w-2 rounded-full ${color.dot}`} />
-                  <span className="flex-1 text-left">{name}</span>
-                  {isSelected && <Check className="h-3 w-3 text-primary" />}
-                </button>
+                  <button onClick={() => toggleTag(name)} className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className={`h-2 w-2 rounded-full flex-shrink-0 ${color.dot}`} />
+                    <span className="flex-1 text-left truncate">{name}</span>
+                    {isSelected && <Check className="h-3 w-3 text-primary flex-shrink-0" />}
+                  </button>
+                  {tag?.id && (
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover/tag:opacity-100 transition-opacity flex-shrink-0">
+                      <button onClick={() => startEdit(name)} className="p-0.5 rounded hover:bg-muted-foreground/10">
+                        <Pencil className="h-2.5 w-2.5 text-muted-foreground" />
+                      </button>
+                      <button onClick={() => handleDeleteTag(name)} className="p-0.5 rounded hover:bg-destructive/10">
+                        <Trash2 className="h-2.5 w-2.5 text-destructive" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               );
             })}
             {allTagNames.length === 0 && (

@@ -12,6 +12,45 @@ import { CustomFieldRenderer } from "./CustomFieldRenderer";
 import { BRAZIL_STATES } from "@/data/brazil-locations";
 import { toast } from "sonner";
 
+// ---- Input masks ----
+function maskCPF(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function maskPhone(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 13);
+  if (digits.length <= 2) return digits.length ? `+${digits}` : "";
+  if (digits.length <= 4) return `+${digits.slice(0, 2)} (${digits.slice(2)}`;
+  if (digits.length <= 9) return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4)}`;
+  return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
+}
+
+function maskCEP(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
+
+function maskInstagram(value: string): string {
+  const cleaned = value.replace(/[^a-zA-Z0-9._]/g, "");
+  return cleaned ? `@${cleaned}` : "";
+}
+
+// ---- Field wrapper (defined OUTSIDE component to avoid remounts) ----
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+// ---- Component ----
 interface CRMContactDrawerDataProps {
   contact: Contact;
 }
@@ -58,41 +97,49 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
     );
   };
 
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="space-y-1">
-      <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</Label>
-      {children}
-    </div>
-  );
-
   return (
     <div className="p-4 space-y-4">
       {/* Informações básicas */}
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <Field label="Nome *">
+          <FormField label="Nome *">
             <Input value={form.name} onChange={(e) => set("name", e.target.value)} className="h-8 text-sm" />
-          </Field>
+          </FormField>
         </div>
-        <Field label="Telefone">
-          <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} className="h-8 text-sm" />
-        </Field>
-        <Field label="E-mail">
-          <Input value={form.email} onChange={(e) => set("email", e.target.value)} className="h-8 text-sm" type="email" />
-        </Field>
-        <Field label="Empresa">
+        <FormField label="Telefone">
+          <Input
+            value={form.phone}
+            onChange={(e) => set("phone", maskPhone(e.target.value))}
+            className="h-8 text-sm"
+            placeholder="+55 (00) 00000-0000"
+          />
+        </FormField>
+        <FormField label="E-mail">
+          <Input value={form.email} onChange={(e) => set("email", e.target.value)} className="h-8 text-sm" type="email" placeholder="email@exemplo.com" />
+        </FormField>
+        <FormField label="Empresa">
           <Input value={form.company} onChange={(e) => set("company", e.target.value)} className="h-8 text-sm" />
-        </Field>
-        <Field label="Instagram">
-          <Input value={form.instagram} onChange={(e) => set("instagram", e.target.value)} className="h-8 text-sm" placeholder="@usuario" />
-        </Field>
-        <Field label="CPF">
-          <Input value={form.cpf} onChange={(e) => set("cpf", e.target.value)} className="h-8 text-sm" placeholder="000.000.000-00" />
-        </Field>
-        <Field label="Aniversário">
+        </FormField>
+        <FormField label="Instagram">
+          <Input
+            value={form.instagram}
+            onChange={(e) => set("instagram", maskInstagram(e.target.value))}
+            className="h-8 text-sm"
+            placeholder="@usuario"
+          />
+        </FormField>
+        <FormField label="CPF">
+          <Input
+            value={form.cpf}
+            onChange={(e) => set("cpf", maskCPF(e.target.value))}
+            className="h-8 text-sm"
+            placeholder="000.000.000-00"
+          />
+        </FormField>
+        <FormField label="Aniversário">
           <Input value={form.birthday} onChange={(e) => set("birthday", e.target.value)} className="h-8 text-sm" type="date" />
-        </Field>
-        <Field label="Gênero">
+        </FormField>
+        <FormField label="Gênero">
           <Select value={form.gender || "nao_informado"} onValueChange={(v) => set("gender", v === "nao_informado" ? "" : v)}>
             <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -102,7 +149,7 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
               <SelectItem value="outro">Outro</SelectItem>
             </SelectContent>
           </Select>
-        </Field>
+        </FormField>
       </div>
 
       <Separator />
@@ -110,7 +157,7 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
       {/* Localização */}
       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Localização</p>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Estado">
+        <FormField label="Estado">
           <Select value={form.state || "none"} onValueChange={(v) => set("state", v === "none" ? "" : v)}>
             <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
             <SelectContent>
@@ -118,16 +165,21 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
               {BRAZIL_STATES.map((s) => <SelectItem key={s.uf} value={s.uf}>{s.name}</SelectItem>)}
             </SelectContent>
           </Select>
-        </Field>
-        <Field label="Cidade">
+        </FormField>
+        <FormField label="Cidade">
           <Input value={form.city} onChange={(e) => set("city", e.target.value)} className="h-8 text-sm" />
-        </Field>
-        <Field label="Endereço">
+        </FormField>
+        <FormField label="Endereço">
           <Input value={form.address} onChange={(e) => set("address", e.target.value)} className="h-8 text-sm" />
-        </Field>
-        <Field label="CEP">
-          <Input value={form.zip_code} onChange={(e) => set("zip_code", e.target.value)} className="h-8 text-sm" placeholder="00000-000" />
-        </Field>
+        </FormField>
+        <FormField label="CEP">
+          <Input
+            value={form.zip_code}
+            onChange={(e) => set("zip_code", maskCEP(e.target.value))}
+            className="h-8 text-sm"
+            placeholder="00000-000"
+          />
+        </FormField>
       </div>
 
       <Separator />
@@ -135,7 +187,7 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
       {/* Origem */}
       <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Origem e Lifecycle</p>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Origem">
+        <FormField label="Origem">
           <Select value={form.source || "manual"} onValueChange={(v) => set("source", v)}>
             <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -147,8 +199,8 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
               <SelectItem value="indicacao">Indicação</SelectItem>
             </SelectContent>
           </Select>
-        </Field>
-        <Field label="Estágio de Vida">
+        </FormField>
+        <FormField label="Estágio de Vida">
           <Select value={form.lifecycle_stage || "lead"} onValueChange={(v) => set("lifecycle_stage", v)}>
             <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -158,23 +210,23 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
               <SelectItem value="inactive">Inativo</SelectItem>
             </SelectContent>
           </Select>
-        </Field>
+        </FormField>
         <div className="col-span-2">
-          <Field label="Campanha de origem">
+          <FormField label="Campanha de origem">
             <Input value={form.source_detail} onChange={(e) => set("source_detail", e.target.value)} className="h-8 text-sm" placeholder="UTM ou nome da campanha" />
-          </Field>
+          </FormField>
         </div>
       </div>
 
       <Separator />
 
       {/* Tags */}
-      <Field label="Tags">
+      <FormField label="Tags">
         <TagSelector
           tags={form.tags}
           onChange={(tags) => set("tags", tags)}
         />
-      </Field>
+      </FormField>
 
       {/* Custom Fields */}
       {customFieldDefs.length > 0 && (
