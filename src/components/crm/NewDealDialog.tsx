@@ -6,18 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDeals } from "@/hooks/use-deals";
 import { useContacts, getTenantId } from "@/hooks/use-contacts";
-import { usePipeline } from "@/hooks/use-pipeline";
+import type { PipelineStage } from "@/hooks/use-pipeline";
 import { useToast } from "@/hooks/use-toast";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  stages?: PipelineStage[];
 }
 
-export function NewDealDialog({ open, onOpenChange }: Props) {
+export function NewDealDialog({ open, onOpenChange, stages = [] }: Props) {
   const { createDeal } = useDeals();
   const { contacts } = useContacts();
-  const { stages } = usePipeline();
   const { toast } = useToast();
   const [title, setTitle] = useState("");
   const [contactId, setContactId] = useState("");

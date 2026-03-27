@@ -193,7 +193,7 @@ export function KanbanBoard() {
         stageName={pendingMove?.stage.name}
       />
 
-      <NewDealDialog open={showNewDeal} onOpenChange={setShowNewDeal} />
+      <NewDealDialog open={showNewDeal} onOpenChange={setShowNewDeal} stages={stages} />
     </>
   );
 }
