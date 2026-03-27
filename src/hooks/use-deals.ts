@@ -47,6 +47,7 @@ export interface Deal {
 
 export function useDeals() {
   const queryClient = useQueryClient();
+  const mutatingRef = useRef(false);
 
   const query = useQuery({
     queryKey: ["deals"],
