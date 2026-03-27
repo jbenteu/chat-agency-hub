@@ -20,7 +20,7 @@ const CRM = () => {
                 </TabsTrigger>
                 <TabsTrigger value="lista" className="gap-1.5 text-xs h-7 px-2.5">
                   <List className="h-3 w-3" />
-                  Lista
+                  Vendas
                 </TabsTrigger>
                 <TabsTrigger value="contatos" className="gap-1.5 text-xs h-7 px-2.5">
                   <Users className="h-3 w-3" />

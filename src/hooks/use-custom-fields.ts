@@ -24,6 +24,7 @@ export function useCustomFieldDefinitions(entityType: "contact" | "deal" = "cont
   const query = useQuery({
     queryKey: ["custom_field_definitions", entityType],
     staleTime: 60_000,
+    retry: 1,
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
@@ -31,7 +32,13 @@ export function useCustomFieldDefinitions(entityType: "contact" | "deal" = "cont
         .select("*")
         .eq("entity_type", entityType)
         .order("order", { ascending: true });
-      if (error) throw error;
+      if (error) {
+        // If table doesn't exist yet, return empty array
+        if (error.code === "42P01" || error.message?.includes("does not exist")) {
+          return [] as CustomFieldDefinition[];
+        }
+        throw error;
+      }
       return (data || []) as CustomFieldDefinition[];
     },
   });

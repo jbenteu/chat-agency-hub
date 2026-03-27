@@ -43,7 +43,7 @@ function ContactDealsTab({ contact }: { contact: Contact }) {
         <ShoppingBag className="h-3.5 w-3.5" /> Nova Venda
       </Button>
       {contactDeals.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-4">Nenhuma negociação vinculada</p>
+        <p className="text-sm text-muted-foreground text-center py-4">Nenhuma venda vinculada</p>
       ) : (
         contactDeals.map((deal) => {
           const stage = stages.find((s) => s.id === deal.pipeline_stage_id || s.name === deal.stage);
@@ -188,7 +188,7 @@ export function CRMContactDrawer({ contact, open, onOpenChange, initialDeal }: C
           <Tabs defaultValue="dados" className="flex-1 flex flex-col overflow-hidden">
             <TabsList className="mx-4 mt-2 w-auto self-start">
               <TabsTrigger value="dados" className="text-xs">Dados</TabsTrigger>
-              <TabsTrigger value="negocios" className="text-xs">Negociações</TabsTrigger>
+              <TabsTrigger value="negocios" className="text-xs">Vendas</TabsTrigger>
               <TabsTrigger value="tarefas" className="text-xs">Tarefas</TabsTrigger>
               <TabsTrigger value="timeline" className="text-xs">Timeline</TabsTrigger>
             </TabsList>

@@ -140,7 +140,7 @@ export function ContactsTable() {
                 <TableHead className="text-xs font-medium text-muted-foreground">Contato</TableHead>
                 <TableHead className="hidden md:table-cell text-xs font-medium text-muted-foreground">Telefone</TableHead>
                 <TableHead className="hidden lg:table-cell text-xs font-medium text-muted-foreground">Origem</TableHead>
-                <TableHead className="hidden lg:table-cell text-xs font-medium text-muted-foreground">Negociações</TableHead>
+                <TableHead className="hidden lg:table-cell text-xs font-medium text-muted-foreground">Vendas</TableHead>
                 <TableHead className="text-xs font-medium text-muted-foreground">Lifecycle</TableHead>
                 <TableHead className="text-xs font-medium text-muted-foreground">Score</TableHead>
                 <TableHead className="text-xs font-medium text-muted-foreground">Última atividade</TableHead>

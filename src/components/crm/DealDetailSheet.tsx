@@ -112,7 +112,7 @@ function DealDataTab({ deal }: { deal: Deal }) {
     <div className="px-6 py-4 space-y-5">
       {/* Deal fields */}
       <div>
-        <h4 className="text-sm font-medium mb-3">Negociação</h4>
+        <h4 className="text-sm font-medium mb-3">Venda</h4>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <Label className="text-xs">Contato</Label>

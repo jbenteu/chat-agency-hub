@@ -68,7 +68,7 @@ export function DealsTable() {
   };
 
   const handleBulkDelete = () => {
-    if (!confirm(`Excluir ${selected.size} negociação(ões)?`)) return;
+    if (!confirm(`Excluir ${selected.size} venda(s)?`)) return;
     selected.forEach((id) => deleteDeal.mutate(id));
     setSelected(new Set());
   };
@@ -100,7 +100,7 @@ export function DealsTable() {
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            placeholder="Buscar negociação..."
+            placeholder="Buscar venda..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 h-8 text-sm"
@@ -116,15 +116,15 @@ export function DealsTable() {
           </div>
         )}
         <Button onClick={() => setShowNewDeal(true)} size="sm" className="h-8 gap-1.5">
-          <Plus className="h-3.5 w-3.5" /> Nova Negociação
+          <Plus className="h-3.5 w-3.5" /> Nova Venda
         </Button>
       </div>
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Inbox className="h-10 w-10 text-muted-foreground mb-3" />
-          <p className="text-sm font-medium">Nenhuma negociação encontrada</p>
-          <p className="text-xs text-muted-foreground mt-1">Ajuste os filtros ou crie uma nova negociação</p>
+          <p className="text-sm font-medium">Nenhuma venda encontrada</p>
+          <p className="text-xs text-muted-foreground mt-1">Ajuste os filtros ou cadastre uma nova venda</p>
         </div>
       ) : (
         <div className="rounded-lg border border-border overflow-hidden">

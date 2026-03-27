@@ -152,7 +152,7 @@ export function CRMHeader({
         </DropdownMenu>
 
         <span className="text-xs text-muted-foreground tabular-nums">
-          {deals.length} leads: {totalValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+          {deals.length} vendas: {totalValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
         </span>
 
         <div className="flex-1" />
@@ -209,7 +209,7 @@ export function CRMHeader({
         </Button>
 
         <Button onClick={onNewDeal} size="sm" className="h-7 gap-1 text-xs px-3">
-          <Plus className="h-3 w-3" /> NOVO LEAD
+          <Plus className="h-3 w-3" /> NOVA VENDA
         </Button>
       </div>
 
