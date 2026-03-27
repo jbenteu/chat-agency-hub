@@ -165,12 +165,18 @@ function AudioPlayer({ src, isOutbound, mimeType }: { src: string; isOutbound: b
 }
 
 // ── Video Player com controles customizados ──
-function VideoPlayer({ src, mimeType, thumbSrc, onRedownload, reloading }: {
+function VideoPlayer({ src, mimeType, thumbSrc, mediaWidth, mediaHeight, onRedownload, reloading }: {
   src: string; mimeType?: string | null; thumbSrc?: string | null;
   mediaWidth?: number | null; mediaHeight?: number | null;
   onError: () => void; onRedownload: () => Promise<void>; reloading: boolean;
   isOutbound: boolean;
 }) {
+  const isPortrait = mediaWidth && mediaHeight && mediaHeight > mediaWidth;
+  const containerMaxWidth = isPortrait ? 200 : 280;
+  const containerStyle: React.CSSProperties = {
+    maxWidth: containerMaxWidth,
+    ...(mediaWidth && mediaHeight ? { aspectRatio: `${mediaWidth}/${mediaHeight}` } : {}),
+  };
   const videoRef = useRef<HTMLVideoElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [videoError, setVideoError] = useState(false);
@@ -288,14 +294,13 @@ function VideoPlayer({ src, mimeType, thumbSrc, onRedownload, reloading }: {
   return (
     <div
       className="relative mb-1 overflow-hidden rounded-lg bg-black"
-      style={{ maxWidth: 280 }}
+      style={containerStyle}
       onMouseMove={revealControls}
       onTouchStart={revealControls}
     >
       <video
         ref={videoRef}
-        className="block w-full"
-        style={{ maxHeight: 300 }}
+        className="block w-full h-full object-contain"
         preload="metadata"
         poster={thumbSrc || undefined}
         muted={muted}
