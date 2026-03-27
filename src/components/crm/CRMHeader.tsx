@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, Filter, Plus, X, TrendingUp, DollarSign, CheckCircle2, Users, ChevronDown, Eye, EyeOff, Settings2 } from "lucide-react";
+import { Search, Filter, Plus, X, CheckCircle2, Users, ChevronDown, Settings2 } from "lucide-react";
 import type { Deal } from "@/hooks/use-deals";
 import type { PipelineStage } from "@/hooks/use-pipeline";
 
