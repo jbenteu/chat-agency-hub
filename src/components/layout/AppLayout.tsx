@@ -108,10 +108,6 @@ const AppSidebar: React.FC = () => {
             </button>
           </div>
         </div>
-        {/* Sidebar toggle at very bottom */}
-        <div className="mt-1 flex justify-center">
-          <SidebarTrigger className="h-7 w-7" />
-        </div>
       </SidebarFooter>
     </Sidebar>
   );
