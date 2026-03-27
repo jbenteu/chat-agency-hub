@@ -1083,7 +1083,7 @@ const AIAnalysis: React.FC = () => {
                         A IA vai analisar seus dados e gerar recomendações específicas para sua joalheria — oportunidades, riscos e ações concretas.
                       </p>
                     </div>
-                    <Button onClick={loadInsights} className="bg-violet-600 hover:bg-violet-500 text-white">
+                    <Button onClick={() => loadInsights()} className="bg-violet-600 hover:bg-violet-500 text-white">
                       <Sparkles size={16} className="mr-2" />
                       Gerar insights agora
                     </Button>
