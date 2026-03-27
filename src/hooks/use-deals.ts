@@ -142,7 +142,22 @@ export function useDeals() {
         });
       }
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["deals"] }),
+    onMutate: async ({ id, stage, pipeline_stage_id }) => {
+      await queryClient.cancelQueries({ queryKey: ["deals"] });
+      const previous = queryClient.getQueryData<Deal[]>(["deals"]);
+      queryClient.setQueryData<Deal[]>(["deals"], (old) =>
+        (old || []).map((d) =>
+          d.id === id ? { ...d, stage, pipeline_stage_id: pipeline_stage_id ?? d.pipeline_stage_id } : d
+        )
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["deals"], context.previous);
+      }
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["deals"] }),
   });
 
   const deleteDeal = useMutation({
