@@ -165,6 +165,49 @@ function AudioPlayer({ src, isOutbound, mimeType }: { src: string; isOutbound: b
   );
 }
 
+// ── Video Player with error handling ──
+function VideoPlayer({ src, mimeType, thumbSrc, mediaWidth, mediaHeight, onError, onRedownload, reloading }: {
+  src: string; mimeType?: string | null; thumbSrc?: string | null;
+  mediaWidth?: number | null; mediaHeight?: number | null;
+  onError: () => void; onRedownload: () => Promise<void>; reloading: boolean;
+}) {
+  const [videoError, setVideoError] = useState(false);
+
+  if (videoError) {
+    return (
+      <div className="mb-1 flex flex-col items-center gap-2 rounded-lg bg-background/10 p-4" style={{ maxWidth: 280 }}>
+        {thumbSrc ? (
+          <img src={thumbSrc} alt="Preview" className="max-w-full rounded-lg opacity-40 blur-sm" style={{ maxHeight: 200 }} />
+        ) : (
+          <Play className="h-8 w-8 text-muted-foreground" />
+        )}
+        <span className="text-xs text-muted-foreground">Vídeo indisponível</span>
+        <button
+          onClick={() => { setVideoError(false); onRedownload(); }}
+          disabled={reloading}
+          className="flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+        >
+          {reloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          Recarregar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <video
+      controls
+      className="mb-1 rounded-lg"
+      style={{ maxWidth: 280, maxHeight: 300 }}
+      preload="metadata"
+      poster={thumbSrc || undefined}
+      onError={() => setVideoError(true)}
+    >
+      <source src={src} type={mimeType || undefined} />
+    </video>
+  );
+}
+
 export const MediaMessage = memo(function MediaMessage({ messageId, mediaUrl, mediaType, content, instanceName, remoteJid, isOutbound, mediaThumbnail, mediaWidth, mediaHeight, metadataMimeType }: MediaMessageProps) {
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
