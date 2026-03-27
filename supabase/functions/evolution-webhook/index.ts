@@ -841,34 +841,50 @@ Deno.serve(async (req) => {
             // Update total
             await supabase.from("import_progress").update({ total: contacts.length }).eq("id", progressId);
 
-            // Process in batches of 100
+            // Mapeia todos os contatos, deduplica por telefone (evita unique violation no batch)
+            const phoneMap = new Map<string, Record<string, unknown>>();
+            for (const c of contacts) {
+              const rawId = c.id || c.jid || c.wuid || "";
+              const phone = normalizePhone(rawId);
+              if (!phone) continue;
+              // Contatos de grupo (@g.us) não são pessoas — ignora
+              if ((c.id || c.jid || "").includes("@g.us")) continue;
+              const name = c.pushName || c.name || c.notify || null;
+              phoneMap.set(phone, {
+                tenant_id: tenantId,
+                phone,
+                name: name && !/^\d+$/.test(name) ? name : phone,
+                tags: ["whatsapp", "importado"],
+                origin: "whatsapp_import",
+                notes: "Importado automaticamente do WhatsApp",
+              });
+            }
+            const allRows = Array.from(phoneMap.values());
+
+            // Atualiza total com contagem real (após deduplicação e filtragem)
+            await supabase.from("import_progress").update({ total: allRows.length }).eq("id", progressId);
+
+            if (allRows.length === 0) {
+              await supabase.from("import_progress").update({
+                status: "done", imported: 0, finished_at: new Date().toISOString(),
+              }).eq("id", progressId);
+              return;
+            }
+
             const BATCH_SIZE = 100;
             let imported = 0;
 
-            for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
-              const batch = contacts.slice(i, i + BATCH_SIZE);
-              const rows = batch
-                .map((c: any) => {
-                  const rawId = c.id || c.jid || c.wuid || "";
-                  const phone = normalizePhone(rawId);
-                  if (!phone) return null;
-                  const name = c.pushName || c.name || c.notify || null;
-                  return {
-                    tenant_id: tenantId,
-                    phone,
-                    name: name && !/^\d+$/.test(name) ? name : phone,
-                    tags: ["whatsapp", "importado"],
-                    origin: "whatsapp_import",
-                    notes: "Importado automaticamente do WhatsApp",
-                  };
-                })
-                .filter(Boolean);
+            for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
+              const rows = allRows.slice(i, i + BATCH_SIZE);
 
-              if (rows.length > 0) {
-                const { error: upsertErr } = await supabase
-                  .from("contacts")
-                  .upsert(rows, { onConflict: "phone,tenant_id", ignoreDuplicates: true });
-                if (!upsertErr) imported += rows.length;
+              const { error: upsertErr } = await supabase
+                .from("contacts")
+                .upsert(rows, { onConflict: "phone,tenant_id" });
+
+              if (upsertErr) {
+                console.error("Upsert error (batch", i, "):", upsertErr.message, upsertErr.details);
+              } else {
+                imported += rows.length;
               }
 
               // Update progress
