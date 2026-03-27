@@ -62,6 +62,7 @@ export function MessageContextMenu({
                   {QUICK_REACTIONS.map((emoji) => (
                     <button
                       key={emoji}
+                      onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onReact(emoji); }}
                       className="flex h-8 w-8 items-center justify-center rounded-full text-lg transition-transform hover:scale-125 active:scale-95"
                     >
@@ -69,6 +70,7 @@ export function MessageContextMenu({
                     </button>
                   ))}
                   <button
+                    onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowFullPicker(true); }}
                     className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-all hover:scale-110 hover:bg-accent active:scale-95"
                     title="Mais emojis"
