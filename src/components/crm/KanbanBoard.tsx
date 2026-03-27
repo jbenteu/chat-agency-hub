@@ -26,6 +26,12 @@ export function KanbanBoard() {
   const [pendingMove, setPendingMove] = useState<{ dealId: string; stage: PipelineStage; prevStage: string } | null>(null);
 
   const { views, activeViewId, createView, deleteView, changeView, hiddenStageIds, toggleStage } = usePipelineViews();
+  const { updateStage } = usePipeline();
+
+  const handleRenameStage = useCallback((stageId: string, newName: string) => {
+    updateStage.mutate({ id: stageId, name: newName });
+    toast.success(`Estágio renomeado para "${newName}"`);
+  }, [updateStage]);
 
   const visibleStages = useMemo(() => {
     return stages.filter((s) => !hiddenStageIds.includes(s.id));
