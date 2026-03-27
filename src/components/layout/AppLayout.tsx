@@ -50,11 +50,14 @@ const AppSidebar: React.FC = () => {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-3 py-3">
-        <div className="flex items-center gap-2 overflow-hidden">
-          <img src={logo} alt="Advanced Marketing" className="h-7 w-auto flex-shrink-0" />
-          {!collapsed && (
-            <span className="text-sm font-semibold text-sidebar-accent-foreground truncate">Advanced MKT</span>
-          )}
+        <div className="flex items-center gap-2 overflow-hidden justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <img src={logo} alt="Advanced Marketing" className="h-7 w-auto flex-shrink-0" />
+            {!collapsed && (
+              <span className="text-sm font-semibold text-sidebar-accent-foreground truncate">Advanced MKT</span>
+            )}
+          </div>
+          <SidebarTrigger className="h-6 w-6 flex-shrink-0" />
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -104,10 +107,6 @@ const AppSidebar: React.FC = () => {
               <LogOut className="h-4 w-4" />
             </button>
           </div>
-        </div>
-        {/* Sidebar toggle at very bottom */}
-        <div className="mt-1 flex justify-center">
-          <SidebarTrigger className="h-7 w-7" />
         </div>
       </SidebarFooter>
     </Sidebar>
