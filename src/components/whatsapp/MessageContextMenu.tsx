@@ -40,7 +40,7 @@ export function MessageContextMenu({
   return (
     <ContextMenu onOpenChange={(open) => { if (!open) setShowFullPicker(false); }}>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className={showFullPicker ? "w-80 p-0" : "w-52"}>
+      <ContextMenuContent className={showFullPicker ? "w-80 p-0" : "w-52"} onPointerDownOutside={showFullPicker ? (e) => e.preventDefault() : undefined}>
         {showFullPicker ? (
           <div>
             <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border">

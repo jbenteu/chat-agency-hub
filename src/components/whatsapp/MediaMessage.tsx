@@ -418,11 +418,7 @@ export const MediaMessage = memo(function MediaMessage({ messageId, mediaUrl, me
   }
 
   if (mediaType === "video") {
-    return (
-      <video controls className="mb-1 rounded-lg" style={{ maxWidth: 280, maxHeight: 300 }} preload="metadata">
-        <source src={resolvedUrl} type={metadataMimeType || undefined} />
-      </video>
-    );
+    return <VideoPlayer src={resolvedUrl} mimeType={metadataMimeType} thumbSrc={thumbSrc} mediaWidth={mediaWidth} mediaHeight={mediaHeight} onError={() => { setResolvedUrl(null); setError(true); }} onRedownload={tryRedownload} reloading={reloading} />;
   }
 
   if (mediaType === "audio") {
