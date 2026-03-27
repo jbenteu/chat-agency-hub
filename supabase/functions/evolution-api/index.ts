@@ -474,13 +474,62 @@ Deno.serve(async (req) => {
     if (action === "delete_instance") {
       if (!instanceName) return jsonResponse({ error: "instanceName is required" }, 400);
       const instance = await getInstanceRow(instanceName);
+
+      // Delete from Evolution API — try both logout + delete endpoints
+      let evoDeleted = false;
       try {
-        await fetchWithTimeout(
+        // First try to logout (disconnect) the instance
+        try {
+          await fetchWithTimeout(
+            `${baseUrl}/instance/logout/${instanceName}`,
+            { method: "DELETE", headers: evoHeaders },
+            8000,
+          );
+          console.log(`[delete_instance] Logout OK: ${instanceName}`);
+        } catch (logoutErr) {
+          console.log(`[delete_instance] Logout failed (non-critical): ${(logoutErr as Error).message}`);
+        }
+
+        // Then delete the instance
+        const delRes = await fetchWithTimeout(
           `${baseUrl}/instance/delete/${instanceName}`,
           { method: "DELETE", headers: evoHeaders },
+          8000,
         );
-      } catch { /* best-effort */ }
+        const delText = await delRes.text();
+        console.log(`[delete_instance] Evolution DELETE ${delRes.status}: ${delText.slice(0, 300)}`);
+        evoDeleted = delRes.status >= 200 && delRes.status < 300;
+      } catch (evoErr) {
+        console.error(`[delete_instance] Evolution API error: ${(evoErr as Error).message}`);
+        // Continue with local cleanup even if Evolution fails
+      }
+
+      // Clean up local database: messages → conversations → instance
       if (instance?.id) {
+        // Delete messages first (FK dependency)
+        await supabaseAdmin
+          .from("whatsapp_messages")
+          .delete()
+          .eq("tenant_id", tenantId)
+          .eq("conversation_id", instance.id);
+
+        // Get all conversation IDs for this instance to delete their messages
+        const { data: convos } = await supabaseAdmin
+          .from("whatsapp_conversations")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("instance_id", instance.id);
+
+        if (convos && convos.length > 0) {
+          const convoIds = convos.map((c: any) => c.id);
+          for (const cid of convoIds) {
+            await supabaseAdmin
+              .from("whatsapp_messages")
+              .delete()
+              .eq("conversation_id", cid);
+          }
+        }
+
         await supabaseAdmin
           .from("whatsapp_conversations")
           .delete()
@@ -492,7 +541,8 @@ Deno.serve(async (req) => {
         .delete()
         .eq("tenant_id", tenantId)
         .eq("instance_name", instanceName);
-      return jsonResponse({ success: true });
+
+      return jsonResponse({ success: true, evolution_deleted: evoDeleted });
     }
 
     // ── send_text ─────────────────────────────────────────────────────────────
