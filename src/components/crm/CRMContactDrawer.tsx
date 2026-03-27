@@ -10,7 +10,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  MessageCircle, MapPin, Mail, Instagram, X, Briefcase,
+  MessageCircle, MapPin, Mail, Instagram, X, Briefcase, ShoppingBag,
 } from "lucide-react";
 import { formatPhoneWhatsApp } from "@/data/country-codes";
 import type { Contact } from "@/hooks/use-contacts";
