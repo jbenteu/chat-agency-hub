@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,8 +26,7 @@ import { usePipeline } from "@/hooks/use-pipeline";
 import { useTasks } from "@/hooks/use-tasks";
 import { toast } from "sonner";
 import { CRMNoContactBadge } from "./CRMNoContactBadge";
-import { formatDistanceToNow, format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { format } from "date-fns";
 
 interface DealCardProps {
   deal: Deal;
@@ -52,6 +50,9 @@ export function DealCard({ deal, onClick, stageColor }: DealCardProps) {
   const isTaskOverdue = nextTask ? new Date(nextTask.due_date) < new Date() : false;
 
   const createdDate = deal.created_at ? format(new Date(deal.created_at), "dd/MM/yyyy") : "";
+
+  // Use stage color for left border and subtle background tint
+  const cardBg = stageColor ? `${stageColor}08` : undefined;
 
   const handleMarkWon = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -78,14 +79,18 @@ export function DealCard({ deal, onClick, stageColor }: DealCardProps) {
   return (
     <>
       <div
-        className="bg-card border-b border-border/50 cursor-pointer hover:bg-accent/30 transition-colors group px-2 py-1.5"
+        className="border-b border-border/50 cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition-all group px-2 py-1.5"
+        style={{
+          backgroundColor: cardBg,
+          borderLeft: `3px solid ${stageColor || "hsl(var(--border))"}`,
+        }}
         onClick={onClick}
       >
         {/* Row 1: Name + Date */}
         <div className="flex items-start justify-between gap-1">
           <div className="flex-1 min-w-0">
             <p className="text-[13px] font-medium truncate leading-tight">{displayName}</p>
-            <p className="text-[10px] text-primary truncate">{deal.title}</p>
+            <p className="text-[10px] truncate" style={{ color: stageColor || "hsl(var(--primary))" }}>{deal.title}</p>
           </div>
           <div className="flex items-center gap-0.5 flex-shrink-0">
             <span className="text-[10px] text-muted-foreground tabular-nums">{createdDate}</span>
@@ -117,12 +122,12 @@ export function DealCard({ deal, onClick, stageColor }: DealCardProps) {
           </div>
         </div>
 
-        {/* Row 2: Contact name + task indicator */}
+        {/* Row 2: Task indicator + value */}
         <div className="flex items-center justify-between gap-1 mt-0.5">
-          <span className="text-[10px] text-muted-foreground">●</span>
+          <span className="text-[10px]" style={{ color: stageColor || "hsl(var(--muted-foreground))" }}>●</span>
           <div className="flex-1 min-w-0">
             {nextTask ? (
-              <span className={`flex items-center gap-0.5 text-[10px] truncate ${isTaskOverdue ? "text-red-500" : "text-muted-foreground"}`}>
+              <span className={`flex items-center gap-0.5 text-[10px] truncate ${isTaskOverdue ? "text-destructive" : "text-muted-foreground"}`}>
                 <Clock className="h-2.5 w-2.5 flex-shrink-0" />
                 {nextTask.title}
               </span>
