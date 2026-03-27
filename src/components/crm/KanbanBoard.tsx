@@ -141,6 +141,7 @@ export function KanbanBoard() {
         onDeleteView={deleteView}
         hiddenStageIds={hiddenStageIds}
         onToggleStage={toggleStage}
+        onOpenSettings={() => setShowSettings(true)}
       />
 
       <DragDropContext onDragEnd={onDragEnd}>
