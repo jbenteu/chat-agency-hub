@@ -37,6 +37,7 @@ interface CRMHeaderProps {
   onDeleteView: (viewId: string) => void;
   hiddenStageIds: string[];
   onToggleStage: (stageId: string) => void;
+  onOpenSettings?: () => void;
 }
 
 export function CRMHeader({
