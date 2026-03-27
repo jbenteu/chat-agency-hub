@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -22,24 +21,23 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  MessageCircle, MoreVertical, Edit, ArrowRight, CheckCircle2,
-  XCircle, Trash2, Package, CalendarDays, AlertTriangle,
-} from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { formatPhoneWhatsApp } from "@/data/country-codes";
+import { MessageCircle, MoreVertical, Edit, ArrowRight, CheckCircle2, XCircle, Trash2, Clock } from "lucide-react";
 import type { Deal } from "@/hooks/use-deals";
 import { useDeals } from "@/hooks/use-deals";
 import { usePipeline } from "@/hooks/use-pipeline";
-import { useToast } from "@/hooks/use-toast";
+import { useTasks } from "@/hooks/use-tasks";
+import { toast } from "sonner";
+import { CRMScoreBadge } from "./CRMScoreBadge";
+import { CRMNoContactBadge } from "./CRMNoContactBadge";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
-const PRIORITY_CONFIG: Record<string, { label: string; className: string }> = {
-  urgente: { label: "Urgente", className: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400" },
-  alta:    { label: "Alta",    className: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-400" },
-  media:   { label: "Média",   className: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400" },
-  baixa:   { label: "Baixa",   className: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400" },
-};
+function getAvatarColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 55%, 45%)`;
+}
 
 interface DealCardProps {
   deal: Deal;
@@ -48,97 +46,88 @@ interface DealCardProps {
 }
 
 export function DealCard({ deal, onClick, stageColor }: DealCardProps) {
-  const { moveDeal, deleteDeal, updateDeal } = useDeals();
+  const { moveDeal, deleteDeal } = useDeals();
   const { stages } = usePipeline();
-  const { toast } = useToast();
+  const { tasks } = useTasks({ deal_id: deal.id, completed: false });
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showLossDialog, setShowLossDialog] = useState(false);
   const [lossReason, setLossReason] = useState("");
 
   const contact = deal.contact;
-  const initials = (contact?.name || deal.title || "?")
-    .split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  const displayName = contact?.name || deal.title || "?";
+  const initials = displayName.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  const avatarColor = getAvatarColor(displayName);
 
-  const itemsCount = deal.deal_items?.length || 0;
-  const priority = deal.priority || "media";
-  const priorityCfg = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG.media;
+  const score = (contact as unknown as { score?: number })?.score ?? 0;
+  const lastContactAt = (contact as unknown as { last_contact_at?: string | null })?.last_contact_at ?? null;
 
-  const isOverdue = deal.expected_close_date
-    ? new Date(deal.expected_close_date + "T23:59:59") < new Date()
-    : false;
+  // Next pending task
+  const nextTask = tasks.length > 0 ? tasks[0] : null;
+  const isTaskOverdue = nextTask ? new Date(nextTask.due_date) < new Date() : false;
 
-  const handleMoveNext = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const currentIdx = stages.findIndex((s) => s.name === deal.stage);
-    if (currentIdx < 0 || currentIdx >= stages.length - 1) return;
-    const next = stages[currentIdx + 1];
-    moveDeal.mutate({
-      id: deal.id,
-      stage: next.name,
-      pipeline_stage_id: next.id,
-      previousStage: deal.stage,
-    });
-  };
+  const tags = contact?.tags || [];
+  const visibleTags = tags.slice(0, 2);
+  const extraTags = tags.length - 2;
 
   const handleMarkWon = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const wonStage = stages.find((s) => s.name.toLowerCase().includes("ganho"));
-    if (wonStage) {
-      moveDeal.mutate({ id: deal.id, stage: wonStage.name, pipeline_stage_id: wonStage.id, previousStage: deal.stage });
-    } else {
-      updateDeal.mutate({ id: deal.id, status: "won", closed_at: new Date().toISOString() } as never);
-    }
-    toast({ title: "Deal marcado como ganho ✅" });
+    const wonStage = stages.find((s) => s.is_won);
+    if (wonStage) moveDeal.mutate({ id: deal.id, stage: wonStage.name, pipeline_stage_id: wonStage.id, previousStage: deal.stage });
+    toast.success("Deal marcado como ganho");
+  };
+
+  const handleMoveNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currentIdx = stages.findIndex((s) => s.name === deal.stage || s.id === deal.pipeline_stage_id);
+    if (currentIdx < 0 || currentIdx >= stages.length - 1) return;
+    const next = stages[currentIdx + 1];
+    moveDeal.mutate({ id: deal.id, stage: next.name, pipeline_stage_id: next.id, previousStage: deal.stage });
   };
 
   const handleMarkLost = () => {
-    const lostStage = stages.find((s) => s.name.toLowerCase().includes("perdido"));
-    if (lostStage) {
-      moveDeal.mutate({ id: deal.id, stage: lostStage.name, pipeline_stage_id: lostStage.id, previousStage: deal.stage });
-    }
-    updateDeal.mutate({ id: deal.id, status: "lost", closed_at: new Date().toISOString(), loss_reason: lossReason } as never);
+    const lostStage = stages.find((s) => s.is_closed && !s.is_won);
+    if (lostStage) moveDeal.mutate({ id: deal.id, stage: lostStage.name, pipeline_stage_id: lostStage.id, previousStage: deal.stage });
     setShowLossDialog(false);
-    setLossReason("");
-    toast({ title: "Deal marcado como perdido ❌" });
-  };
-
-  const handleDelete = () => {
-    deleteDeal.mutate(deal.id);
-    setShowDeleteDialog(false);
-    toast({ title: "Deal excluído" });
+    toast.error("Deal marcado como perdido");
   };
 
   return (
     <>
-      <Card
-        className="cursor-pointer hover:shadow-md active:scale-[0.98] transition-all border-l-2"
-        style={{ borderLeftColor: stageColor || "hsl(var(--border))" }}
+      <div
+        className="bg-card border border-border rounded-lg cursor-pointer hover:shadow-md transition-all duration-200 group"
+        style={{ borderLeftWidth: 3, borderLeftColor: stageColor || "hsl(var(--border))" }}
         onClick={onClick}
       >
-        <CardContent className="p-3 space-y-2">
-          {/* Header: avatar + name + menu */}
+        <div className="p-2.5 space-y-1.5">
+          {/* Header: avatar + name + score + menu */}
           <div className="flex items-center gap-2">
             <Avatar className="h-7 w-7 flex-shrink-0">
-              <AvatarFallback className="text-[10px] font-medium bg-primary/10 text-primary">
+              <AvatarFallback className="text-[10px] font-semibold text-white" style={{ backgroundColor: avatarColor }}>
                 {initials}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{contact?.name || "Sem contato"}</p>
-              <p className="text-[11px] text-muted-foreground truncate">{deal.title}</p>
+              <p className="text-sm font-medium truncate leading-tight">{displayName}</p>
+              {contact?.phone && (
+                <p className="text-[10px] text-muted-foreground truncate">{contact.phone}</p>
+              )}
             </div>
+            <CRMScoreBadge score={score} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <button className="p-1 rounded hover:bg-muted transition-colors">
+                <button className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-all">
                   <MoreVertical className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick(); }}>
-                  <Edit className="h-3.5 w-3.5 mr-2" /> Editar negociação
+                  <Edit className="h-3.5 w-3.5 mr-2" /> Editar
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleMoveNext}>
-                  <ArrowRight className="h-3.5 w-3.5 mr-2" /> Mover para próximo estágio
+                  <ArrowRight className="h-3.5 w-3.5 mr-2" /> Próximo estágio
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.open("/whatsapp", "_self")}>
+                  <MessageCircle className="h-3.5 w-3.5 mr-2 text-green-600" /> Abrir WhatsApp
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleMarkWon}>
                   <CheckCircle2 className="h-3.5 w-3.5 mr-2 text-green-600" /> Marcar como Ganho
@@ -147,62 +136,56 @@ export function DealCard({ deal, onClick, stageColor }: DealCardProps) {
                   <XCircle className="h-3.5 w-3.5 mr-2 text-red-600" /> Marcar como Perdido
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={(e) => { e.stopPropagation(); setShowDeleteDialog(true); }}
-                >
+                <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); setShowDeleteDialog(true); }}>
                   <Trash2 className="h-3.5 w-3.5 mr-2" /> Excluir
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
 
-          {/* Value + items count */}
-          <div className="flex items-center gap-3 text-xs">
+          {/* Deal title + value */}
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground truncate flex-1">{deal.title}</p>
             {deal.value != null && deal.value > 0 && (
-              <span className="font-semibold tabular-nums text-sm">
+              <span className="text-sm font-semibold tabular-nums text-foreground flex-shrink-0">
                 {deal.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-              </span>
-            )}
-            {itemsCount > 0 && (
-              <span className="flex items-center gap-1 text-muted-foreground">
-                <Package className="h-3 w-3" /> {itemsCount} {itemsCount === 1 ? "produto" : "produtos"}
               </span>
             )}
           </div>
 
-          {/* Date + priority */}
-          {(deal.expected_close_date || priority !== "media") && (
-            <div className="flex items-center gap-2 text-[11px]">
-              {deal.expected_close_date && (
-                <span className={`flex items-center gap-1 ${isOverdue ? "text-destructive font-medium" : "text-muted-foreground"}`}>
-                  {isOverdue && <AlertTriangle className="h-3 w-3" />}
-                  <CalendarDays className="h-3 w-3" />
-                  {new Date(deal.expected_close_date + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                </span>
-              )}
-              {priority !== "media" && (
-                <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${priorityCfg.className}`}>
-                  {priorityCfg.label}
+          {/* Tags */}
+          {visibleTags.length > 0 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {visibleTags.map((tag) => (
+                <Badge key={tag} variant="secondary" className="text-[9px] px-1.5 py-0 h-4 font-normal">
+                  {tag}
                 </Badge>
+              ))}
+              {extraTags > 0 && (
+                <span className="text-[9px] text-muted-foreground">+{extraTags}</span>
               )}
             </div>
           )}
 
-          {/* WhatsApp link */}
-          {contact?.phone && (
-            <button
-              onClick={(e) => { e.stopPropagation(); window.open("/whatsapp", "_self"); }}
-              className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-green-600 transition-colors w-full"
-            >
-              <MessageCircle className="h-3 w-3" />
-              <span className="truncate">{formatPhoneWhatsApp(contact.phone).slice(0, 18)}</span>
-            </button>
-          )}
-        </CardContent>
-      </Card>
+          {/* Footer: task or no-contact indicator */}
+          <div className="flex items-center justify-between gap-2 pt-0.5">
+            <div className="flex-1 min-w-0">
+              {nextTask ? (
+                <span className={`flex items-center gap-1 text-[10px] truncate ${isTaskOverdue ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>
+                  <Clock className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">
+                    {isTaskOverdue ? "Atrasado: " : ""}{nextTask.title}
+                    {" · "}{formatDistanceToNow(new Date(nextTask.due_date), { locale: ptBR, addSuffix: true })}
+                  </span>
+                </span>
+              ) : (
+                <CRMNoContactBadge lastContactAt={lastContactAt} />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
 
-      {/* Delete confirmation */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -213,24 +196,17 @@ export function DealCard({ deal, onClick, stageColor }: DealCardProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+            <AlertDialogAction onClick={() => { deleteDeal.mutate(deal.id); setShowDeleteDialog(false); }} className="bg-destructive text-destructive-foreground">
               Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Loss reason dialog */}
       <Dialog open={showLossDialog} onOpenChange={setShowLossDialog}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Motivo da perda</DialogTitle>
-          </DialogHeader>
-          <Input
-            placeholder="Descreva o motivo da perda..."
-            value={lossReason}
-            onChange={(e) => setLossReason(e.target.value)}
-          />
+          <DialogHeader><DialogTitle>Motivo da perda</DialogTitle></DialogHeader>
+          <Input placeholder="Descreva o motivo da perda..." value={lossReason} onChange={(e) => setLossReason(e.target.value)} />
           <div className="flex justify-end gap-2 mt-2">
             <Button variant="outline" onClick={() => setShowLossDialog(false)}>Cancelar</Button>
             <Button variant="destructive" onClick={handleMarkLost}>Confirmar</Button>

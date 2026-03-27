@@ -2,13 +2,16 @@ import { useState, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Camera, Lock, User } from "lucide-react";
+import { Loader2, Camera, Lock, User, GitBranch, Sliders } from "lucide-react";
+import { PipelineStagesConfig } from "@/components/crm/PipelineStagesConfig";
+import { CustomFieldsManager } from "@/components/crm/CustomFieldsManager";
 
 const SettingsPage = () => {
   const { profile, user, refreshProfile } = useAuth();
@@ -44,26 +47,22 @@ const SettingsPage = () => {
     try {
       const ext = avatarFile.name.split(".").pop() ?? "jpg";
       const path = `${user.id}/profile.${ext}`;
-
       const { error: uploadError } = await supabase.storage
         .from("avatars")
         .upload(path, avatarFile, { upsert: true });
       if (uploadError) throw uploadError;
-
       const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
-
       const { error: updateError } = await supabase
         .from("profiles")
         .update({ avatar_url: `${urlData.publicUrl}?t=${Date.now()}` })
         .eq("id", user.id);
       if (updateError) throw updateError;
-
       await refreshProfile();
       setAvatarFile(null);
       setAvatarPreview(null);
       toast({ title: "Foto atualizada com sucesso!" });
-    } catch (e: any) {
-      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    } catch (e: unknown) {
+      toast({ title: "Erro", description: (e as Error).message, variant: "destructive" });
     } finally {
       setUploadingAvatar(false);
     }
@@ -77,7 +76,6 @@ const SettingsPage = () => {
         .update({ full_name: fullName })
         .eq("id", user!.id);
       if (error) throw error;
-
       if (email !== user?.email) {
         const { error: emailError } = await supabase.auth.updateUser({ email });
         if (emailError) {
@@ -86,11 +84,10 @@ const SettingsPage = () => {
         }
         toast({ title: "E-mail atualizado", description: "Verifique sua caixa de entrada para confirmar." });
       }
-
       await refreshProfile();
       toast({ title: "Perfil atualizado com sucesso!" });
-    } catch (e: any) {
-      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    } catch (e: unknown) {
+      toast({ title: "Erro", description: (e as Error).message, variant: "destructive" });
     } finally {
       setSavingProfile(false);
     }
@@ -109,12 +106,10 @@ const SettingsPage = () => {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmNewPassword("");
+      setCurrentPassword(""); setNewPassword(""); setConfirmNewPassword("");
       toast({ title: "Senha alterada com sucesso!" });
-    } catch (e: any) {
-      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    } catch (e: unknown) {
+      toast({ title: "Erro", description: (e as Error).message, variant: "destructive" });
     } finally {
       setSavingPassword(false);
     }
@@ -127,87 +122,136 @@ const SettingsPage = () => {
 
   return (
     <AppLayout>
-      <div className="space-y-6 max-w-2xl">
+      <div className="space-y-4 max-w-3xl">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-          <p className="text-sm text-muted-foreground">Gerencie seu perfil e segurança</p>
+          <p className="text-sm text-muted-foreground">Gerencie seu perfil e as configurações do CRM</p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <User className="h-4 w-4" /> Perfil Pessoal
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-4">
-              <Avatar className="h-16 w-16">
-                <AvatarImage src={avatarPreview ?? profile?.avatar_url ?? undefined} />
-                <AvatarFallback className="text-lg">{getInitials(profile?.full_name)}</AvatarFallback>
-              </Avatar>
-              <div className="flex gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileSelect}
-                />
-                <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-                  <Camera className="mr-2 h-4 w-4" /> Alterar foto
+        <Tabs defaultValue="perfil" className="w-full">
+          <TabsList className="mb-2">
+            <TabsTrigger value="perfil" className="gap-1.5">
+              <User className="h-3.5 w-3.5" /> Perfil
+            </TabsTrigger>
+            <TabsTrigger value="seguranca" className="gap-1.5">
+              <Lock className="h-3.5 w-3.5" /> Segurança
+            </TabsTrigger>
+            <TabsTrigger value="pipeline" className="gap-1.5">
+              <GitBranch className="h-3.5 w-3.5" /> Pipeline
+            </TabsTrigger>
+            <TabsTrigger value="campos" className="gap-1.5">
+              <Sliders className="h-3.5 w-3.5" /> Campos
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ── Perfil ── */}
+          <TabsContent value="perfil">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <User className="h-4 w-4" /> Perfil Pessoal
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-16 w-16">
+                    <AvatarImage src={avatarPreview ?? profile?.avatar_url ?? undefined} />
+                    <AvatarFallback className="text-lg">{getInitials(profile?.full_name)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex gap-2">
+                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+                    <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                      <Camera className="mr-2 h-4 w-4" /> Alterar foto
+                    </Button>
+                    {avatarFile && (
+                      <Button size="sm" onClick={handleUploadAvatar} disabled={uploadingAvatar}>
+                        {uploadingAvatar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Salvar foto
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>Nome completo</Label>
+                    <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>E-mail</Label>
+                    <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                  </div>
+                </div>
+                <Button onClick={handleSaveProfile} disabled={savingProfile}>
+                  {savingProfile ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : "Salvar alterações"}
                 </Button>
-                {avatarFile && (
-                  <Button size="sm" onClick={handleUploadAvatar} disabled={uploadingAvatar}>
-                    {uploadingAvatar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Salvar foto
-                  </Button>
-                )}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>Nome completo</Label>
-                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>E-mail</Label>
-                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-            </div>
+          {/* ── Segurança ── */}
+          <TabsContent value="seguranca">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Lock className="h-4 w-4" /> Segurança
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label>Senha atual</Label>
+                  <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>Nova senha</Label>
+                    <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 8 caracteres" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Confirmar nova senha</Label>
+                    <Input type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} />
+                  </div>
+                </div>
+                <Button onClick={handleChangePassword} disabled={savingPassword}>
+                  {savingPassword ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Alterando...</> : "Alterar senha"}
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-            <Button onClick={handleSaveProfile} disabled={savingProfile}>
-              {savingProfile ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : "Salvar alterações"}
-            </Button>
-          </CardContent>
-        </Card>
+          {/* ── Pipeline ── */}
+          <TabsContent value="pipeline">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <GitBranch className="h-4 w-4" /> Estágios do Pipeline
+                </CardTitle>
+                <CardDescription>
+                  Configure os estágios do funil de vendas. Arraste para reordenar.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PipelineStagesConfig />
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Lock className="h-4 w-4" /> Segurança
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Senha atual</Label>
-              <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>Nova senha</Label>
-                <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 8 caracteres" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Confirmar nova senha</Label>
-                <Input type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} />
-              </div>
-            </div>
-            <Button onClick={handleChangePassword} disabled={savingPassword}>
-              {savingPassword ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Alterando...</> : "Alterar senha"}
-            </Button>
-          </CardContent>
-        </Card>
+          {/* ── Campos ── */}
+          <TabsContent value="campos">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Sliders className="h-4 w-4" /> Campos Personalizados
+                </CardTitle>
+                <CardDescription>
+                  Adicione campos extras aos contatos. Campos padrão (Nome, Telefone) não podem ser excluídos.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CustomFieldsManager />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );

@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/components/auth/AuthProvider";
 import { useEffect } from "react";
 
 export interface PipelineStage {
@@ -8,17 +7,21 @@ export interface PipelineStage {
   name: string;
   order: number;
   color: string | null;
+  icon: string | null;
+  description: string | null;
+  is_closed: boolean;
+  is_won: boolean;
   tenant_id: string;
   created_at: string | null;
 }
 
 const DEFAULT_STAGES = [
-  { name: "Novo Lead", order: 0, color: "#3B82F6" },
-  { name: "Primeiro Contato", order: 1, color: "#8B5CF6" },
-  { name: "Qualificação", order: 2, color: "#F59E0B" },
-  { name: "Negociação", order: 3, color: "#F97316" },
-  { name: "Fechado/Ganho", order: 4, color: "#22C55E" },
-  { name: "Perdido", order: 5, color: "#EF4444" },
+  { name: "Novo Lead",        order: 0, color: "#3B82F6", icon: "UserPlus",       is_closed: false, is_won: false },
+  { name: "Primeiro Contato", order: 1, color: "#F59E0B", icon: "MessageCircle",  is_closed: false, is_won: false },
+  { name: "Qualificação",     order: 2, color: "#F97316", icon: "ClipboardCheck", is_closed: false, is_won: false },
+  { name: "Negociação",       order: 3, color: "#8B5CF6", icon: "Handshake",      is_closed: false, is_won: false },
+  { name: "Fechado/Ganho",    order: 4, color: "#22C55E", icon: "Trophy",         is_closed: true,  is_won: true },
+  { name: "Perdido",          order: 5, color: "#EF4444", icon: "XCircle",        is_closed: true,  is_won: false },
 ];
 
 async function getTenantId() {
@@ -34,19 +37,18 @@ export function usePipeline() {
   const query = useQuery({
     queryKey: ["pipeline_stages"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as never as { from: (t: string) => { select: (s: string) => { order: (c: string, o: object) => Promise<{ data: PipelineStage[] | null; error: unknown }> } } })
         .from("pipeline_stages")
         .select("*")
         .order("order", { ascending: true });
       if (error) throw error;
 
-      // Auto-create default stages if empty
       if (!data || data.length === 0) {
         const tenantId = await getTenantId();
         const toInsert = DEFAULT_STAGES.map((s) => ({ ...s, tenant_id: tenantId }));
         const { data: created, error: insertError } = await supabase
           .from("pipeline_stages")
-          .insert(toInsert)
+          .insert(toInsert as never)
           .select();
         if (insertError) throw insertError;
         return (created || []) as PipelineStage[];
@@ -56,11 +58,29 @@ export function usePipeline() {
     },
   });
 
+  useEffect(() => {
+    const channel = supabase
+      .channel("pipeline-stages-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "pipeline_stages" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["pipeline_stages"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
+
   const updateStage = useMutation({
     mutationFn: async (stage: Partial<PipelineStage> & { id: string }) => {
       const { error } = await supabase
         .from("pipeline_stages")
-        .update({ name: stage.name, order: stage.order, color: stage.color })
+        .update({
+          name: stage.name,
+          order: stage.order,
+          color: stage.color,
+          icon: stage.icon,
+          description: stage.description,
+          is_closed: stage.is_closed,
+          is_won: stage.is_won,
+        } as never)
         .eq("id", stage.id);
       if (error) throw error;
     },
@@ -68,11 +88,11 @@ export function usePipeline() {
   });
 
   const createStage = useMutation({
-    mutationFn: async (stage: { name: string; order: number; color: string }) => {
+    mutationFn: async (stage: { name: string; order: number; color: string; icon?: string; is_closed?: boolean; is_won?: boolean }) => {
       const tenantId = await getTenantId();
       const { error } = await supabase
         .from("pipeline_stages")
-        .insert({ ...stage, tenant_id: tenantId });
+        .insert({ ...stage, tenant_id: tenantId } as never);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["pipeline_stages"] }),
@@ -86,5 +106,11 @@ export function usePipeline() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["pipeline_stages"] }),
   });
 
-  return { stages: query.data || [], isLoading: query.isLoading, updateStage, createStage, deleteStage };
+  return {
+    stages: query.data || [],
+    isLoading: query.isLoading,
+    updateStage,
+    createStage,
+    deleteStage,
+  };
 }
