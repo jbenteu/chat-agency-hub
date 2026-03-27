@@ -217,6 +217,7 @@ export function KanbanBoard() {
       />
 
       <NewDealDialog open={showNewDeal} onOpenChange={setShowNewDeal} stages={stages} />
+      <CRMSettingsDialog open={showSettings} onOpenChange={setShowSettings} />
     </>
   );
 }
