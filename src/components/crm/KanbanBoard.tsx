@@ -10,6 +10,7 @@ import { LostReasonModal } from "./LostReasonModal";
 import { NewDealDialog } from "./NewDealDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDeals as useDealsForLoss } from "@/hooks/use-deals";
+import { usePipelineViews } from "@/hooks/use-pipeline-views";
 
 export function KanbanBoard() {
   const { stages, isLoading: stagesLoading } = usePipeline();
@@ -21,8 +22,13 @@ export function KanbanBoard() {
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  // Lost reason modal state
   const [pendingMove, setPendingMove] = useState<{ dealId: string; stage: PipelineStage; prevStage: string } | null>(null);
+
+  const { views, activeViewId, createView, deleteView, changeView, hiddenStageIds, toggleStage } = usePipelineViews();
+
+  const visibleStages = useMemo(() => {
+    return stages.filter((s) => !hiddenStageIds.includes(s.id));
+  }, [stages, hiddenStageIds]);
 
   const filteredDeals = useMemo(() => {
     let result = deals;
@@ -42,19 +48,19 @@ export function KanbanBoard() {
 
   const dealsByStage = useMemo(() => {
     const map: Record<string, Deal[]> = {};
-    for (const stage of stages) map[stage.id] = [];
+    for (const stage of visibleStages) map[stage.id] = [];
     for (const deal of filteredDeals) {
       const matchedStage =
-        stages.find((s) => s.id === deal.pipeline_stage_id) ||
-        stages.find((s) => s.name === deal.stage);
+        visibleStages.find((s) => s.id === deal.pipeline_stage_id) ||
+        visibleStages.find((s) => s.name === deal.stage);
       if (matchedStage) {
         map[matchedStage.id].push(deal);
-      } else if (stages.length > 0) {
-        map[stages[0].id].push(deal);
+      } else if (visibleStages.length > 0) {
+        map[visibleStages[0].id].push(deal);
       }
     }
     return map;
-  }, [filteredDeals, stages]);
+  }, [filteredDeals, visibleStages]);
 
   const onDragEnd = (result: DropResult) => {
     if (!result.destination) return;
@@ -64,7 +70,6 @@ export function KanbanBoard() {
     const deal = deals.find((d) => d.id === draggableId);
     if (!deal) return;
 
-    // If dropping into a "lost" stage, show the lost reason modal first
     if (targetStage.is_closed && !targetStage.is_won) {
       setPendingMove({ dealId: draggableId, stage: targetStage, prevStage: deal.stage });
       return;
@@ -92,19 +97,18 @@ export function KanbanBoard() {
 
   if (stagesLoading || dealsLoading) {
     return (
-      <div className="flex gap-3 overflow-x-auto pb-4">
+      <div className="flex gap-1 p-2 flex-1">
         {[...Array(5)].map((_, i) => (
-          <div key={i} className="w-[300px] flex-shrink-0">
-            <Skeleton className="h-12 w-full mb-2 rounded-lg" />
-            <Skeleton className="h-24 w-full mb-2 rounded-lg" />
-            <Skeleton className="h-24 w-full rounded-lg" />
+          <div key={i} className="flex-1 min-w-[180px]">
+            <Skeleton className="h-8 w-full mb-1 rounded" />
+            <Skeleton className="h-16 w-full mb-1 rounded" />
+            <Skeleton className="h-16 w-full rounded" />
           </div>
         ))}
       </div>
     );
   }
 
-  // Find real contact from the contacts list for the drawer
   const selectedContact = selectedDeal?.contact_id
     ? contacts.find((c) => c.id === selectedDeal.contact_id) || null
     : null;
@@ -120,11 +124,19 @@ export function KanbanBoard() {
         statusFilter={statusFilter}
         onStatusChange={setStatusFilter}
         onNewDeal={() => setShowNewDeal(true)}
+        stages={stages}
+        views={views}
+        activeViewId={activeViewId}
+        onViewChange={changeView}
+        onCreateView={createView}
+        onDeleteView={deleteView}
+        hiddenStageIds={hiddenStageIds}
+        onToggleStage={toggleStage}
       />
 
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-4 min-h-[calc(100vh-340px)] mt-3">
-          {stages.map((stage) => (
+        <div className="flex gap-0 flex-1 min-h-0 overflow-x-auto divide-x divide-border">
+          {visibleStages.map((stage) => (
             <KanbanColumn
               key={stage.id}
               stage={stage}
@@ -145,7 +157,6 @@ export function KanbanBoard() {
       )}
 
       {selectedDeal && !selectedContact && (
-        // Fallback: open drawer even without full contact data
         <CRMContactDrawer
           contact={{
             id: selectedDeal.contact_id || "",
