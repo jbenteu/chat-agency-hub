@@ -10,6 +10,7 @@ import { useCustomFieldDefinitions } from "@/hooks/use-custom-fields";
 import { TagSelector } from "@/components/whatsapp/TagSelector";
 import { CustomFieldRenderer } from "./CustomFieldRenderer";
 import { BRAZIL_STATES } from "@/data/brazil-locations";
+import { getCustomOrigins, getCustomLifecycleStages } from "./CRMSettingsDialog";
 import { toast } from "sonner";
 
 // ---- Input masks ----
