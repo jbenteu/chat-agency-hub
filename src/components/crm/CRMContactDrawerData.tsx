@@ -68,9 +68,10 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
 // ---- Component ----
 interface CRMContactDrawerDataProps {
   contact: Contact;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
+export function CRMContactDrawerData({ contact, onDirtyChange }: CRMContactDrawerDataProps) {
   const { updateContact } = useContacts();
   const { fields: customFieldDefs } = useCustomFieldDefinitions("contact");
   const [customValues, setCustomValues] = useState<Record<string, unknown>>(
