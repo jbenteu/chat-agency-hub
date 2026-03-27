@@ -7,38 +7,38 @@ import { LayoutGrid, List, Users } from "lucide-react";
 
 const CRM = () => {
   return (
-    <AppLayout>
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">CRM</h1>
-          <p className="text-sm text-muted-foreground">Gerencie seus contatos e negociações</p>
-        </div>
+    <AppLayout noPadding>
+      <div className="flex flex-col h-[calc(100vh-48px)]">
+        <Tabs defaultValue="kanban" className="flex flex-col flex-1 min-h-0">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-background">
+            <div className="flex items-center gap-3">
+              <h1 className="text-lg font-semibold tracking-tight">CRM</h1>
+              <TabsList className="h-8">
+                <TabsTrigger value="kanban" className="gap-1.5 text-xs h-7 px-2.5">
+                  <LayoutGrid className="h-3 w-3" />
+                  Kanban
+                </TabsTrigger>
+                <TabsTrigger value="lista" className="gap-1.5 text-xs h-7 px-2.5">
+                  <List className="h-3 w-3" />
+                  Lista
+                </TabsTrigger>
+                <TabsTrigger value="contatos" className="gap-1.5 text-xs h-7 px-2.5">
+                  <Users className="h-3 w-3" />
+                  Contatos
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
 
-        <Tabs defaultValue="kanban" className="w-full">
-          <TabsList>
-            <TabsTrigger value="kanban" className="gap-1.5">
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Kanban
-            </TabsTrigger>
-            <TabsTrigger value="lista" className="gap-1.5">
-              <List className="h-3.5 w-3.5" />
-              Lista
-            </TabsTrigger>
-            <TabsTrigger value="contatos" className="gap-1.5">
-              <Users className="h-3.5 w-3.5" />
-              Contatos
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="kanban" className="mt-4">
+          <TabsContent value="kanban" className="flex-1 min-h-0 mt-0 data-[state=active]:flex data-[state=active]:flex-col">
             <KanbanBoard />
           </TabsContent>
 
-          <TabsContent value="lista" className="mt-4">
+          <TabsContent value="lista" className="flex-1 min-h-0 mt-0 overflow-auto px-4 py-3">
             <DealsTable />
           </TabsContent>
 
-          <TabsContent value="contatos" className="mt-4">
+          <TabsContent value="contatos" className="flex-1 min-h-0 mt-0 overflow-auto px-4 py-3">
             <ContactsTable />
           </TabsContent>
         </Tabs>

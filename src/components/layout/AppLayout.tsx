@@ -104,7 +104,7 @@ const AppSidebar: React.FC = () => {
   );
 };
 
-export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AppLayout: React.FC<{ children: React.ReactNode; noPadding?: boolean }> = ({ children, noPadding }) => {
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full">
@@ -113,7 +113,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           <div className="flex h-12 items-center border-b border-border px-4">
             <SidebarTrigger />
           </div>
-          <div className="p-6">{children}</div>
+          <div className={noPadding ? "" : "p-6"}>{children}</div>
         </main>
       </div>
     </SidebarProvider>
