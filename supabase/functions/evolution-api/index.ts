@@ -1652,8 +1652,10 @@ Deno.serve(async (req) => {
 
       const progressId = `${tenantId}-${instanceName}`;
 
-      // Initialize progress record
-      await supabaseAdmin.from("import_progress").upsert({
+      // Reseta (ou cria) o registro de progresso — garante que o frontend
+      // receba o evento realtime mesmo que o ID já existia do import anterior
+      await supabaseAdmin.from("import_progress").delete().eq("id", progressId);
+      await supabaseAdmin.from("import_progress").insert({
         id: progressId,
         tenant_id: tenantId,
         instance_name: instanceName,
@@ -1665,8 +1667,8 @@ Deno.serve(async (req) => {
         error_message: null,
       });
 
-      // Fire-and-forget: run import in background, return immediately
-      (async () => {
+      // Executa em background — waitUntil mantém o runtime vivo até terminar
+      const importTask = (async () => {
         try {
           // Fetch contacts from Evolution API (try multiple endpoints/methods)
           let contacts: any[] = [];
@@ -1782,6 +1784,8 @@ Deno.serve(async (req) => {
           }).eq("id", progressId).then(() => {}, () => {});
         }
       })();
+      // Garante que o Edge Runtime aguarda a tarefa antes de encerrar a função
+      (globalThis as any).EdgeRuntime?.waitUntil(importTask);
 
       return jsonResponse({ success: true, message: "Importação iniciada" });
     }
