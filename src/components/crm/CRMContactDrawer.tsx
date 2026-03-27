@@ -14,12 +14,10 @@ import type { Deal } from "@/hooks/use-deals";
 import { useDeals } from "@/hooks/use-deals";
 import { usePipeline } from "@/hooks/use-pipeline";
 import { CRMPinnedNote } from "./CRMPinnedNote";
-import { CRMStatusPipeline } from "./CRMStatusPipeline";
 import { CRMContactDrawerData } from "./CRMContactDrawerData";
 import { CRMTaskList } from "./CRMTaskList";
 import { CRMTimeline } from "./CRMTimeline";
 import { CRMScoreBadge } from "./CRMScoreBadge";
-import { toast } from "sonner";
 
 function getAvatarColor(name: string): string {
   let hash = 0;
