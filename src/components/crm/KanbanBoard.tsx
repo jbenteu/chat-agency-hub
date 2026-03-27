@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
 import { usePipeline, type PipelineStage } from "@/hooks/use-pipeline";
 import { useDeals, type Deal } from "@/hooks/use-deals";
@@ -11,6 +11,7 @@ import { NewDealDialog } from "./NewDealDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDeals as useDealsForLoss } from "@/hooks/use-deals";
 import { usePipelineViews } from "@/hooks/use-pipeline-views";
+import { toast } from "sonner";
 
 export function KanbanBoard() {
   const { stages, isLoading: stagesLoading } = usePipeline();
