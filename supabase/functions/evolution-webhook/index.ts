@@ -176,6 +176,8 @@ const SILENT_SKIP_TYPES = new Set([
 const parseMessagePayload = (entry: Record<string, any>, data: Record<string, any>) => {
   const message = entry?.message || data?.message || {};
   const contentNode = unwrapMessageContent(message);
+  // messageType enviado pela Evolution API como hint do tipo da mensagem
+  const evMessageType: string | null = entry?.messageType || data?.messageType || null;
 
   let content = "";
   let mediaUrl: string | null = null;
@@ -223,15 +225,17 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
     content = contentNode.imageMessage.caption || "";
     mediaType = "image";
     mediaUrl = resolveMediaUrl(entry, data, contentNode.imageMessage);
-  } else if (contentNode.videoMessage) {
-    content = contentNode.videoMessage.caption || "";
+  } else if (contentNode.videoMessage || evMessageType === "videoMessage") {
+    const vNode = contentNode.videoMessage || null;
+    content = vNode?.caption || "";
     mediaType = "video";
-    mediaUrl = resolveMediaUrl(entry, data, contentNode.videoMessage);
-  } else if (contentNode.ptvMessage) {
+    mediaUrl = resolveMediaUrl(entry, data, vNode);
+  } else if (contentNode.ptvMessage || evMessageType === "ptvMessage") {
     // ptvMessage = vídeo nota (circular), mesmo protocolo do videoMessage
-    content = contentNode.ptvMessage.caption || "[Vídeo]";
+    const vNode = contentNode.ptvMessage || null;
+    content = vNode?.caption || "[Vídeo]";
     mediaType = "video";
-    mediaUrl = resolveMediaUrl(entry, data, contentNode.ptvMessage);
+    mediaUrl = resolveMediaUrl(entry, data, vNode);
   } else if (contentNode.audioMessage) {
     content = "[Áudio]";
     mediaType = "audio";
@@ -417,26 +421,41 @@ Deno.serve(async (req) => {
       const entries = getMessageEntries(data);
       let processed = 0;
 
+      console.log(`[webhook] messages.upsert: ${entries.length} entries, instance=${instanceName}`);
+
       for (const entry of entries) {
         const key = entry?.key || data?.key;
         const remoteJid: string = key?.remoteJid || entry?.remoteJid;
         const fromMe = Boolean(key?.fromMe);
         const messageId: string | null = key?.id || entry?.id || null;
+        const evMessageType: string | null = entry?.messageType || data?.messageType || null;
 
-        if (!remoteJid || remoteJid === "status@broadcast") continue;
+        console.log(`[webhook] entry: jid=${remoteJid}, fromMe=${fromMe}, msgId=${messageId}, messageType=${evMessageType}`);
+
+        if (!remoteJid || remoteJid === "status@broadcast") {
+          console.log(`[webhook] SKIP: invalid jid`);
+          continue;
+        }
 
         const isGroup = remoteJid.endsWith("@g.us");
 
         // Ignora grupos se configurado na instância
-        if (isGroup && instanceSettings.ignoreGroups === true) continue;
+        if (isGroup && instanceSettings.ignoreGroups === true) {
+          console.log(`[webhook] SKIP: group ignored by settings`);
+          continue;
+        }
 
         // Ignora eco da própria instância
         if (fromMe && !isGroup) {
           const rp = normalizePhone(remoteJid);
-          if (rp && instancePhone && rp === instancePhone) continue;
+          if (rp && instancePhone && rp === normalizePhone(instancePhone)) {
+            console.log(`[webhook] SKIP: self-echo from instance phone`);
+            continue;
+          }
         }
 
         const parsed = parseMessagePayload(entry, data);
+        console.log(`[webhook] parsed: skip=${parsed.skip}, mediaType=${(parsed as any).mediaType}, mediaUrl=${(parsed as any).mediaUrl?.substring(0,60)}, msgKeys=${Object.keys(entry?.message || data?.message || {}).join(',')}`);
         if (parsed.skip) {
           // Handle reactions: update metadata on original message
           if ("reason" in parsed && parsed.reason === "reaction" && "reactionMessageId" in parsed) {
@@ -743,9 +762,10 @@ Deno.serve(async (req) => {
         });
 
         if (insertErr) {
-          console.error("Failed to insert message:", insertErr.message);
+          console.error(`[webhook] INSERT ERROR for msgId=${messageId}: ${insertErr.message} | media_type=${parsed.mediaType} | media_url=${parsed.mediaUrl}`);
           continue;
         }
+        console.log(`[webhook] INSERTED msgId=${messageId}, media_type=${parsed.mediaType}, fromMe=${fromMe}`);
 
         // Fire-and-forget: enfileira conversa para análise de IA
         // Só enfileira mensagens INBOUND para não analisar as próprias respostas
