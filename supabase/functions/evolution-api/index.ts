@@ -987,12 +987,12 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Para vídeos: pular base64 (arquivos grandes causam timeout na edge function)
-      // Retorna apenas a URL — o browser faz o stream diretamente
+      // Detecta se é vídeo
       const isVideoMedia = persistedMessage?.media_type === "video" ||
         (persistedMessage?.media_type == null && persistedMessage?.media_url?.includes("video"));
 
-      if (isVideoMedia && preferredPersistedUrl) {
+      // Se temos URL permanente de vídeo (MinIO), retorna imediatamente
+      if (isVideoMedia && preferredPersistedUrl && !isExpirableUrl(preferredPersistedUrl)) {
         return jsonResponse({
           success: true,
           mediaData: null,
@@ -1001,7 +1001,11 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Tenta obter base64 ou URL via Evolution API
+      // Tenta obter base64 ou URL via Evolution API.
+      // Para vídeos usamos timeout maior (25s) pois a Evolution precisa baixar
+      // e descriptografar o arquivo do CDN do WhatsApp antes de responder.
+      // Aceitamos base64 para vídeos pequenos (< ~3.5MB decoded).
+      const MAX_VIDEO_BASE64 = 4_700_000; // ~3.5MB decoded → ~4.7MB como string base64
       const mediaPayload = {
         message: { key: { id: messageId, remoteJid: mediaJid || "" } },
       };
@@ -1012,17 +1016,29 @@ Deno.serve(async (req) => {
 
       for (const path of mediaPaths) {
         try {
-          const evoData = await requestEvolution(
-            path,
-            { method: "POST", body: JSON.stringify(mediaPayload) },
-            "get_media",
+          // Timeout maior para vídeos: download + decrypt leva mais tempo
+          const mediaTimeout = isVideoMedia ? 25_000 : 8_000;
+          const evoRes = await fetchWithTimeout(
+            `${baseUrl}${path}`,
+            { method: "POST", headers: evoHeaders, body: JSON.stringify(mediaPayload) },
+            mediaTimeout,
           );
-          const base64 = isVideoMedia ? null : (evoData?.base64 || evoData?.data?.base64 || null);
+          if (!evoRes.ok) { await evoRes.text().catch(() => {}); continue; }
+          const evoData = await evoRes.json().catch(() => null);
+          if (!evoData) continue;
+
+          const rawBase64: string | null = evoData?.base64 || evoData?.data?.base64 || null;
+          // Para vídeos: aceita base64 apenas para clipes curtos (evita timeout/memória)
+          const base64 = isVideoMedia
+            ? (rawBase64 && rawBase64.length < MAX_VIDEO_BASE64 ? rawBase64 : null)
+            : rawBase64;
           const evoMediaUrl =
             evoData?.mediaUrl || evoData?.data?.mediaUrl ||
             evoData?.fileUrl || evoData?.url || null;
           const mimeType =
             evoData?.mimetype || evoData?.data?.mimetype || evoData?.mimeType || null;
+
+          console.log(`[get_media] evo response: hasBase64=${!!rawBase64}, base64len=${rawBase64?.length}, evoMediaUrl=${evoMediaUrl?.substring(0,60)}, isVideo=${isVideoMedia}`);
 
           if (base64) {
             const prefix = mimeType
@@ -1069,20 +1085,26 @@ Deno.serve(async (req) => {
             });
           }
         } catch (e) {
-          console.warn("Media download warning:", e);
+          console.warn(`[get_media] Evolution API call failed (${path}):`, e);
         }
       }
 
-      // Último recurso: URL que estava no banco (mesmo que seja CDN)
+      // Último recurso: URL que estava no banco.
+      // Para vídeos com CDN URL: retornamos com flag 'encrypted' para o frontend
+      // saber que a URL não é reproduzível diretamente no browser.
       if (preferredPersistedUrl) {
+        const isEncryptedCdn = isVideoMedia && isExpirableUrl(preferredPersistedUrl);
+        console.log(`[get_media] fallback url: ${preferredPersistedUrl.substring(0,60)}, encrypted=${isEncryptedCdn}`);
         return jsonResponse({
           success: true,
           mediaData: null,
           mediaUrl: fixMinioUrl(preferredPersistedUrl),
           mimeType: persistedMessage?.media_type || null,
+          encryptedCdn: isEncryptedCdn,
         });
       }
 
+      console.log(`[get_media] no url found for messageId=${messageId}`);
       return jsonResponse({ success: true, mediaData: null, mediaUrl: null });
     }
 

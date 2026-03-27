@@ -270,14 +270,16 @@ function VideoPlayer({ src, mimeType, thumbSrc, onRedownload, reloading }: {
         ) : (
           <Play className="h-8 w-8 text-muted-foreground" />
         )}
-        <span className="text-xs text-muted-foreground">Vídeo indisponível</span>
+        <span className="text-xs text-muted-foreground text-center">
+          Vídeo indisponível
+        </span>
         <button
           onClick={() => { setVideoError(false); onRedownload(); }}
           disabled={reloading}
           className="flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
         >
           {reloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-          Recarregar
+          {reloading ? "Buscando…" : "Tentar novamente"}
         </button>
       </div>
     );
@@ -395,6 +397,8 @@ export const MediaMessage = memo(function MediaMessage({ messageId, mediaUrl, me
 
       if (fnError || data?.error) { setError(true); return; }
 
+      if (data?.encryptedCdn) { setError(true); return; }
+
       const url = data?.mediaData || data?.mediaUrl || null;
       if (url) {
         const cacheKey = messageId || mediaUrl || "";
@@ -465,6 +469,12 @@ export const MediaMessage = memo(function MediaMessage({ messageId, mediaUrl, me
 
         if (fnError || data?.error) {
           if (!fallbackToDirectUrl()) setError(true);
+          return;
+        }
+
+        // encryptedCdn = URL do CDN do WhatsApp (criptografada, não reproduzível no browser)
+        if (data?.encryptedCdn) {
+          setError(true);
           return;
         }
 
