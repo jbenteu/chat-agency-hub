@@ -71,7 +71,9 @@ export function useDeals() {
     const channel = supabase
       .channel("deals-changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "deals" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["deals"] });
+        if (!mutatingRef.current) {
+          queryClient.invalidateQueries({ queryKey: ["deals"] });
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
