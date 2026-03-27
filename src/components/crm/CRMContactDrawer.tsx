@@ -84,40 +84,16 @@ interface CRMContactDrawerProps {
 }
 
 export function CRMContactDrawer({ contact, open, onOpenChange, initialDeal }: CRMContactDrawerProps) {
-  const { moveDeal } = useDeals();
-  const { stages } = usePipeline();
-
   if (!contact) return null;
 
   const initials = contact.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
   const avatarColor = getAvatarColor(contact.name);
 
-  const currentStageId = initialDeal?.pipeline_stage_id || null;
-  const currentStageName = initialDeal?.stage || null;
-
-  const handleStageClick = (stageId: string, stageName: string) => {
-    if (!initialDeal) return;
-    const targetStage = stages.find((s) => s.id === stageId);
-    if (!targetStage) return;
-
-    if (targetStage.is_closed && !targetStage.is_won) {
-      if (!confirm("Tem certeza que deseja mover para 'Perdido'?")) return;
-    }
-
-    moveDeal.mutate(
-      { id: initialDeal.id, stage: stageName, pipeline_stage_id: stageId, previousStage: initialDeal.stage },
-      {
-        onSuccess: () => toast.success(`Movido para ${stageName}`),
-        onError: () => toast.error("Erro ao mover negociação"),
-      }
-    );
-  };
-
   const locationParts = [contact.city, contact.state].filter(Boolean).join(", ");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-[480px] p-0 flex flex-col gap-0" side="right">
+      <SheetContent className="w-full sm:max-w-[480px] p-0 flex flex-col gap-0 [&>button:last-of-type]:hidden" side="right">
         {/* Header */}
         <div className="px-5 pt-5 pb-3 border-b border-border space-y-3">
           <div className="flex items-start justify-between gap-3">
@@ -178,15 +154,6 @@ export function CRMContactDrawer({ contact, open, onOpenChange, initialDeal }: C
               </span>
             )}
           </div>
-
-          {/* Mini pipeline stepper */}
-          {initialDeal && (
-            <CRMStatusPipeline
-              currentStageId={currentStageId}
-              currentStageName={currentStageName}
-              onStageClick={handleStageClick}
-            />
-          )}
 
           {/* Pinned note */}
           <CRMPinnedNote contactId={contact.id} pinnedNote={contact.pinned_note} />
