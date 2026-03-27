@@ -1078,7 +1078,7 @@ Deno.serve(async (req) => {
         return jsonResponse({
           success: true,
           mediaData: null,
-          mediaUrl: preferredPersistedUrl,
+          mediaUrl: fixMinioUrl(preferredPersistedUrl),
           mimeType: persistedMessage?.media_type || null,
         });
       }

@@ -1,6 +1,6 @@
 import { memo, useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Image as ImageIcon, ImageOff, FileText, Download, Play, Pause, Volume2, RefreshCw } from "lucide-react";
+import { Loader2, Image as ImageIcon, ImageOff, FileText, Download, Play, Pause, Volume2, VolumeX, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ImageLightbox } from "./ImageLightbox";
 
@@ -22,14 +22,13 @@ interface MediaMessageProps {
 }
 
 function isExpirableUrl(url: string): boolean {
-  // URLs do MinIO (mesmo com X-Amz-) são tratadas como permanentes — fixMinioUrl remove os params
+  // URLs do MinIO são permanentes — fixMinioUrl remove parâmetros X-Amz-
   if (url.includes("chatwoot-evo-minio.fd6j1o.easypanel.host")) return false;
-  if (!url.includes("X-Amz-")) return false;
-  return (
-    url.includes("mmg.whatsapp.net") ||
-    url.includes("media.whatsapp.net") ||
-    url.includes(".enc?")
-  );
+  // CDN do WhatsApp expira (~24h via parâmetros oh= / oe=)
+  if (url.includes("mmg.whatsapp.net") || url.includes("media.whatsapp.net") || url.includes(".enc?")) return true;
+  // URLs AWS S3 pré-assinadas (não-MinIO)
+  if (url.includes("X-Amz-Expires") || url.includes("X-Amz-Credential")) return true;
+  return false;
 }
 
 /** Transform internal Docker MinIO URLs to public-facing URLs and strip AWS presign params */
@@ -165,19 +164,109 @@ function AudioPlayer({ src, isOutbound, mimeType }: { src: string; isOutbound: b
   );
 }
 
-// ── Video Player with error handling ──
-function VideoPlayer({ src, mimeType, thumbSrc, mediaWidth, mediaHeight, onError, onRedownload, reloading }: {
+// ── Video Player com controles customizados ──
+function VideoPlayer({ src, mimeType, thumbSrc, onRedownload, reloading }: {
   src: string; mimeType?: string | null; thumbSrc?: string | null;
   mediaWidth?: number | null; mediaHeight?: number | null;
   onError: () => void; onRedownload: () => Promise<void>; reloading: boolean;
+  isOutbound: boolean;
 }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [videoError, setVideoError] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [bufferedEnd, setBufferedEnd] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+  const [ctrlVisible, setCtrlVisible] = useState(true);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onLoaded = () => setDuration(isFinite(video.duration) ? video.duration : 0);
+    const onTime = () => {
+      setCurrentTime(video.currentTime);
+      if (video.buffered.length > 0) setBufferedEnd(video.buffered.end(video.buffered.length - 1));
+    };
+    const onEnded = () => { setPlaying(false); setCtrlVisible(true); };
+    video.addEventListener("loadedmetadata", onLoaded);
+    video.addEventListener("timeupdate", onTime);
+    video.addEventListener("ended", onEnded);
+    return () => {
+      video.removeEventListener("loadedmetadata", onLoaded);
+      video.removeEventListener("timeupdate", onTime);
+      video.removeEventListener("ended", onEnded);
+    };
+  }, [src]);
+
+  const scheduleHide = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setCtrlVisible(false), 2500);
+  };
+
+  const revealControls = () => {
+    setCtrlVisible(true);
+    if (playing) scheduleHide();
+  };
+
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (playing) {
+      v.pause();
+      setCtrlVisible(true);
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    } else {
+      v.play().catch(() => setVideoError(true));
+      scheduleHide();
+    }
+    setPlaying(!playing);
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const v = videoRef.current;
+    if (!v || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    v.currentTime = pct * duration;
+    setCurrentTime(pct * duration);
+  };
+
+  const handleVolumeChange = (e: React.MouseEvent<HTMLDivElement>) => {
+    const v = videoRef.current;
+    if (!v) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    v.volume = pct;
+    v.muted = pct === 0;
+    setVolume(pct);
+    setMuted(pct === 0);
+  };
+
+  const toggleMute = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !muted;
+    setMuted(!muted);
+  };
+
+  const fmt = (t: number) => {
+    if (!t || !isFinite(t)) return "0:00";
+    return `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  };
+
+  const progress = duration > 0 ? currentTime / duration : 0;
+  const bufferedPct = duration > 0 ? bufferedEnd / duration : 0;
+  const effectiveVol = muted ? 0 : volume;
 
   if (videoError) {
     return (
       <div className="mb-1 flex flex-col items-center gap-2 rounded-lg bg-background/10 p-4" style={{ maxWidth: 280 }}>
         {thumbSrc ? (
-          <img src={thumbSrc} alt="Preview" className="max-w-full rounded-lg opacity-40 blur-sm" style={{ maxHeight: 200 }} />
+          <img src={thumbSrc} alt="Preview" className="max-w-full rounded-lg opacity-40 blur-sm" style={{ maxHeight: 180 }} />
         ) : (
           <Play className="h-8 w-8 text-muted-foreground" />
         )}
@@ -195,16 +284,88 @@ function VideoPlayer({ src, mimeType, thumbSrc, mediaWidth, mediaHeight, onError
   }
 
   return (
-    <video
-      controls
-      className="mb-1 rounded-lg"
-      style={{ maxWidth: 280, maxHeight: 300 }}
-      preload="metadata"
-      poster={thumbSrc || undefined}
-      onError={() => setVideoError(true)}
+    <div
+      className="relative mb-1 overflow-hidden rounded-lg bg-black"
+      style={{ maxWidth: 280 }}
+      onMouseMove={revealControls}
+      onTouchStart={revealControls}
     >
-      <source src={src} type={mimeType || undefined} />
-    </video>
+      <video
+        ref={videoRef}
+        className="block w-full"
+        style={{ maxHeight: 300 }}
+        preload="metadata"
+        poster={thumbSrc || undefined}
+        muted={muted}
+        playsInline
+        onClick={togglePlay}
+        onError={() => setVideoError(true)}
+      >
+        <source src={src} type={mimeType || "video/mp4"} />
+      </video>
+
+      {/* Overlay play quando pausado */}
+      {!playing && (
+        <div className="absolute inset-0 flex items-center justify-center cursor-pointer" onClick={togglePlay}>
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm">
+            <Play className="h-6 w-6 ml-0.5" />
+          </div>
+        </div>
+      )}
+
+      {/* Barra de controles */}
+      <div className={cn(
+        "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent px-2.5 pt-8 pb-2 transition-opacity duration-200",
+        ctrlVisible ? "opacity-100" : "opacity-0 pointer-events-none"
+      )}>
+        {/* Seek bar */}
+        <div
+          className="relative h-[3px] w-full cursor-pointer rounded-full bg-white/25 mb-2 group"
+          onClick={handleSeek}
+        >
+          {/* Buffered */}
+          <div className="absolute inset-y-0 left-0 rounded-full bg-white/30" style={{ width: `${bufferedPct * 100}%` }} />
+          {/* Progress */}
+          <div className="absolute inset-y-0 left-0 rounded-full bg-white" style={{ width: `${progress * 100}%` }} />
+          {/* Thumb */}
+          <div
+            className="absolute top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-white shadow opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ left: `calc(${progress * 100}% - 6px)` }}
+          />
+        </div>
+
+        {/* Linha de controles */}
+        <div className="flex items-center gap-2">
+          <button onClick={togglePlay} className="flex-shrink-0 text-white hover:text-white/70 transition-colors">
+            {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
+          </button>
+
+          <span className="flex-shrink-0 text-[10px] tabular-nums text-white/80">
+            {fmt(currentTime)} / {fmt(duration)}
+          </span>
+
+          <div className="flex-1" />
+
+          {/* Volume */}
+          <div className="flex items-center gap-1.5">
+            {showVolumeSlider && (
+              <div
+                className="h-[3px] w-14 cursor-pointer rounded-full bg-white/30"
+                onClick={handleVolumeChange}
+              >
+                <div className="h-full rounded-full bg-white pointer-events-none" style={{ width: `${effectiveVol * 100}%` }} />
+              </div>
+            )}
+            <button
+              onClick={() => { toggleMute(); setShowVolumeSlider(v => !v); }}
+              className="flex-shrink-0 text-white hover:text-white/70 transition-colors"
+            >
+              {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -461,7 +622,7 @@ export const MediaMessage = memo(function MediaMessage({ messageId, mediaUrl, me
   }
 
   if (mediaType === "video") {
-    return <VideoPlayer src={resolvedUrl} mimeType={metadataMimeType} thumbSrc={thumbSrc} mediaWidth={mediaWidth} mediaHeight={mediaHeight} onError={() => { setResolvedUrl(null); setError(true); }} onRedownload={tryRedownload} reloading={reloading} />;
+    return <VideoPlayer src={resolvedUrl} mimeType={metadataMimeType} thumbSrc={thumbSrc} mediaWidth={mediaWidth} mediaHeight={mediaHeight} onError={() => { setResolvedUrl(null); setError(true); }} onRedownload={tryRedownload} reloading={reloading} isOutbound={isOutbound} />;
   }
 
   if (mediaType === "audio") {
