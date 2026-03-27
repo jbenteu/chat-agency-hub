@@ -2,11 +2,18 @@ import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { MessageCircle, Clock } from "lucide-react";
+import { MessageCircle, Clock, AlertCircle, ArrowUp, Minus, ChevronDown } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatPhoneWhatsApp } from "@/data/country-codes";
 import type { Deal } from "@/hooks/use-deals";
+
+const PRIORITY_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+  urgente: { label: "Urgente", color: "text-red-600", icon: <AlertCircle className="h-3 w-3" /> },
+  alta:    { label: "Alta",    color: "text-orange-500", icon: <ArrowUp className="h-3 w-3" /> },
+  media:   { label: "Média",   color: "text-muted-foreground", icon: <Minus className="h-3 w-3" /> },
+  baixa:   { label: "Baixa",   color: "text-blue-400", icon: <ChevronDown className="h-3 w-3" /> },
+};
 
 interface DealCardProps {
   deal: Deal;
@@ -27,6 +34,9 @@ export function DealCard({ deal, onClick, stageColor }: DealCardProps) {
     ? formatDistanceToNow(new Date(deal.created_at), { addSuffix: false, locale: ptBR })
     : null;
 
+  const priority = deal.priority || "media";
+  const priorityCfg = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG.media;
+
   return (
     <Card
       className="cursor-pointer hover:shadow-md active:scale-[0.98] transition-all border-l-2"
@@ -34,9 +44,9 @@ export function DealCard({ deal, onClick, stageColor }: DealCardProps) {
       onClick={onClick}
     >
       <CardContent className="p-3 space-y-2">
-        {/* Contact name + avatar */}
+        {/* Contact name + avatar + priority */}
         <div className="flex items-center gap-2">
-          <Avatar className="h-7 w-7">
+          <Avatar className="h-7 w-7 flex-shrink-0">
             <AvatarFallback className="text-[10px] font-medium bg-primary/10 text-primary">
               {initials}
             </AvatarFallback>
@@ -45,12 +55,24 @@ export function DealCard({ deal, onClick, stageColor }: DealCardProps) {
             <p className="text-sm font-medium truncate">{contact?.name || "Sem contato"}</p>
             <p className="text-[11px] text-muted-foreground truncate">{deal.title}</p>
           </div>
+          {priority !== "media" && (
+            <span className={`flex items-center gap-0.5 text-[11px] flex-shrink-0 ${priorityCfg.color}`} title={`Prioridade: ${priorityCfg.label}`}>
+              {priorityCfg.icon}
+            </span>
+          )}
         </div>
 
         {/* Value */}
         {deal.value != null && deal.value > 0 && (
           <p className="text-sm font-semibold tabular-nums">
             {deal.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+          </p>
+        )}
+
+        {/* Expected close date */}
+        {deal.expected_close_date && (
+          <p className="text-[11px] text-muted-foreground">
+            Fecha: {new Date(deal.expected_close_date + "T00:00:00").toLocaleDateString("pt-BR")}
           </p>
         )}
 

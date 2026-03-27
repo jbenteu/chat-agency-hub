@@ -113,6 +113,19 @@ export interface PipelineLead {
   last_message_at: string | null;
 }
 
+export interface AccessibleTenant {
+  id: string;
+  name: string;
+  instances: Array<{ id: string; display_name: string | null; instance_name: string; status: string }>;
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  role: string;
+  tenant_ids: string[];
+}
+
 const invokeAI = async (action: string, payload: object) => {
   const { data, error } = await supabase.functions.invoke("ai-analysis", {
     body: { action, payload },
@@ -125,8 +138,8 @@ export function useAIAnalysis() {
   const analyzeConversation = (conversationId: string) =>
     invokeAI("analyze_conversation", { conversation_id: conversationId });
 
-  const askAI = (question: string, instanceId?: string | null): Promise<{ answer: string }> =>
-    invokeAI("ask_ai", { question, instance_id: instanceId ?? null });
+  const askAI = (question: string, instanceId?: string | null, targetTenantId?: string | null): Promise<{ answer: string }> =>
+    invokeAI("ask_ai", { question, instance_id: instanceId ?? null, target_tenant_id: targetTenantId ?? undefined });
 
   const generateScript = (params: {
     lead_name: string;
@@ -137,29 +150,32 @@ export function useAIAnalysis() {
   }): Promise<{ script: string }> =>
     invokeAI("generate_script", params);
 
-  const getDashboard = (forceRefresh = false, instanceId?: string | null): Promise<{ data: AIDashboardData }> =>
-    invokeAI("get_dashboard", { force_refresh: forceRefresh, instance_id: instanceId ?? null });
+  const getDashboard = (forceRefresh = false, instanceId?: string | null, targetTenantId?: string | null): Promise<{ data: AIDashboardData }> =>
+    invokeAI("get_dashboard", { force_refresh: forceRefresh, instance_id: instanceId ?? null, target_tenant_id: targetTenantId ?? undefined });
 
-  const getInsights = (instanceId?: string | null): Promise<{ insights: AIInsight[] }> =>
-    invokeAI("get_insights", { instance_id: instanceId ?? null });
+  const getInsights = (instanceId?: string | null, targetTenantId?: string | null): Promise<{ insights: AIInsight[] }> =>
+    invokeAI("get_insights", { instance_id: instanceId ?? null, target_tenant_id: targetTenantId ?? undefined });
 
-  const getTemporalPatterns = (instanceId?: string | null): Promise<TemporalPattern> =>
-    invokeAI("get_temporal_patterns", { instance_id: instanceId ?? null });
+  const getTemporalPatterns = (instanceId?: string | null, targetTenantId?: string | null): Promise<TemporalPattern> =>
+    invokeAI("get_temporal_patterns", { instance_id: instanceId ?? null, target_tenant_id: targetTenantId ?? undefined });
 
-  const getPipeline = (instanceId?: string | null): Promise<{ hot_leads: PipelineLead[]; warm_leads: PipelineLead[] }> =>
-    invokeAI("get_pipeline", { instance_id: instanceId ?? null });
+  const getPipeline = (instanceId?: string | null, targetTenantId?: string | null): Promise<{ hot_leads: PipelineLead[]; warm_leads: PipelineLead[] }> =>
+    invokeAI("get_pipeline", { instance_id: instanceId ?? null, target_tenant_id: targetTenantId ?? undefined });
 
-  const listInstances = (): Promise<{ instances: WhatsAppInstance[] }> =>
-    invokeAI("list_instances", {});
+  const listInstances = (targetTenantId?: string | null): Promise<{ instances: WhatsAppInstance[] }> =>
+    invokeAI("list_instances", { target_tenant_id: targetTenantId ?? undefined });
 
-  const getAnalysisStatus = (instanceId?: string | null): Promise<AnalysisStatus> =>
-    invokeAI("get_analysis_status", { instance_id: instanceId ?? null });
+  const getAnalysisStatus = (instanceId?: string | null, targetTenantId?: string | null): Promise<AnalysisStatus> =>
+    invokeAI("get_analysis_status", { instance_id: instanceId ?? null, target_tenant_id: targetTenantId ?? undefined });
 
-  const analyzeAllConversations = (instanceId?: string | null): Promise<{ analyzed: number; total_queued: number; errors: number; message: string }> =>
-    invokeAI("analyze_all_conversations", { instance_id: instanceId ?? null, limit: 20 });
+  const analyzeAllConversations = (instanceId?: string | null, targetTenantId?: string | null): Promise<{ analyzed: number; total_queued: number; errors: number; message: string }> =>
+    invokeAI("analyze_all_conversations", { instance_id: instanceId ?? null, limit: 20, target_tenant_id: targetTenantId ?? undefined });
 
-  const processQueue = (instanceId?: string | null, limit = 2): Promise<{ processed: number; remaining: number }> =>
-    invokeAI("process_queue", { instance_id: instanceId ?? null, limit });
+  const processQueue = (instanceId?: string | null, limit = 2, targetTenantId?: string | null): Promise<{ processed: number; remaining: number }> =>
+    invokeAI("process_queue", { instance_id: instanceId ?? null, limit, target_tenant_id: targetTenantId ?? undefined });
+
+  const listAccessibleTenants = (): Promise<{ tenants: AccessibleTenant[]; team_members: TeamMember[] }> =>
+    invokeAI("list_accessible_tenants", {});
 
   const getConversationAnalysis = async (conversationId: string): Promise<AIConversationAnalysis | null> => {
     const { data, error } = await supabase
@@ -184,5 +200,6 @@ export function useAIAnalysis() {
     analyzeAllConversations,
     processQueue,
     getConversationAnalysis,
+    listAccessibleTenants,
   };
 }

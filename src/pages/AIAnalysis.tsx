@@ -9,10 +9,14 @@ import {
   type PipelineLead,
   type WhatsAppInstance,
   type AnalysisStatus,
+  type AccessibleTenant,
+  type TeamMember,
 } from "@/hooks/use-ai-analysis";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -27,6 +31,7 @@ import {
   ChevronDown, Wand2, Send, User, Clock, TrendingUp,
   Zap, Target, ShieldAlert, TrendingDown, Gem, Users,
   ChevronRight, Eye, Wifi, WifiOff, PlayCircle, CheckCircle2,
+  Building2, UserCircle, Play,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -131,18 +136,33 @@ interface ChatMessage {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const AIAnalysis: React.FC = () => {
-  const { getDashboard, generateScript, askAI, getInsights, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, analyzeAllConversations, processQueue } = useAIAnalysis();
+  const { getDashboard, generateScript, askAI, getInsights, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, analyzeAllConversations, processQueue, listAccessibleTenants } = useAIAnalysis();
+  const { profile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  const userRole = profile?.role ?? null;
+  const isClientRole = userRole === "cliente";
+  const isManagerRole = userRole === "gestor" || userRole === "sucesso_cliente";
+  const isGerenteRole = userRole === "gerente" || userRole === "admin";
+  const isOnDemandRole = isManagerRole || isGerenteRole;
+
   const [activeTab, setActiveTab] = useState("painel");
   const [dashboardData, setDashboardData] = useState<AIDashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  // Instance selector
+  // Instance selector (for clientes — their own instances)
   const [instances, setInstances] = useState<WhatsAppInstance[]>([]);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
-  const [instancesLoading, setInstancesLoading] = useState(true);
+  const [instancesLoading, setInstancesLoading] = useState(false);
+
+  // On-demand mode — manager/gestor/gerente cross-tenant access
+  const [accessibleTenants, setAccessibleTenants] = useState<AccessibleTenant[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [selectedTeamMemberId, setSelectedTeamMemberId] = useState<string>("all");
+  const [selectedClientTenantId, setSelectedClientTenantId] = useState<string | null>(null);
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false); // true after "Gerar análise" clicked
 
   // Analysis coverage monitor
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus | null>(null);
@@ -185,41 +205,38 @@ const AIAnalysis: React.FC = () => {
 
   // ── Loaders ────────────────────────────────────────────────────────────────
 
-  const loadInstances = async () => {
+  const loadInstances = async (targetTenantId?: string | null) => {
     try {
       setInstancesLoading(true);
-      const result = await listInstances();
+      const result = await listInstances(targetTenantId);
       setInstances(result.instances || []);
     } catch { /* silent */ } finally {
       setInstancesLoading(false);
     }
   };
 
-  const loadAnalysisStatus = async (instId: string | null) => {
+  const loadAccessibleTenants = async () => {
     try {
-      const result = await getAnalysisStatus(instId);
+      setAccessLoading(true);
+      const result = await listAccessibleTenants();
+      setAccessibleTenants(result.tenants || []);
+      setTeamMembers(result.team_members || []);
+    } catch { /* silent */ } finally {
+      setAccessLoading(false);
+    }
+  };
+
+  const loadAnalysisStatus = async (instId: string | null, targetTenantId?: string | null) => {
+    try {
+      const result = await getAnalysisStatus(instId, targetTenantId);
       setAnalysisStatus(result);
     } catch { /* silent */ }
   };
 
-  const handleAnalyzeAll = async () => {
-    try {
-      setAnalyzing(true);
-      const result = await analyzeAllConversations(selectedInstanceId);
-      toast({ title: "Análise concluída", description: result.message });
-      await loadAnalysisStatus(selectedInstanceId);
-      await loadDashboard(true);
-    } catch (err) {
-      toast({ title: "Erro na análise", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  const loadDashboard = async (force = false) => {
+  const loadDashboard = async (force = false, targetTenantId?: string | null) => {
     try {
       setLoading(true);
-      const result = await getDashboard(force, selectedInstanceId);
+      const result = await getDashboard(force, selectedInstanceId, targetTenantId);
       setDashboardData(result.data);
     } catch (err) {
       toast({ title: "Erro ao carregar dados", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
@@ -228,11 +245,11 @@ const AIAnalysis: React.FC = () => {
     }
   };
 
-  const loadInsights = async () => {
+  const loadInsights = async (targetTenantId?: string | null) => {
     try {
       setInsightsLoading(true);
       setInsights([]);
-      const result = await getInsights(selectedInstanceId);
+      const result = await getInsights(selectedInstanceId, targetTenantId);
       setInsights(result.insights || []);
       setInsightsLoaded(true);
     } catch (err) {
@@ -242,10 +259,10 @@ const AIAnalysis: React.FC = () => {
     }
   };
 
-  const loadPipeline = async () => {
+  const loadPipeline = async (targetTenantId?: string | null) => {
     try {
       setPipelineLoading(true);
-      const result = await getPipeline(selectedInstanceId);
+      const result = await getPipeline(selectedInstanceId, targetTenantId);
       setHotLeads(result.hot_leads || []);
       setWarmLeads(result.warm_leads || []);
     } catch {
@@ -255,10 +272,10 @@ const AIAnalysis: React.FC = () => {
     }
   };
 
-  const loadPatterns = async () => {
+  const loadPatterns = async (targetTenantId?: string | null) => {
     try {
       setPatternsLoading(true);
-      const result = await getTemporalPatterns(selectedInstanceId);
+      const result = await getTemporalPatterns(selectedInstanceId, targetTenantId);
       setPatterns(result);
     } catch {
       // silent
@@ -297,45 +314,65 @@ const AIAnalysis: React.FC = () => {
   };
 
   // ── Background queue processor ───────────────────────────────────────────
-  const runProcessQueue = useRef<(instId: string | null) => Promise<void>>();
-  runProcessQueue.current = async (instId: string | null) => {
+  const runProcessQueue = useRef<(instId: string | null, targetTenantId?: string | null) => Promise<void>>();
+  runProcessQueue.current = async (instId: string | null, targetTenantId?: string | null) => {
     if (bgProcessing) return;
     setBgProcessing(true);
     try {
       let remaining = Infinity;
       let rounds = 0;
       while (remaining > 0 && rounds < 10) {
-        const result = await processQueue(instId, 4);
+        const result = await processQueue(instId, 4, targetTenantId);
         remaining = result.remaining ?? 0;
         rounds++;
         if (result.processed > 0) {
-          // Refresh status and dashboard after each batch
-          loadAnalysisStatus(instId);
-          if (rounds === 1 || remaining === 0) loadDashboard(true);
+          loadAnalysisStatus(instId, targetTenantId);
+          if (rounds === 1 || remaining === 0) loadDashboard(true, targetTenantId);
         }
-        if (remaining > 0) {
-          // Small pause between batches to avoid overwhelming the API
-          await new Promise((r) => setTimeout(r, 2000));
-        }
+        if (remaining > 0) await new Promise((r) => setTimeout(r, 2000));
       }
-    } catch { /* silent — will retry on next interval */ }
+    } catch { /* silent */ }
     finally { setBgProcessing(false); }
   };
 
+  // ── "Gerar análise" handler for on-demand roles ────────────────────────────
+  const handleGerarAnalise = async () => {
+    if (!selectedClientTenantId) return;
+    setDataLoaded(false);
+    setDashboardData(null);
+    setInsights([]);
+    setInsightsLoaded(false);
+    setHotLeads([]);
+    setWarmLeads([]);
+    setPatterns(null);
+    setScoresData([]);
+    setActiveTab("painel");
+    // Load instances for this tenant
+    await loadInstances(selectedClientTenantId);
+    // Run queue then load dashboard
+    await runProcessQueue.current?.(null, selectedClientTenantId);
+    await loadDashboard(true, selectedClientTenantId);
+    await loadAnalysisStatus(null, selectedClientTenantId);
+    setDataLoaded(true);
+    toast({ title: "Análise gerada", description: "Os dados do cliente foram analisados." });
+  };
+
   useEffect(() => {
+    if (isOnDemandRole) {
+      // Managers: load accessible tenants/team members, don't auto-process
+      loadAccessibleTenants();
+      return;
+    }
+    // Cliente: existing auto-processing behavior
+    setInstancesLoading(true);
     loadInstances();
     loadDashboard();
     loadAnalysisStatus(null);
-
-    // Auto-process queue on mount
     runProcessQueue.current?.(null);
-
-    // Re-run every 5 minutes
     processIntervalRef.current = setInterval(() => {
       runProcessQueue.current?.(null);
     }, 5 * 60 * 1000);
 
-    // Subscribe to realtime ai_conversation_analysis updates
     const channel = supabase
       .channel("ai_analysis_rt")
       .on(
@@ -352,10 +389,11 @@ const AIAnalysis: React.FC = () => {
       supabase.removeChannel(channel);
       if (processIntervalRef.current) clearInterval(processIntervalRef.current);
     };
-  }, []);
+  }, [userRole]);
 
-  // Reload everything when instance changes
+  // Reload everything when instance changes (cliente mode only)
   useEffect(() => {
+    if (isOnDemandRole || !isClientRole) return;
     setDashboardData(null);
     setInsights([]);
     setInsightsLoaded(false);
@@ -365,15 +403,15 @@ const AIAnalysis: React.FC = () => {
     setScoresData([]);
     loadDashboard();
     loadAnalysisStatus(selectedInstanceId);
-    // Re-process queue for the selected instance
     runProcessQueue.current?.(selectedInstanceId);
   }, [selectedInstanceId]);
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
-    if (value === "insights" && !insightsLoaded && !insightsLoading) loadInsights();
-    if (value === "pipeline" && hotLeads.length === 0 && warmLeads.length === 0) loadPipeline();
-    if (value === "padroes" && !patterns) loadPatterns();
+    const tgt = isOnDemandRole ? selectedClientTenantId : null;
+    if (value === "insights" && !insightsLoaded && !insightsLoading) loadInsights(tgt);
+    if (value === "pipeline" && hotLeads.length === 0 && warmLeads.length === 0) loadPipeline(tgt);
+    if (value === "padroes" && !patterns) loadPatterns(tgt);
     if (value === "scores" && scoresData.length === 0) loadScores();
   };
 
@@ -389,7 +427,8 @@ const AIAnalysis: React.FC = () => {
     scrollToBottom();
     try {
       setAskLoading(true);
-      const result = await askAI(userMsg.content, selectedInstanceId);
+      const tgt = isOnDemandRole ? selectedClientTenantId : null;
+      const result = await askAI(userMsg.content, selectedInstanceId, tgt);
       setChatMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: result.answer, timestamp: new Date() }]);
       scrollToBottom();
     } catch (err) {
@@ -476,20 +515,169 @@ const AIAnalysis: React.FC = () => {
             </div>
             <p className="text-sm text-muted-foreground mt-1">Análise IA para joalheria — dados dos últimos 30 dias</p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => loadDashboard(true)}
-            disabled={loading}
-            className="border-zinc-200 text-muted-foreground hover:border-violet-400 transition-all"
-          >
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-            Atualizar
-          </Button>
+          {!isOnDemandRole && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadDashboard(true)}
+              disabled={loading}
+              className="border-zinc-200 text-muted-foreground hover:border-violet-400 transition-all"
+            >
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+              Atualizar
+            </Button>
+          )}
         </div>
 
-        {/* Instance Selector */}
-        {!instancesLoading && instances.length > 0 && (
+        {/* ── On-demand selector for gestores / gerentes / CS ── */}
+        {isOnDemandRole && (
+          <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <Sparkles size={16} className="text-violet-500" />
+              <span className="text-sm font-medium text-foreground">Gerar análise por demanda</span>
+            </div>
+
+            <div className="flex flex-wrap gap-3 items-end">
+              {/* Team member selector — only for gerente */}
+              {isGerenteRole && (
+                <div className="flex flex-col gap-1 min-w-[200px]">
+                  <label className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                    <UserCircle size={12} />
+                    Membro da equipe
+                  </label>
+                  <Select
+                    value={selectedTeamMemberId}
+                    onValueChange={(val) => {
+                      setSelectedTeamMemberId(val);
+                      setSelectedClientTenantId(null);
+                      setDataLoaded(false);
+                    }}
+                  >
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Selecione o membro..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os membros</SelectItem>
+                      {teamMembers.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name}
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            ({m.role === "gestor" ? "Gestor" : "CS"})
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Client selector */}
+              <div className="flex flex-col gap-1 min-w-[220px]">
+                <label className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                  <Building2 size={12} />
+                  Cliente
+                </label>
+                {accessLoading ? (
+                  <div className="h-9 flex items-center px-3 text-sm text-muted-foreground border rounded-md">
+                    <Loader2 size={14} className="animate-spin mr-2" /> Carregando...
+                  </div>
+                ) : (
+                  <Select
+                    value={selectedClientTenantId ?? ""}
+                    onValueChange={(val) => {
+                      setSelectedClientTenantId(val || null);
+                      setDataLoaded(false);
+                    }}
+                  >
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Selecione o cliente..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(isGerenteRole && selectedTeamMemberId !== "all"
+                        ? accessibleTenants.filter((t) => {
+                            const member = teamMembers.find((m) => m.id === selectedTeamMemberId);
+                            return member?.tenant_ids.includes(t.id);
+                          })
+                        : accessibleTenants
+                      ).map((tenant) => (
+                        <SelectItem key={tenant.id} value={tenant.id}>
+                          {tenant.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* Generate button */}
+              <Button
+                onClick={handleGerarAnalise}
+                disabled={!selectedClientTenantId || bgProcessing || loading}
+                className="bg-violet-600 hover:bg-violet-700 text-white h-9 gap-1.5"
+                size="sm"
+              >
+                {bgProcessing || loading ? (
+                  <><Loader2 size={14} className="animate-spin" /> Analisando...</>
+                ) : (
+                  <><Play size={14} /> Gerar análise</>
+                )}
+              </Button>
+
+              {/* Refresh after data loaded */}
+              {dataLoaded && selectedClientTenantId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadDashboard(true, selectedClientTenantId)}
+                  disabled={loading}
+                  className="h-9 border-zinc-200 text-muted-foreground"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+                  Atualizar
+                </Button>
+              )}
+            </div>
+
+            {/* Coverage bar after generation */}
+            {dataLoaded && analysisStatus && (
+              <div className="flex items-center gap-2.5 bg-background border border-border rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`size-2 rounded-full shrink-0 ${
+                    analysisStatus.coverage_pct >= 80 ? "bg-emerald-500" :
+                    analysisStatus.coverage_pct >= 40 ? "bg-amber-500" : "bg-red-500"
+                  }`} />
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                    <span className="font-medium text-foreground">{analysisStatus.analyzed_conversations}/{analysisStatus.total_conversations}</span> conversas analisadas
+                    <span className="ml-1 font-medium" style={{ color: analysisStatus.coverage_pct >= 80 ? '#10b981' : analysisStatus.coverage_pct >= 40 ? '#d97706' : '#ef4444' }}>
+                      ({analysisStatus.coverage_pct}%)
+                    </span>
+                  </span>
+                </div>
+                <div className="h-1.5 w-20 bg-muted rounded-full overflow-hidden shrink-0">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${
+                      analysisStatus.coverage_pct >= 80 ? "bg-emerald-500" :
+                      analysisStatus.coverage_pct >= 40 ? "bg-amber-500" : "bg-red-500"
+                    }`}
+                    style={{ width: `${analysisStatus.coverage_pct}%` }}
+                  />
+                </div>
+                {bgProcessing ? (
+                  <span className="flex items-center gap-1 text-[11px] text-violet-600 font-medium shrink-0">
+                    <Loader2 size={12} className="animate-spin" /> Analisando...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium shrink-0">
+                    <CheckCircle2 size={12} /> Concluído
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Instance Selector (cliente mode only) */}
+        {isClientRole && !instancesLoading && instances.length > 0 && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-3 flex-wrap">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide shrink-0">Instância:</span>
@@ -573,7 +761,18 @@ const AIAnalysis: React.FC = () => {
           </div>
         )}
 
-        {isEmpty && !loading ? (
+        {/* On-demand mode: prompt to select client if no data loaded yet */}
+        {isOnDemandRole && !dataLoaded && !bgProcessing && !loading ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <Building2 className="text-violet-300" size={40} />
+            <p className="text-foreground font-medium">Selecione um cliente para gerar a análise</p>
+            <p className="text-muted-foreground text-sm text-center max-w-xs">
+              {isGerenteRole
+                ? "Escolha o membro da equipe e o cliente acima, depois clique em \"Gerar análise\"."
+                : "Escolha o cliente acima e clique em \"Gerar análise\"."}
+            </p>
+          </div>
+        ) : isEmpty && !loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Sparkles className="text-violet-400" size={40} />
             <p className="text-foreground font-medium">Nenhuma conversa analisada ainda</p>

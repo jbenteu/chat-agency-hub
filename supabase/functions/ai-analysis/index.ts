@@ -89,12 +89,122 @@ Deno.serve(async (req) => {
 
     const { data: roleData } = await supabaseAdmin
       .from("user_roles")
-      .select("tenant_id")
+      .select("tenant_id, role")
       .eq("user_id", userId)
       .limit(1)
       .single();
     if (!roleData?.tenant_id) return jsonResponse({ error: "User has no tenant assigned" }, 403);
     tenantId = roleData.tenant_id;
+
+    // ── Cross-tenant access for gestores/gerentes/CS ───────────────────────
+    // If caller provides a target_tenant_id, validate they have access to it
+    const targetTenantId = payload.target_tenant_id as string | undefined;
+    if (targetTenantId && targetTenantId !== tenantId) {
+      const callerRole = roleData.role as string;
+      const isManagerRole = ["gerente", "gestor", "sucesso_cliente", "admin"].includes(callerRole);
+      if (!isManagerRole) {
+        return jsonResponse({ error: "Acesso negado ao tenant solicitado" }, 403);
+      }
+      // For gerente/admin: check if target tenant is accessible via any team member's assignment
+      // For gestor/CS: check direct assignment
+      let hasAccess = false;
+      if (callerRole === "gerente" || callerRole === "admin") {
+        // Gerente can access any tenant assigned to any member of their organization
+        const { data: assignmentCheck } = await supabaseAdmin
+          .from("tenant_assignments")
+          .select("id")
+          .eq("tenant_id", targetTenantId)
+          .limit(1)
+          .maybeSingle();
+        hasAccess = !!assignmentCheck;
+      } else {
+        const { data: assignmentCheck } = await supabaseAdmin
+          .from("tenant_assignments")
+          .select("id")
+          .eq("manager_id", userId)
+          .eq("tenant_id", targetTenantId)
+          .limit(1)
+          .maybeSingle();
+        hasAccess = !!assignmentCheck;
+      }
+      if (!hasAccess) {
+        return jsonResponse({ error: "Acesso negado ao tenant solicitado" }, 403);
+      }
+      tenantId = targetTenantId;
+    }
+  }
+
+  // ── list_accessible_tenants ─────────────────────────────────────────────────
+  if (action === "list_accessible_tenants") {
+    if (!userId) return jsonResponse({ tenants: [], team_members: [] });
+    const { data: myRole } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .limit(1)
+      .maybeSingle();
+    const callerRole = myRole?.role as string | undefined;
+
+    let accessibleTenantIds: string[] = [];
+    let teamMembers: Array<{ id: string; name: string; role: string; tenant_ids: string[] }> = [];
+
+    if (callerRole === "gerente" || callerRole === "admin") {
+      // Load all gestores/CS profiles + their assignments
+      const { data: memberProfiles } = await supabaseAdmin
+        .from("profiles")
+        .select("id, full_name, role")
+        .in("role", ["gestor", "sucesso_cliente"]);
+      const memberIds = (memberProfiles || []).map((p: any) => p.id);
+      if (memberIds.length > 0) {
+        const { data: allAssignments } = await supabaseAdmin
+          .from("tenant_assignments")
+          .select("manager_id, tenant_id")
+          .in("manager_id", memberIds);
+        const memberTenantMap: Record<string, string[]> = {};
+        (allAssignments || []).forEach((a: any) => {
+          if (!memberTenantMap[a.manager_id]) memberTenantMap[a.manager_id] = [];
+          memberTenantMap[a.manager_id].push(a.tenant_id);
+          if (!accessibleTenantIds.includes(a.tenant_id)) accessibleTenantIds.push(a.tenant_id);
+        });
+        teamMembers = (memberProfiles || []).map((p: any) => ({
+          id: p.id,
+          name: p.full_name || "Sem nome",
+          role: p.role,
+          tenant_ids: memberTenantMap[p.id] || [],
+        })).filter((m) => m.tenant_ids.length > 0);
+      }
+    } else if (callerRole === "gestor" || callerRole === "sucesso_cliente") {
+      const { data: assignments } = await supabaseAdmin
+        .from("tenant_assignments")
+        .select("tenant_id")
+        .eq("manager_id", userId);
+      accessibleTenantIds = (assignments || []).map((a: any) => a.tenant_id);
+    }
+
+    // Fetch tenant names + instances
+    let tenants: Array<{ id: string; name: string; instances: Array<{ id: string; display_name: string | null; instance_name: string; status: string }> }> = [];
+    if (accessibleTenantIds.length > 0) {
+      const { data: tenantRows } = await supabaseAdmin
+        .from("tenants")
+        .select("id, name")
+        .in("id", accessibleTenantIds);
+      const { data: instanceRows } = await supabaseAdmin
+        .from("whatsapp_instances")
+        .select("id, tenant_id, display_name, instance_name, status")
+        .in("tenant_id", accessibleTenantIds);
+      const instancesByTenant: Record<string, any[]> = {};
+      (instanceRows || []).forEach((i: any) => {
+        if (!instancesByTenant[i.tenant_id]) instancesByTenant[i.tenant_id] = [];
+        instancesByTenant[i.tenant_id].push(i);
+      });
+      tenants = (tenantRows || []).map((t: any) => ({
+        id: t.id,
+        name: t.name || "Cliente",
+        instances: instancesByTenant[t.id] || [],
+      }));
+    }
+
+    return jsonResponse({ tenants, team_members: teamMembers });
   }
 
   // ─── Instance helper ───────────────────────────────────────────────────────

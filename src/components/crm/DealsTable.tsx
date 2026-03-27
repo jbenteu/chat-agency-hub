@@ -18,7 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DealDetailSheet } from "./DealDetailSheet";
 import { CRMFilters, type FilterRule } from "./CRMFilters";
-import { Search, Inbox, Settings2 } from "lucide-react";
+import { Search, Inbox, Settings2, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatPhoneWhatsApp } from "@/data/country-codes";
 
 interface ColumnDef {
@@ -48,7 +48,7 @@ function getStoredColumns(): string[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) return JSON.parse(stored);
-  } catch {}
+  } catch { /* ignore parse errors */ }
   return ALL_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key);
 }
 
@@ -61,10 +61,10 @@ export function DealsTable() {
   const [stageFilter, setStageFilter] = useState("");
   const [advancedFilters, setAdvancedFilters] = useState<FilterRule[]>([]);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(getStoredColumns);
-  const { deals, isLoading } = useDeals({
-    search: search || undefined,
-    stage: stageFilter || undefined,
-  });
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
+  const { deals, isLoading } = useDeals();
   const { stages } = usePipeline();
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
 
@@ -79,22 +79,50 @@ export function DealsTable() {
   };
 
   const filteredDeals = useMemo(() => {
-    if (advancedFilters.length === 0) return deals;
-    return deals.filter((deal) => {
-      return advancedFilters.every((filter) => {
-        const val = getFieldValue(deal, filter.field);
-        const target = filter.value.toLowerCase();
-        switch (filter.operator) {
-          case "contains": return val.toLowerCase().includes(target);
-          case "equals": return val.toLowerCase() === target;
-          case "not_equals": return val.toLowerCase() !== target;
-          case "gt": return parseFloat(val) > parseFloat(filter.value);
-          case "lt": return parseFloat(val) < parseFloat(filter.value);
-          default: return true;
-        }
-      });
-    });
-  }, [deals, advancedFilters]);
+    let result = deals;
+
+    if (search) {
+      const s = search.toLowerCase();
+      result = result.filter(
+        (d) =>
+          d.title.toLowerCase().includes(s) ||
+          (d.contact?.name || "").toLowerCase().includes(s) ||
+          (d.contact?.phone || "").includes(s) ||
+          (d.contact?.email || "").toLowerCase().includes(s) ||
+          (d.contact?.company || "").toLowerCase().includes(s)
+      );
+    }
+
+    if (stageFilter) {
+      result = result.filter((d) => d.stage === stageFilter || d.pipeline_stage_id === stageFilter);
+    }
+
+    if (statusFilter) {
+      result = result.filter((d) => d.status === statusFilter);
+    }
+
+    if (advancedFilters.length > 0) {
+      result = result.filter((deal) =>
+        advancedFilters.every((filter) => {
+          const val = getFieldValue(deal, filter.field);
+          const target = filter.value.toLowerCase();
+          switch (filter.operator) {
+            case "contains": return val.toLowerCase().includes(target);
+            case "equals": return val.toLowerCase() === target;
+            case "not_equals": return val.toLowerCase() !== target;
+            case "gt": return parseFloat(val) > parseFloat(filter.value);
+            case "lt": return parseFloat(val) < parseFloat(filter.value);
+            default: return true;
+          }
+        })
+      );
+    }
+
+    return result;
+  }, [deals, search, stageFilter, statusFilter, advancedFilters]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredDeals.length / PAGE_SIZE));
+  const paginatedDeals = filteredDeals.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const isVisible = (key: string) => visibleColumns.includes(key);
 
@@ -173,19 +201,31 @@ export function DealsTable() {
             className="pl-9"
           />
         </div>
-        <Select value={stageFilter} onValueChange={(v) => setStageFilter(v === "all" ? "" : v)}>
-          <SelectTrigger className="w-[180px]">
+        <Select value={stageFilter} onValueChange={(v) => { setStageFilter(v === "all" ? "" : v); setPage(1); }}>
+          <SelectTrigger className="w-[160px]">
             <SelectValue placeholder="Estágio" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="all">Todos estágios</SelectItem>
             {stages.map((s) => (
               <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        <CRMFilters filters={advancedFilters} onChange={setAdvancedFilters} />
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v === "all" ? "" : v); setPage(1); }}>
+          <SelectTrigger className="w-[130px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos status</SelectItem>
+            <SelectItem value="open">Aberto</SelectItem>
+            <SelectItem value="won">Ganho</SelectItem>
+            <SelectItem value="lost">Perdido</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <CRMFilters filters={advancedFilters} onChange={(f) => { setAdvancedFilters(f); setPage(1); }} />
 
         <Popover>
           <PopoverTrigger asChild>
@@ -221,30 +261,47 @@ export function DealsTable() {
           <p className="text-sm text-muted-foreground">Nenhum deal encontrado</p>
         </div>
       ) : (
-        <div className="rounded-lg border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {ALL_COLUMNS.filter((c) => isVisible(c.key)).map((col) => (
-                  <TableHead key={col.key}>{col.label}</TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredDeals.map((deal) => (
-                <TableRow
-                  key={deal.id}
-                  className="cursor-pointer"
-                  onClick={() => setSelectedDeal(deal)}
-                >
+        <>
+          <div className="text-xs text-muted-foreground mb-1">
+            {filteredDeals.length} resultado{filteredDeals.length !== 1 ? "s" : ""}
+            {filteredDeals.length > PAGE_SIZE && ` — página ${page} de ${totalPages}`}
+          </div>
+          <div className="rounded-lg border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
                   {ALL_COLUMNS.filter((c) => isVisible(c.key)).map((col) => (
-                    <TableCell key={col.key}>{renderCell(deal, col.key)}</TableCell>
+                    <TableHead key={col.key}>{col.label}</TableHead>
                   ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {paginatedDeals.map((deal) => (
+                  <TableRow
+                    key={deal.id}
+                    className="cursor-pointer"
+                    onClick={() => setSelectedDeal(deal)}
+                  >
+                    {ALL_COLUMNS.filter((c) => isVisible(c.key)).map((col) => (
+                      <TableCell key={col.key}>{renderCell(deal, col.key)}</TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       <DealDetailSheet deal={selectedDeal} open={!!selectedDeal} onOpenChange={(o) => !o && setSelectedDeal(null)} />

@@ -2,12 +2,26 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect } from "react";
 
+export interface DealItem {
+  id: string;
+  deal_id: string;
+  tenant_id: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  notes: string | null;
+  created_at: string | null;
+}
+
 export interface Deal {
   id: string;
   title: string;
   value: number | null;
   stage: string;
   status: string;
+  priority: string | null;
+  expected_close_date: string | null;
+  loss_reason: string | null;
   contact_id: string | null;
   assigned_to: string | null;
   tenant_id: string;
@@ -29,32 +43,24 @@ export interface Deal {
     origin: string | null;
   } | null;
   assignee?: { full_name: string | null; avatar_url: string | null } | null;
+  deal_items?: DealItem[];
 }
 
-export function useDeals(filters?: {
-  stage?: string;
-  status?: string;
-  assigned_to?: string;
-  search?: string;
-}) {
+export function useDeals() {
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: ["deals", filters],
+    queryKey: ["deals"],
     queryFn: async () => {
-      let q = supabase
+      const { data, error } = await supabase
         .from("deals")
-        .select("*, contact:contacts(id, name, phone, email, company, tags, city, state, origin)")
+        .select(`
+          *,
+          contact:contacts(id, name, phone, email, company, tags, city, state, origin),
+          deal_items(id, deal_id, tenant_id, product_name, quantity, unit_price, notes, created_at)
+        `)
         .order("created_at", { ascending: false });
 
-      if (filters?.stage) q = q.eq("stage", filters.stage);
-      if (filters?.status) q = q.eq("status", filters.status);
-      if (filters?.assigned_to) q = q.eq("assigned_to", filters.assigned_to);
-      if (filters?.search) {
-        q = q.or(`title.ilike.%${filters.search}%,contact.name.ilike.%${filters.search}%`);
-      }
-
-      const { data, error } = await q;
       if (error) throw error;
       return (data || []) as Deal[];
     },
@@ -90,7 +96,8 @@ export function useDeals(filters?: {
 
   const updateDeal = useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Deal> & { id: string }) => {
-      const { error } = await supabase.from("deals").update(updates).eq("id", id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await supabase.from("deals").update(updates as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["deals"] }),

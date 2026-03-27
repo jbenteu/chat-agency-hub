@@ -38,12 +38,21 @@ export function KanbanColumn({ stage, deals, onDealClick }: KanbanColumnProps) {
 
       {/* Droppable area */}
       <Droppable droppableId={stage.id}>
-        {(provided, snapshot) => (
+        {(provided, snapshot) => {
+          const isWon = stage.name.toLowerCase().includes("ganho") || stage.name.toLowerCase().includes("won");
+          const isLost = stage.name.toLowerCase().includes("perdido") || stage.name.toLowerCase().includes("lost");
+          return (
           <div
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={`flex-1 rounded-b-lg p-1.5 space-y-2 min-h-[120px] transition-colors ${
-              snapshot.isDraggingOver ? "bg-accent/50" : "bg-muted/30"
+              snapshot.isDraggingOver
+                ? "bg-accent/50"
+                : isWon
+                ? "bg-green-50/60 dark:bg-green-950/20"
+                : isLost
+                ? "bg-red-50/60 dark:bg-red-950/20"
+                : "bg-muted/30"
             }`}
           >
             {deals.map((deal, index) => (
@@ -63,7 +72,8 @@ export function KanbanColumn({ stage, deals, onDealClick }: KanbanColumnProps) {
             ))}
             {provided.placeholder}
           </div>
-        )}
+          );
+        }}
       </Droppable>
     </div>
   );

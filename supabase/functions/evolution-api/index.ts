@@ -937,6 +937,20 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Para vídeos: pular base64 (arquivos grandes causam timeout na edge function)
+      // Retorna apenas a URL — o browser faz o stream diretamente
+      const isVideoMedia = persistedMessage?.media_type === "video" ||
+        (persistedMessage?.media_type == null && persistedMessage?.media_url?.includes("video"));
+
+      if (isVideoMedia && preferredPersistedUrl) {
+        return jsonResponse({
+          success: true,
+          mediaData: null,
+          mediaUrl: fixMinioUrl(preferredPersistedUrl),
+          mimeType: persistedMessage?.media_type || null,
+        });
+      }
+
       // Tenta obter base64 ou URL via Evolution API
       const mediaPayload = {
         message: { key: { id: messageId, remoteJid: mediaJid || "" } },
@@ -953,7 +967,7 @@ Deno.serve(async (req) => {
             { method: "POST", body: JSON.stringify(mediaPayload) },
             "get_media",
           );
-          const base64 = evoData?.base64 || evoData?.data?.base64 || null;
+          const base64 = isVideoMedia ? null : (evoData?.base64 || evoData?.data?.base64 || null);
           const evoMediaUrl =
             evoData?.mediaUrl || evoData?.data?.mediaUrl ||
             evoData?.fileUrl || evoData?.url || null;
@@ -984,10 +998,19 @@ Deno.serve(async (req) => {
           // Sem base64 — usa a melhor URL disponível
           const bestUrl =
             evoMediaUrl && !isExpirableUrl(evoMediaUrl)
-              ? evoMediaUrl
-              : preferredPersistedUrl || evoMediaUrl || null;
+              ? fixMinioUrl(evoMediaUrl)
+              : preferredPersistedUrl ? fixMinioUrl(preferredPersistedUrl) : evoMediaUrl || null;
 
           if (bestUrl) {
+            // Salva URL permanente em background
+            if (bestUrl && !isExpirableUrl(bestUrl) && persistedMessage) {
+              supabaseAdmin
+                .from("whatsapp_messages")
+                .update({ media_url: bestUrl })
+                .eq("tenant_id", tenantId)
+                .eq("message_id", messageId)
+                .then(() => {}, console.error);
+            }
             return jsonResponse({
               success: true,
               mediaData: null,
@@ -1573,29 +1596,49 @@ Deno.serve(async (req) => {
       // Fire-and-forget: run import in background, return immediately
       (async () => {
         try {
-          // Fetch contacts from Evolution API (try multiple endpoints)
+          // Fetch contacts from Evolution API (try multiple endpoints/methods)
           let contacts: any[] = [];
-          for (const path of [
-            `/chat/findContacts/${instanceName}`,
-            `/contact/find/${instanceName}`,
-          ]) {
+          const endpointAttempts: Array<{ path: string; method: string; body?: string }> = [
+            { path: `/contact/findContacts/${instanceName}`, method: "GET" },
+            { path: `/contact/findContacts/${instanceName}`, method: "POST", body: JSON.stringify({}) },
+            { path: `/chat/findContacts/${instanceName}`, method: "GET" },
+            { path: `/chat/findContacts/${instanceName}`, method: "POST", body: JSON.stringify({ where: {} }) },
+            { path: `/contact/find/${instanceName}`, method: "POST", body: JSON.stringify({ where: {} }) },
+          ];
+
+          for (const attempt of endpointAttempts) {
             try {
-              const res = await fetchWithTimeout(
-                `${baseUrl}${path}`,
-                { method: "POST", headers: { ...evoHeaders }, body: JSON.stringify({ where: {} }) },
-                15000,
-              );
-              if (res.ok) {
-                const json = await res.json();
-                contacts = Array.isArray(json) ? json : json?.contacts || json?.data || [];
-                if (contacts.length > 0) break;
+              const fetchOpts: RequestInit = {
+                method: attempt.method,
+                headers: { ...evoHeaders },
+              };
+              if (attempt.body) {
+                fetchOpts.body = attempt.body;
+                (fetchOpts.headers as Record<string, string>)["Content-Type"] = "application/json";
               }
-            } catch { /* try next */ }
+              const res = await fetchWithTimeout(`${baseUrl}${attempt.path}`, fetchOpts, 20000);
+              const text = await res.text();
+              console.log(`[import_contacts] ${attempt.method} ${attempt.path} → ${res.status}: ${text.slice(0, 300)}`);
+              if (res.ok) {
+                let json: any;
+                try { json = JSON.parse(text); } catch { continue; }
+                const found = Array.isArray(json) ? json : json?.contacts || json?.data || [];
+                if (found.length > 0) {
+                  contacts = found;
+                  console.log(`[import_contacts] Got ${contacts.length} contacts from ${attempt.path}`);
+                  break;
+                }
+              }
+            } catch (e) {
+              console.log(`[import_contacts] ${attempt.method} ${attempt.path} failed: ${e}`);
+            }
           }
 
           if (contacts.length === 0) {
+            console.log(`[import_contacts] No contacts found after trying all endpoints for instance ${instanceName}`);
             await supabaseAdmin.from("import_progress").update({
               status: "done", imported: 0, total: 0, finished_at: new Date().toISOString(),
+              error_message: "Nenhum contato encontrado na Evolution API. Verifique os logs da edge function para detalhes.",
             }).eq("id", progressId);
             return;
           }

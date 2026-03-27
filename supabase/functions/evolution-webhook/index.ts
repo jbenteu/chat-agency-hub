@@ -67,6 +67,7 @@ const unwrapMessageContent = (message: Record<string, any> | null | undefined): 
   if (cur.ephemeralMessage?.message) cur = cur.ephemeralMessage.message;
   if (cur.viewOnceMessage?.message) cur = cur.viewOnceMessage.message;
   if (cur.viewOnceMessageV2?.message) cur = cur.viewOnceMessageV2.message;
+  if (cur.viewOnceMessageV2Extension?.message) cur = cur.viewOnceMessageV2Extension.message;
   if (cur.documentWithCaptionMessage?.message) cur = cur.documentWithCaptionMessage.message;
   return cur;
 };
@@ -168,7 +169,7 @@ const SILENT_SKIP_TYPES = new Set([
   "keepInChatMessage",
   "secretMessage",
   "pinInChatMessage",
-  "ptvMessage",
+  // ptvMessage removido — é vídeo nota (circular), deve ser processado como video
   "newsletterAdminInviteMessage",
 ]);
 
@@ -186,6 +187,7 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
     contentNode.extendedTextMessage?.contextInfo ||
     contentNode.imageMessage?.contextInfo ||
     contentNode.videoMessage?.contextInfo ||
+    contentNode.ptvMessage?.contextInfo ||
     contentNode.audioMessage?.contextInfo ||
     contentNode.documentMessage?.contextInfo ||
     contentNode.stickerMessage?.contextInfo ||
@@ -225,6 +227,11 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
     content = contentNode.videoMessage.caption || "";
     mediaType = "video";
     mediaUrl = resolveMediaUrl(entry, data, contentNode.videoMessage);
+  } else if (contentNode.ptvMessage) {
+    // ptvMessage = vídeo nota (circular), mesmo protocolo do videoMessage
+    content = contentNode.ptvMessage.caption || "[Vídeo]";
+    mediaType = "video";
+    mediaUrl = resolveMediaUrl(entry, data, contentNode.ptvMessage);
   } else if (contentNode.audioMessage) {
     content = "[Áudio]";
     mediaType = "audio";
@@ -272,8 +279,8 @@ const parseMessagePayload = (entry: Record<string, any>, data: Record<string, an
   let mediaWidth: number | null = null;
   let mediaHeight: number | null = null;
   const mediaNode =
-    contentNode.imageMessage || contentNode.videoMessage || contentNode.audioMessage ||
-    contentNode.documentMessage || contentNode.stickerMessage || null;
+    contentNode.imageMessage || contentNode.videoMessage || contentNode.ptvMessage ||
+    contentNode.audioMessage || contentNode.documentMessage || contentNode.stickerMessage || null;
   if (mediaNode) {
     mediaMimeType = mediaNode.mimetype || mediaNode.mimeType || null;
     mediaThumbnail = mediaNode.jpegThumbnail || mediaNode.thumbnail || null;
@@ -545,6 +552,7 @@ Deno.serve(async (req) => {
                 tenant_id: tenantId,
                 name: evoContactName || pushName,
                 phone: conversationPhone,
+                origin: "whatsapp",
                 tags: ["whatsapp", "lead"],
                 notes: "Contato criado automaticamente via WhatsApp",
               })
@@ -555,16 +563,22 @@ Deno.serve(async (req) => {
               contactRecord = newContact;
               contactId = newContact.id;
               // Deal em background — não bloqueia
-              supabase
-                .from("deals")
-                .insert({
+              (async () => {
+                const { data: firstStage } = await supabase
+                  .from("pipeline_stages")
+                  .select("name")
+                  .eq("tenant_id", tenantId)
+                  .order("order", { ascending: true })
+                  .limit(1)
+                  .single();
+                await supabase.from("deals").insert({
                   tenant_id: tenantId,
                   contact_id: newContact.id,
                   title: `Lead WhatsApp - ${newContact.name || pushName}`,
-                  stage: "lead",
+                  stage: firstStage?.name ?? "Novo Lead",
                   status: "open",
-                })
-                .then(() => {}, console.error);
+                });
+              })().catch(console.error);
             }
           }
 

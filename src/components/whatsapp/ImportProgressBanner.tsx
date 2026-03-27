@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Progress } from "@/components/ui/progress";
@@ -12,34 +12,38 @@ interface ImportProgress {
   imported: number;
   status: string;
   error_message: string | null;
+  started_at?: string;
 }
 
 export function ImportProgressBanner() {
   const { user } = useAuth();
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [visible, setVisible] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  // Track which import IDs the user has dismissed so we never re-show them
+  const dismissedIds = useRef<Set<string>>(new Set());
+  // Track the started_at of the import currently shown — only show a new one if it's genuinely newer
+  const shownStartedAt = useRef<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
 
-    // Fetch any active or recently finished import
-    const fetchProgress = async () => {
+    // On mount: only show if there is an actively RUNNING import
+    const fetchRunning = async () => {
       const { data } = await supabase
         .from("import_progress")
         .select("*")
-        .in("status", ["running", "done", "error"])
+        .eq("status", "running")
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (data) {
+      if (data && !dismissedIds.current.has(data.id)) {
         setProgress(data as ImportProgress);
         setVisible(true);
-        setDismissed(false);
+        shownStartedAt.current = data.started_at ?? null;
       }
     };
 
-    fetchProgress();
+    fetchRunning();
 
     const ch = supabase
       .channel("import-progress-banner")
@@ -49,9 +53,21 @@ export function ImportProgressBanner() {
         (payload) => {
           const row = payload.new as ImportProgress;
           if (!row?.id) return;
-          setProgress(row);
-          setVisible(true);
-          setDismissed(false);
+
+          // If this ID was dismissed by the user, never re-show it
+          if (dismissedIds.current.has(row.id)) return;
+
+          // If a brand-new import started (different started_at), always show it
+          const isNewImport = row.started_at && row.started_at !== shownStartedAt.current;
+
+          if (row.status === "running" || isNewImport) {
+            shownStartedAt.current = row.started_at ?? null;
+            setProgress(row);
+            setVisible(true);
+          } else if (visible) {
+            // Update progress/status for the import already being shown
+            setProgress(row);
+          }
         }
       )
       .subscribe();
@@ -62,7 +78,7 @@ export function ImportProgressBanner() {
   }, [user]);
 
   const handleDismiss = () => {
-    setDismissed(true);
+    if (progress?.id) dismissedIds.current.add(progress.id);
     setVisible(false);
   };
 
@@ -70,7 +86,7 @@ export function ImportProgressBanner() {
     window.location.reload();
   };
 
-  if (!visible || !progress || dismissed) return null;
+  if (!visible || !progress) return null;
 
   const pct = progress.total > 0 ? Math.round((progress.imported / progress.total) * 100) : 0;
 
@@ -83,7 +99,6 @@ export function ImportProgressBanner() {
         "animate-in slide-in-from-bottom-4 fade-in"
       )}
     >
-      {/* Close button — only on non-running states */}
       {progress.status !== "running" && (
         <button
           onClick={handleDismiss}
@@ -114,16 +129,18 @@ export function ImportProgressBanner() {
             <div>
               <p className="text-sm font-medium">Importação concluída!</p>
               <p className="text-xs text-muted-foreground">
-                {progress.imported.toLocaleString("pt-BR")} contatos importados com sucesso
+                {progress.imported > 0
+                  ? `${progress.imported.toLocaleString("pt-BR")} contatos importados`
+                  : "Nenhum contato novo encontrado"}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          {progress.imported > 0 && (
             <Button size="sm" onClick={handleReload} className="gap-1.5">
               <RefreshCw className="h-3.5 w-3.5" />
-              Recarregar
+              Recarregar para ver nomes atualizados
             </Button>
-          </div>
+          )}
         </div>
       )}
 

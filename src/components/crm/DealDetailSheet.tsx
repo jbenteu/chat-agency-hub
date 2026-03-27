@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDeals, type Deal } from "@/hooks/use-deals";
+import { DealItemsForm } from "./DealItemsForm";
 import { useContacts } from "@/hooks/use-contacts";
 import { useActivities } from "@/hooks/use-activities";
 import { usePipeline } from "@/hooks/use-pipeline";
@@ -83,6 +84,9 @@ function DealDataTab({ deal }: { deal: Deal }) {
   const [dealValue, setDealValue] = useState(deal.value?.toString() || "0");
   const [dealStage, setDealStage] = useState(deal.pipeline_stage_id || deal.stage);
   const [dealStatus, setDealStatus] = useState(deal.status);
+  const [dealPriority, setDealPriority] = useState(deal.priority || "media");
+  const [dealExpectedClose, setDealExpectedClose] = useState(deal.expected_close_date || "");
+  const [dealLossReason, setDealLossReason] = useState(deal.loss_reason || "");
 
   const cities = contactState ? BRAZIL_CITIES[contactState] || [] : [];
 
@@ -107,6 +111,9 @@ function DealDataTab({ deal }: { deal: Deal }) {
         stage: matchedStage?.name || dealStage,
         pipeline_stage_id: matchedStage?.id || null,
         status: dealStatus,
+        priority: dealPriority,
+        expected_close_date: dealExpectedClose || null,
+        loss_reason: dealLossReason || null,
       });
 
       if (contact) {
@@ -238,6 +245,26 @@ function DealDataTab({ deal }: { deal: Deal }) {
             </Select>
           </div>
           <div>
+            <Label className="text-xs">Prioridade</Label>
+            <Select value={dealPriority} onValueChange={setDealPriority}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="baixa">Baixa</SelectItem>
+                <SelectItem value="media">Média</SelectItem>
+                <SelectItem value="alta">Alta</SelectItem>
+                <SelectItem value="urgente">Urgente</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Previsão de fechamento</Label>
+            <Input
+              type="date"
+              value={dealExpectedClose}
+              onChange={(e) => setDealExpectedClose(e.target.value)}
+            />
+          </div>
+          <div>
             <Label className="text-xs">Criado em</Label>
             <p className="text-sm text-muted-foreground mt-1">
               {deal.created_at
@@ -245,7 +272,29 @@ function DealDataTab({ deal }: { deal: Deal }) {
                 : "—"}
             </p>
           </div>
+          {dealStatus === "lost" && (
+            <div className="col-span-2">
+              <Label className="text-xs">Motivo da perda</Label>
+              <Input
+                placeholder="Descreva o motivo..."
+                value={dealLossReason}
+                onChange={(e) => setDealLossReason(e.target.value)}
+              />
+            </div>
+          )}
         </div>
+      </div>
+
+      <Separator />
+
+      {/* Products section */}
+      <div>
+        <h4 className="text-sm font-medium mb-3">Produtos / Itens</h4>
+        <DealItemsForm
+          dealId={deal.id}
+          tenantId={deal.tenant_id}
+          items={deal.deal_items || []}
+        />
       </div>
 
       <Separator />

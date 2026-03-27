@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   DragDropContext,
   Droppable,
@@ -10,7 +10,6 @@ import { useDeals, type Deal } from "@/hooks/use-deals";
 import { KanbanColumn } from "./KanbanColumn";
 import { DealDetailSheet } from "./DealDetailSheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useState } from "react";
 
 export function KanbanBoard() {
   const { stages, isLoading: stagesLoading } = usePipeline();
@@ -78,10 +77,34 @@ export function KanbanBoard() {
     );
   }
 
+  const totalDeals = deals.filter((d) => d.status === "open").length;
+  const totalValue = deals.filter((d) => d.status === "open").reduce((s, d) => s + (d.value || 0), 0);
+  const wonValue = deals.filter((d) => d.status === "won").reduce((s, d) => s + (d.value || 0), 0);
+
   return (
     <>
+      {/* Summary bar */}
+      <div className="flex flex-wrap gap-4 mb-4 text-sm">
+        <div className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-1.5">
+          <span className="text-muted-foreground">Em aberto:</span>
+          <span className="font-semibold">{totalDeals} deals</span>
+        </div>
+        <div className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-1.5">
+          <span className="text-muted-foreground">Valor pipeline:</span>
+          <span className="font-semibold tabular-nums">
+            {totalValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 bg-green-50 dark:bg-green-950/30 rounded-lg px-3 py-1.5">
+          <span className="text-muted-foreground">Ganhos:</span>
+          <span className="font-semibold tabular-nums text-green-700 dark:text-green-400">
+            {wonValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+          </span>
+        </div>
+      </div>
+
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex gap-4 overflow-x-auto pb-4 min-h-[calc(100vh-220px)]">
+        <div className="flex gap-4 overflow-x-auto pb-4 min-h-[calc(100vh-280px)]">
           {stages.map((stage) => (
             <KanbanColumn
               key={stage.id}

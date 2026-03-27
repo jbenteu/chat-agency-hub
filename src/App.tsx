@@ -42,7 +42,7 @@ const App = () => (
             <Route path="/equipe" element={<ProtectedRoute><Team /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/monitoramento" element={<ProtectedRoute><Monitoring /></ProtectedRoute>} />
-            <Route path="/ai-analysis" element={<ProtectedRoute><AIAnalysis /></ProtectedRoute>} />
+            <Route path="/ai-analysis" element={<ProtectedRoute allowedRoles={["cliente", "gestor", "sucesso_cliente", "gerente", "admin"]}><Suspense fallback={<div className="flex items-center justify-center h-screen">Carregando...</div>}><AIAnalysis /></Suspense></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           <ImportProgressBanner />
