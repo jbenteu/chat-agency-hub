@@ -8,7 +8,7 @@ export function SettingsFields() {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Campos Personalizados</h2>
-        <p className="text-sm text-muted-foreground">Adicione campos extras para contatos e negociações</p>
+        <p className="text-sm text-muted-foreground">Adicione campos extras para contatos e vendas</p>
       </div>
 
       <Card>
