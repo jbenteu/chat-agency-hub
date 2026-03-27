@@ -34,47 +34,48 @@ function getAvatarColor(name: string): string {
 function ContactDealsTab({ contact }: { contact: Contact }) {
   const { deals } = useDeals();
   const { stages } = usePipeline();
+  const [showNewDeal, setShowNewDeal] = useState(false);
   const contactDeals = deals.filter((d) => d.contact_id === contact.id);
-
-  if (contactDeals.length === 0) {
-    return (
-      <div className="p-6 text-center text-sm text-muted-foreground">
-        Nenhuma negociação vinculada
-      </div>
-    );
-  }
 
   return (
     <div className="p-4 space-y-3">
-      {contactDeals.map((deal) => {
-        const stage = stages.find((s) => s.id === deal.pipeline_stage_id || s.name === deal.stage);
-        return (
-          <div key={deal.id} className="rounded-lg border border-border p-3 space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-medium truncate">{deal.title}</p>
-              {deal.value != null && deal.value > 0 && (
-                <span className="text-sm font-semibold tabular-nums text-green-700 dark:text-green-400 flex-shrink-0">
-                  {deal.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+      <Button size="sm" variant="outline" className="w-full h-7 text-xs gap-1.5" onClick={() => setShowNewDeal(true)}>
+        <ShoppingBag className="h-3.5 w-3.5" /> Nova Venda
+      </Button>
+      {contactDeals.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-4">Nenhuma negociação vinculada</p>
+      ) : (
+        contactDeals.map((deal) => {
+          const stage = stages.find((s) => s.id === deal.pipeline_stage_id || s.name === deal.stage);
+          return (
+            <div key={deal.id} className="rounded-lg border border-border p-3 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium truncate">{deal.title}</p>
+                {deal.value != null && deal.value > 0 && (
+                  <span className="text-sm font-semibold tabular-nums text-green-700 dark:text-green-400 flex-shrink-0">
+                    {deal.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {stage && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[10px] px-1.5 py-0 h-4"
+                    style={{ backgroundColor: `${stage.color}20`, color: stage.color || undefined }}
+                  >
+                    {stage.name}
+                  </Badge>
+                )}
+                <span className="text-[10px] text-muted-foreground">
+                  {deal.created_at ? new Date(deal.created_at).toLocaleDateString("pt-BR") : ""}
                 </span>
-              )}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              {stage && (
-                <Badge
-                  variant="secondary"
-                  className="text-[10px] px-1.5 py-0 h-4"
-                  style={{ backgroundColor: `${stage.color}20`, color: stage.color || undefined }}
-                >
-                  {stage.name}
-                </Badge>
-              )}
-              <span className="text-[10px] text-muted-foreground">
-                {deal.created_at ? new Date(deal.created_at).toLocaleDateString("pt-BR") : ""}
-              </span>
-            </div>
-          </div>
-        );
-      })}
+          );
+        })
+      )}
+      <NewDealDialog open={showNewDeal} onOpenChange={setShowNewDeal} stages={stages} defaultContactId={contact.id} />
     </div>
   );
 }
