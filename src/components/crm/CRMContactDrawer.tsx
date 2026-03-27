@@ -188,7 +188,7 @@ export function CRMContactDrawer({ contact, open, onOpenChange, initialDeal }: C
           <Tabs defaultValue="dados" className="flex-1 flex flex-col overflow-hidden">
             <TabsList className="mx-4 mt-2 w-auto self-start">
               <TabsTrigger value="dados" className="text-xs">Dados</TabsTrigger>
-              <TabsTrigger value="negocios" className="text-xs">Negociações</TabsTrigger>
+              <TabsTrigger value="negocios" className="text-xs">Vendas</TabsTrigger>
               <TabsTrigger value="tarefas" className="text-xs">Tarefas</TabsTrigger>
               <TabsTrigger value="timeline" className="text-xs">Timeline</TabsTrigger>
             </TabsList>

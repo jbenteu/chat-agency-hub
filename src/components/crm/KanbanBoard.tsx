@@ -58,7 +58,9 @@ export function KanbanBoard() {
   const dealsByStage = useMemo(() => {
     const map: Record<string, Deal[]> = {};
     for (const stage of visibleStages) map[stage.id] = [];
+    const placed = new Set<string>();
     for (const deal of filteredDeals) {
+      if (placed.has(deal.id)) continue;
       const matchedStage =
         visibleStages.find((s) => s.id === deal.pipeline_stage_id) ||
         visibleStages.find((s) => s.name === deal.stage);
@@ -67,6 +69,7 @@ export function KanbanBoard() {
       } else if (visibleStages.length > 0) {
         map[visibleStages[0].id].push(deal);
       }
+      placed.add(deal.id);
     }
     return map;
   }, [filteredDeals, visibleStages]);

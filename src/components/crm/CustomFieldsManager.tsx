@@ -223,7 +223,7 @@ export function CustomFieldsManager({ entityType = "contact" }: CustomFieldsMana
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Campos adicionais para {entityType === "contact" ? "contatos" : "negociações"}. Arraste para reordenar.
+          Campos adicionais para {entityType === "contact" ? "contatos" : "vendas"}. Arraste para reordenar.
         </p>
         <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5">
           <Plus className="h-3.5 w-3.5" /> Novo Campo
@@ -304,7 +304,7 @@ export function CustomFieldsManager({ entityType = "contact" }: CustomFieldsMana
             <AlertDialogTitle>Excluir campo</AlertDialogTitle>
             <AlertDialogDescription>
               Tem certeza que deseja excluir "{deleteTarget?.field_label}"?
-              Os dados deste campo em todos os {entityType === "contact" ? "contatos" : "negociações"} serão perdidos.
+              Os dados deste campo em todos os {entityType === "contact" ? "contatos" : "vendas"} serão perdidos.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

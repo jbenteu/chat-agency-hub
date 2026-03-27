@@ -19,7 +19,7 @@ const DEFAULT_STAGES = [
   { name: "Novo Lead",        order: 0, color: "#3B82F6", icon: "UserPlus",       is_closed: false, is_won: false },
   { name: "Primeiro Contato", order: 1, color: "#F59E0B", icon: "MessageCircle",  is_closed: false, is_won: false },
   { name: "Qualificação",     order: 2, color: "#F97316", icon: "ClipboardCheck", is_closed: false, is_won: false },
-  { name: "Negociação",       order: 3, color: "#8B5CF6", icon: "Handshake",      is_closed: false, is_won: false },
+  { name: "Proposta",         order: 3, color: "#8B5CF6", icon: "Handshake",      is_closed: false, is_won: false },
   { name: "Fechado/Ganho",    order: 4, color: "#22C55E", icon: "Trophy",         is_closed: true,  is_won: true },
   { name: "Perdido",          order: 5, color: "#EF4444", icon: "XCircle",        is_closed: true,  is_won: false },
 ];
