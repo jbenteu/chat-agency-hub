@@ -57,6 +57,7 @@ export function CRMHeader({
   onDeleteView,
   hiddenStageIds,
   onToggleStage,
+  onOpenSettings,
 }: CRMHeaderProps) {
   const [showFilters, setShowFilters] = useState(false);
   const [newViewName, setNewViewName] = useState("");
