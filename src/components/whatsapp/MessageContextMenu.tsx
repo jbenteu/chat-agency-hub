@@ -173,7 +173,9 @@ function EmojiPickerGrid({ onSelect }: { onSelect: (emoji: string) => void }) {
             <p className="text-[10px] font-medium text-muted-foreground mb-1 px-0.5">{cat.label}</p>
             <div className="grid grid-cols-8 gap-0.5 mb-2">
               {cat.emojis.map((emoji) => (
-                <button key={emoji} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(emoji); }}
+              <button key={emoji}
+                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(emoji); }}
                   className="flex h-8 w-8 items-center justify-center rounded-md text-lg hover:bg-accent transition-colors active:scale-95"
                 >{emoji}</button>
               ))}
