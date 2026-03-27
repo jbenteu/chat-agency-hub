@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,7 @@ import { useCustomFieldDefinitions } from "@/hooks/use-custom-fields";
 import { TagSelector } from "@/components/whatsapp/TagSelector";
 import { CustomFieldRenderer } from "./CustomFieldRenderer";
 import { BRAZIL_STATES } from "@/data/brazil-locations";
+import { getCustomOrigins, getCustomLifecycleStages } from "./CRMSettingsDialog";
 import { toast } from "sonner";
 
 // ---- Input masks ----
@@ -22,11 +23,26 @@ function maskCPF(value: string): string {
 }
 
 function maskPhone(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 13);
-  if (digits.length <= 2) return digits.length ? `+${digits}` : "";
+  // Strip everything except digits
+  let digits = value.replace(/\D/g, "");
+  // If starts with country code, keep it; otherwise prepend 55
+  if (!digits.startsWith("55") && digits.length > 0) {
+    // If user types from scratch allow raw entry
+  }
+  digits = digits.slice(0, 13);
+  if (digits.length === 0) return "";
+  if (digits.length <= 2) return `+${digits}`;
   if (digits.length <= 4) return `+${digits.slice(0, 2)} (${digits.slice(2)}`;
   if (digits.length <= 9) return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4)}`;
   return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
+}
+
+function formatPhoneForDisplay(rawPhone: string): string {
+  if (!rawPhone) return "";
+  // If already formatted, return as-is
+  if (rawPhone.includes("(")) return rawPhone;
+  // Raw digits - apply mask
+  return maskPhone(rawPhone);
 }
 
 function maskCEP(value: string): string {
@@ -53,9 +69,10 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
 // ---- Component ----
 interface CRMContactDrawerDataProps {
   contact: Contact;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
+export function CRMContactDrawerData({ contact, onDirtyChange }: CRMContactDrawerDataProps) {
   const { updateContact } = useContacts();
   const { fields: customFieldDefs } = useCustomFieldDefinitions("contact");
   const [customValues, setCustomValues] = useState<Record<string, unknown>>(
@@ -67,7 +84,7 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
 
   const [form, setForm] = useState({
     name: contact.name || "",
-    phone: contact.phone || "",
+    phone: formatPhoneForDisplay(contact.phone || ""),
     email: contact.email || "",
     company: contact.company || "",
     instagram: contact.instagram || "",
@@ -84,18 +101,31 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
     tags: contact.tags || [],
   });
 
+  const initialFormRef = useRef(JSON.stringify(form));
+
   const set = (key: keyof typeof form, value: unknown) =>
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => {
+      const next = { ...f, [key]: value };
+      onDirtyChange?.(JSON.stringify(next) !== initialFormRef.current);
+      return next;
+    });
 
   const handleSave = () => {
     updateContact.mutate(
       { id: contact.id, ...form, custom_fields: customValues },
       {
-        onSuccess: () => toast.success("Contato atualizado"),
+        onSuccess: () => {
+          toast.success("Contato atualizado");
+          initialFormRef.current = JSON.stringify(form);
+          onDirtyChange?.(false);
+        },
         onError: () => toast.error("Erro ao atualizar contato"),
       }
     );
   };
+
+  const origins = getCustomOrigins();
+  const lifecycleStages = getCustomLifecycleStages();
 
   return (
     <div className="p-4 space-y-4">
@@ -191,12 +221,9 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
           <Select value={form.source || "manual"} onValueChange={(v) => set("source", v)}>
             <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="manual">Manual</SelectItem>
-              <SelectItem value="whatsapp">WhatsApp</SelectItem>
-              <SelectItem value="instagram">Instagram</SelectItem>
-              <SelectItem value="facebook">Facebook</SelectItem>
-              <SelectItem value="landing_page">Landing Page</SelectItem>
-              <SelectItem value="indicacao">Indicação</SelectItem>
+              {origins.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </FormField>
@@ -204,10 +231,9 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
           <Select value={form.lifecycle_stage || "lead"} onValueChange={(v) => set("lifecycle_stage", v)}>
             <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="lead">Lead</SelectItem>
-              <SelectItem value="prospect">Prospect</SelectItem>
-              <SelectItem value="customer">Cliente</SelectItem>
-              <SelectItem value="inactive">Inativo</SelectItem>
+              {lifecycleStages.map((s) => (
+                <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </FormField>

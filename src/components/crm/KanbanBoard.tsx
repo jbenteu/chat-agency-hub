@@ -8,6 +8,7 @@ import { CRMContactDrawer } from "./CRMContactDrawer";
 import { CRMHeader } from "./CRMHeader";
 import { LostReasonModal } from "./LostReasonModal";
 import { NewDealDialog } from "./NewDealDialog";
+import { CRMSettingsDialog } from "./CRMSettingsDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDeals as useDealsForLoss } from "@/hooks/use-deals";
 import { usePipelineViews } from "@/hooks/use-pipeline-views";
@@ -20,6 +21,7 @@ export function KanbanBoard() {
   const { updateDeal } = useDealsForLoss();
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [showNewDeal, setShowNewDeal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -139,6 +141,7 @@ export function KanbanBoard() {
         onDeleteView={deleteView}
         hiddenStageIds={hiddenStageIds}
         onToggleStage={toggleStage}
+        onOpenSettings={() => setShowSettings(true)}
       />
 
       <DragDropContext onDragEnd={onDragEnd}>
@@ -214,6 +217,7 @@ export function KanbanBoard() {
       />
 
       <NewDealDialog open={showNewDeal} onOpenChange={setShowNewDeal} stages={stages} />
+      <CRMSettingsDialog open={showSettings} onOpenChange={setShowSettings} />
     </>
   );
 }

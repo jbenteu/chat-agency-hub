@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, Filter, Plus, X, TrendingUp, DollarSign, CheckCircle2, Users, ChevronDown, Eye, EyeOff, Settings2 } from "lucide-react";
+import { Search, Filter, Plus, X, CheckCircle2, Users, ChevronDown, Settings2 } from "lucide-react";
 import type { Deal } from "@/hooks/use-deals";
 import type { PipelineStage } from "@/hooks/use-pipeline";
 
@@ -37,6 +37,7 @@ interface CRMHeaderProps {
   onDeleteView: (viewId: string) => void;
   hiddenStageIds: string[];
   onToggleStage: (stageId: string) => void;
+  onOpenSettings?: () => void;
 }
 
 export function CRMHeader({
@@ -56,6 +57,7 @@ export function CRMHeader({
   onDeleteView,
   hiddenStageIds,
   onToggleStage,
+  onOpenSettings,
 }: CRMHeaderProps) {
   const [showFilters, setShowFilters] = useState(false);
   const [newViewName, setNewViewName] = useState("");
@@ -201,28 +203,10 @@ export function CRMHeader({
           )}
         </Button>
 
-        {/* Stage visibility */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs px-2">
-              <Settings2 className="h-3 w-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Etapas visíveis</div>
-            <DropdownMenuSeparator />
-            {stages.map((s) => {
-              const isHidden = hiddenStageIds.includes(s.id);
-              return (
-                <DropdownMenuItem key={s.id} onClick={() => onToggleStage(s.id)} className="gap-2">
-                  {isHidden ? <EyeOff className="h-3 w-3 text-muted-foreground" /> : <Eye className="h-3 w-3" />}
-                  <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color || "#6366f1" }} />
-                  <span className={isHidden ? "text-muted-foreground" : ""}>{s.name}</span>
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Settings */}
+        <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs px-2" onClick={onOpenSettings}>
+          <Settings2 className="h-3 w-3" />
+        </Button>
 
         <Button onClick={onNewDeal} size="sm" className="h-7 gap-1 text-xs px-3">
           <Plus className="h-3 w-3" /> NOVO LEAD
