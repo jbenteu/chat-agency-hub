@@ -22,11 +22,26 @@ function maskCPF(value: string): string {
 }
 
 function maskPhone(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 13);
-  if (digits.length <= 2) return digits.length ? `+${digits}` : "";
+  // Strip everything except digits
+  let digits = value.replace(/\D/g, "");
+  // If starts with country code, keep it; otherwise prepend 55
+  if (!digits.startsWith("55") && digits.length > 0) {
+    // If user types from scratch allow raw entry
+  }
+  digits = digits.slice(0, 13);
+  if (digits.length === 0) return "";
+  if (digits.length <= 2) return `+${digits}`;
   if (digits.length <= 4) return `+${digits.slice(0, 2)} (${digits.slice(2)}`;
   if (digits.length <= 9) return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4)}`;
   return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
+}
+
+function formatPhoneForDisplay(rawPhone: string): string {
+  if (!rawPhone) return "";
+  // If already formatted, return as-is
+  if (rawPhone.includes("(")) return rawPhone;
+  // Raw digits - apply mask
+  return maskPhone(rawPhone);
 }
 
 function maskCEP(value: string): string {
