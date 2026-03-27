@@ -10,24 +10,36 @@ import type { ActivityItem } from "@/hooks/useDashboardData";
 
 const TYPE_ICONS: Record<string, React.ElementType> = {
   call: Phone,
+  ligacao: Phone,
   email: Mail,
   note: FileText,
+  nota: FileText,
   whatsapp: MessageCircle,
   task: CheckSquare,
+  task_done: CheckSquare,
   contact_created: UserPlus,
+  created: UserPlus,
   deal_created: DollarSign,
   deal_moved: DollarSign,
+  deal_update: DollarSign,
+  reuniao: Activity,
 };
 
 const TYPE_LABELS: Record<string, string> = {
   call: "Ligação",
+  ligacao: "Ligação",
   email: "E-mail",
   note: "Nota",
+  nota: "Nota",
   whatsapp: "WhatsApp",
   task: "Tarefa",
+  task_done: "Tarefa concluída",
   contact_created: "Novo contato",
+  created: "Lead criado",
   deal_created: "Novo negócio",
   deal_moved: "Negócio movido",
+  deal_update: "Negócio atualizado",
+  reuniao: "Reunião",
 };
 
 interface DashboardRecentActivityProps {
