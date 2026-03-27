@@ -21,6 +21,7 @@ export function KanbanBoard() {
   const { updateDeal } = useDealsForLoss();
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [showNewDeal, setShowNewDeal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
