@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  User, Lock, Bell, GitBranch, LayoutList, Tag, XCircle, Zap,
-  Activity, LayoutDashboard, Smartphone, MessageSquare, Clock,
+  User, Lock, GitBranch, LayoutList, Tag, XCircle, Zap,
+  Activity, LayoutDashboard, MessageSquare, Clock,
   Palette, Plug, ArrowUpDown, FileText,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -14,7 +14,6 @@ import { useIsMobile } from "@/hooks/use-mobile";
 // Section components
 import { SettingsProfile } from "@/components/settings/SettingsProfile";
 import { SettingsSecurity } from "@/components/settings/SettingsSecurity";
-import { SettingsNotifications } from "@/components/settings/SettingsNotifications";
 import { SettingsPipeline } from "@/components/settings/SettingsPipeline";
 import { SettingsFields } from "@/components/settings/SettingsFields";
 import { SettingsTags } from "@/components/settings/SettingsTags";
@@ -33,7 +32,7 @@ interface NavItem {
   id: string;
   label: string;
   icon: React.ElementType;
-  roles?: string[]; // If set, only these roles can see it
+  roles?: string[];
 }
 
 interface NavGroup {
@@ -47,7 +46,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "profile", label: "Perfil", icon: User },
       { id: "security", label: "Segurança", icon: Lock },
-      { id: "notifications", label: "Notificações", icon: Bell },
     ],
   },
   {
@@ -83,7 +81,6 @@ const NAV_GROUPS: NavGroup[] = [
 const SECTION_COMPONENTS: Record<string, React.ComponentType> = {
   "profile": SettingsProfile,
   "security": SettingsSecurity,
-  "notifications": SettingsNotifications,
   "pipeline": SettingsPipeline,
   "fields": SettingsFields,
   "tags": SettingsTags,
@@ -105,7 +102,6 @@ const SettingsPage = () => {
   const isMobile = useIsMobile();
   const userRole = profile?.role || "cliente";
 
-  // Filter nav items based on role
   const visibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => {
@@ -114,21 +110,17 @@ const SettingsPage = () => {
     }),
   })).filter((group) => group.items.length > 0);
 
-  // Flatten all visible items for the mobile select
   const allItems = visibleGroups.flatMap((g) => g.items);
-
   const ActiveComponent = SECTION_COMPONENTS[activeSection];
 
   return (
     <AppLayout>
       <div className="flex flex-col h-full">
-        {/* Header */}
         <div className="shrink-0 pb-4 border-b border-border mb-4">
           <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
           <p className="text-sm text-muted-foreground">Gerencie seu perfil, CRM, WhatsApp e preferências do sistema</p>
         </div>
 
-        {/* Mobile: Select dropdown */}
         {isMobile && (
           <div className="mb-4">
             <Select value={activeSection} onValueChange={setActiveSection}>
@@ -154,9 +146,7 @@ const SettingsPage = () => {
           </div>
         )}
 
-        {/* Desktop: Sidebar + Content */}
         <div className="flex flex-1 gap-6 min-h-0">
-          {/* Sidebar (desktop only) */}
           {!isMobile && (
             <aside className="w-56 shrink-0">
               <ScrollArea className="h-[calc(100vh-180px)]">
@@ -194,7 +184,6 @@ const SettingsPage = () => {
             </aside>
           )}
 
-          {/* Content */}
           <main className="flex-1 min-w-0 overflow-y-auto pb-8">
             <div className="max-w-3xl">
               {ActiveComponent && <ActiveComponent />}

@@ -417,6 +417,65 @@ export type Database = {
           },
         ]
       }
+      custom_field_definitions: {
+        Row: {
+          created_at: string | null
+          default_value: string | null
+          entity_type: string
+          field_key: string
+          field_label: string
+          field_options: string[] | null
+          field_type: string
+          id: string
+          is_required: boolean | null
+          is_visible_kanban: boolean | null
+          is_visible_list: boolean | null
+          order: number | null
+          placeholder: string | null
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          default_value?: string | null
+          entity_type?: string
+          field_key: string
+          field_label: string
+          field_options?: string[] | null
+          field_type?: string
+          id?: string
+          is_required?: boolean | null
+          is_visible_kanban?: boolean | null
+          is_visible_list?: boolean | null
+          order?: number | null
+          placeholder?: string | null
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string | null
+          default_value?: string | null
+          entity_type?: string
+          field_key?: string
+          field_label?: string
+          field_options?: string[] | null
+          field_type?: string
+          id?: string
+          is_required?: boolean | null
+          is_visible_kanban?: boolean | null
+          is_visible_list?: boolean | null
+          order?: number | null
+          placeholder?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "custom_field_definitions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       deal_items: {
         Row: {
           created_at: string | null

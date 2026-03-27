@@ -1,6 +1,7 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomFieldsManager } from "@/components/crm/CustomFieldsManager";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function SettingsFields() {
   return (
@@ -18,12 +19,10 @@ export function SettingsFields() {
               <TabsTrigger value="deals">Negociações</TabsTrigger>
             </TabsList>
             <TabsContent value="contacts">
-              <CustomFieldsManager />
+              <CustomFieldsManager entityType="contact" />
             </TabsContent>
             <TabsContent value="deals">
-              <div className="py-8 text-center text-sm text-muted-foreground border border-dashed rounded-lg">
-                Campos de negociação em breve
-              </div>
+              <CustomFieldsManager entityType="deal" />
             </TabsContent>
           </Tabs>
         </CardContent>

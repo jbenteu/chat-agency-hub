@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, Sun, Moon, Monitor } from "lucide-react";
 import { toast } from "sonner";
+import { useTenantSettings } from "@/hooks/use-tenant-settings";
 
 const THEME_OPTIONS = [
   { value: "light", label: "Claro", icon: Sun },
@@ -24,23 +26,59 @@ const PRIMARY_COLORS = [
   { value: "teal", color: "#14B8A6" },
 ];
 
+interface AppearancePrefs {
+  theme: string;
+  primaryColor: string;
+  dateFormat: string;
+  currencyFormat: string;
+  reduceAnimations: boolean;
+  language: string;
+}
+
+const DEFAULTS: AppearancePrefs = {
+  theme: "system", primaryColor: "blue", dateFormat: "DD/MM/YYYY",
+  currencyFormat: "BRL", reduceAnimations: false, language: "pt-BR",
+};
+
 export function SettingsAppearance() {
-  const [theme, setTheme] = useState("system");
-  const [primaryColor, setPrimaryColor] = useState("blue");
-  const [dateFormat, setDateFormat] = useState("DD/MM/YYYY");
-  const [currencyFormat, setCurrencyFormat] = useState("BRL");
-  const [reduceAnimations, setReduceAnimations] = useState(false);
+  const { settings, isLoading, updateSettings } = useTenantSettings();
+  const [prefs, setPrefs] = useState<AppearancePrefs>(DEFAULTS);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (settings.appearance) {
+      setPrefs({ ...DEFAULTS, ...(settings.appearance as Partial<AppearancePrefs>) });
+    }
+  }, [settings.appearance]);
+
+  const set = <K extends keyof AppearancePrefs>(k: K, v: AppearancePrefs[K]) =>
+    setPrefs((p) => ({ ...p, [k]: v }));
 
   const handleSave = async () => {
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 400));
-    localStorage.setItem("app_appearance", JSON.stringify({
-      theme, primaryColor, dateFormat, currencyFormat, reduceAnimations,
-    }));
-    setSaving(false);
-    toast.success("Aparência salva!");
+    try {
+      await updateSettings.mutateAsync({ appearance: prefs });
+      localStorage.setItem("app_appearance", JSON.stringify(prefs));
+      toast.success("Aparência salva!");
+    } catch {
+      toast.error("Erro ao salvar aparência");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold">Aparência</h2>
+          <p className="text-sm text-muted-foreground">Personalize a aparência do sistema</p>
+        </div>
+        <Skeleton className="h-32" />
+        <Skeleton className="h-24" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -60,9 +98,9 @@ export function SettingsAppearance() {
               return (
                 <button
                   key={t.value}
-                  onClick={() => setTheme(t.value)}
+                  onClick={() => set("theme", t.value)}
                   className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all ${
-                    theme === t.value
+                    prefs.theme === t.value
                       ? "border-primary bg-primary/5"
                       : "border-border hover:border-muted-foreground/30"
                   }`}
@@ -85,12 +123,12 @@ export function SettingsAppearance() {
             {PRIMARY_COLORS.map((c) => (
               <button
                 key={c.value}
-                onClick={() => setPrimaryColor(c.value)}
+                onClick={() => set("primaryColor", c.value)}
                 className="h-10 w-10 rounded-full border-2 transition-transform hover:scale-110"
                 style={{
                   backgroundColor: c.color,
-                  borderColor: primaryColor === c.value ? "white" : "transparent",
-                  boxShadow: primaryColor === c.value ? `0 0 0 2px ${c.color}` : "none",
+                  borderColor: prefs.primaryColor === c.value ? "white" : "transparent",
+                  boxShadow: prefs.primaryColor === c.value ? `0 0 0 2px ${c.color}` : "none",
                 }}
               />
             ))}
@@ -106,7 +144,7 @@ export function SettingsAppearance() {
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Idioma</Label>
-              <Select defaultValue="pt-BR">
+              <Select value={prefs.language} onValueChange={(v) => set("language", v)}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pt-BR">Português (BR)</SelectItem>
@@ -116,7 +154,7 @@ export function SettingsAppearance() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Formato de data</Label>
-              <Select value={dateFormat} onValueChange={setDateFormat}>
+              <Select value={prefs.dateFormat} onValueChange={(v) => set("dateFormat", v)}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
@@ -127,7 +165,7 @@ export function SettingsAppearance() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Moeda</Label>
-              <Select value={currencyFormat} onValueChange={setCurrencyFormat}>
+              <Select value={prefs.currencyFormat} onValueChange={(v) => set("currencyFormat", v)}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="BRL">R$ (BRL)</SelectItem>
@@ -150,7 +188,7 @@ export function SettingsAppearance() {
               <p className="text-sm font-medium">Reduzir animações</p>
               <p className="text-xs text-muted-foreground">Desativa transições e animações do sistema</p>
             </div>
-            <Switch checked={reduceAnimations} onCheckedChange={setReduceAnimations} />
+            <Switch checked={prefs.reduceAnimations} onCheckedChange={(v) => set("reduceAnimations", v)} />
           </div>
         </CardContent>
       </Card>

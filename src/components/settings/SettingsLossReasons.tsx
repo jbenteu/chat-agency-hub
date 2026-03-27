@@ -66,10 +66,19 @@ export function SettingsLossReasons() {
   };
 
   const addSuggestion = (name: string) => {
+    if (reasons.some((r) => r.name === name)) {
+      toast.info(`"${name}" já existe`);
+      return;
+    }
     create.mutate({ name }, {
       onSuccess: () => toast.success(`"${name}" adicionado`),
     });
   };
+
+  // Filter suggestions that haven't been added yet
+  const availableSuggestions = SUGGESTIONS.filter(
+    (s) => !reasons.some((r) => r.name === s)
+  );
 
   return (
     <div className="space-y-6">
@@ -93,20 +102,8 @@ export function SettingsLossReasons() {
               {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12" />)}
             </div>
           ) : reasons.length === 0 ? (
-            <div className="py-6 text-center space-y-4">
-              <p className="text-sm text-muted-foreground">Nenhum motivo cadastrado</p>
-              <div>
-                <p className="text-xs text-muted-foreground mb-2">Sugestões rápidas:</p>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {SUGGESTIONS.map((s) => (
-                    <Button key={s} variant="outline" size="sm" className="text-xs h-7"
-                      onClick={() => addSuggestion(s)}
-                    >
-                      <Plus className="h-3 w-3 mr-1" /> {s}
-                    </Button>
-                  ))}
-                </div>
-              </div>
+            <div className="py-6 text-center text-sm text-muted-foreground border border-dashed rounded-lg">
+              Nenhum motivo cadastrado
             </div>
           ) : (
             <DragDropContext onDragEnd={handleDragEnd}>
@@ -154,6 +151,26 @@ export function SettingsLossReasons() {
           )}
         </CardContent>
       </Card>
+
+      {/* Always show suggestions if there are remaining ones */}
+      {availableSuggestions.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Sugestões rápidas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {availableSuggestions.map((s) => (
+                <Button key={s} variant="outline" size="sm" className="text-xs h-7"
+                  onClick={() => addSuggestion(s)} disabled={create.isPending}
+                >
+                  <Plus className="h-3 w-3 mr-1" /> {s}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog open={showCreate || !!editTarget} onOpenChange={(open) => { if (!open) { setShowCreate(false); setEditTarget(null); } }}>
         <DialogContent className="sm:max-w-sm">
