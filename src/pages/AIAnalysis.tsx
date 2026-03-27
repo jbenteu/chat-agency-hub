@@ -1049,7 +1049,7 @@ const AIAnalysis: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={loadInsights}
+                    onClick={() => loadInsights()}
                     disabled={insightsLoading}
                     className="border-violet-200 text-violet-600 hover:bg-violet-50"
                   >
