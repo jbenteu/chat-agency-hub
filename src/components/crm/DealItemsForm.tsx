@@ -24,23 +24,31 @@ export function DealItemsForm({ dealId, tenantId, items }: Props) {
 
   const totalValue = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
 
+  const updateDealValue = async (newTotal: number) => {
+    await supabase.from("deals").update({ value: newTotal } as never).eq("id", dealId);
+    queryClient.invalidateQueries({ queryKey: ["deals"] });
+  };
+
   const handleAdd = async () => {
     if (!newName.trim() || !newPrice) return;
     setSaving(true);
     try {
+      const unitPrice = parseFloat(newPrice) || 0;
+      const qty = parseInt(newQty) || 1;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase as any).from("deal_items").insert({
         deal_id: dealId,
         tenant_id: tenantId,
         product_name: newName.trim(),
-        quantity: parseInt(newQty) || 1,
-        unit_price: parseFloat(newPrice) || 0,
+        quantity: qty,
+        unit_price: unitPrice,
       });
       if (error) throw error;
       setNewName("");
       setNewQty("1");
       setNewPrice("");
-      queryClient.invalidateQueries({ queryKey: ["deals"] });
+      // Update deal value
+      await updateDealValue(totalValue + qty * unitPrice);
     } catch {
       toast({ title: "Erro ao adicionar produto", variant: "destructive" });
     } finally {
@@ -50,10 +58,12 @@ export function DealItemsForm({ dealId, tenantId, items }: Props) {
 
   const handleDelete = async (itemId: string) => {
     try {
+      const item = items.find((i) => i.id === itemId);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase as any).from("deal_items").delete().eq("id", itemId);
       if (error) throw error;
-      queryClient.invalidateQueries({ queryKey: ["deals"] });
+      const newTotal = totalValue - (item ? item.quantity * item.unit_price : 0);
+      await updateDealValue(Math.max(0, newTotal));
     } catch {
       toast({ title: "Erro ao remover produto", variant: "destructive" });
     }
@@ -63,21 +73,27 @@ export function DealItemsForm({ dealId, tenantId, items }: Props) {
     <div className="space-y-3">
       {items.length > 0 && (
         <div className="space-y-2">
-          {items.map((item) => (
-            <div key={item.id} className="flex items-center gap-2 text-sm bg-muted/40 rounded px-2 py-1.5">
-              <span className="flex-1 font-medium truncate">{item.product_name}</span>
-              <span className="text-muted-foreground tabular-nums">
-                {item.quantity}x {item.unit_price.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-              </span>
-              <button
-                onClick={() => handleDelete(item.id)}
-                className="text-muted-foreground hover:text-destructive transition-colors"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-          <p className="text-xs text-right text-muted-foreground font-medium">
+          {items.map((item) => {
+            const subtotal = item.quantity * item.unit_price;
+            return (
+              <div key={item.id} className="flex items-center gap-2 text-sm bg-muted/40 rounded px-2 py-1.5">
+                <span className="flex-1 font-medium truncate">{item.product_name}</span>
+                <span className="text-muted-foreground tabular-nums whitespace-nowrap">
+                  {item.quantity}x {item.unit_price.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </span>
+                <span className="text-xs tabular-nums font-medium whitespace-nowrap">
+                  = {subtotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </span>
+                <button
+                  onClick={() => handleDelete(item.id)}
+                  className="text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
+          <p className="text-sm text-right font-semibold tabular-nums">
             Total: {totalValue.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
           </p>
         </div>

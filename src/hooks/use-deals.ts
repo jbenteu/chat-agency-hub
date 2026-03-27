@@ -30,7 +30,6 @@ export interface Deal {
   created_at: string | null;
   updated_at: string | null;
   created_by: string | null;
-  // joined
   contact?: {
     id: string;
     name: string;
@@ -52,7 +51,8 @@ export function useDeals() {
   const query = useQuery({
     queryKey: ["deals"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
         .from("deals")
         .select(`
           *,
@@ -66,7 +66,6 @@ export function useDeals() {
     },
   });
 
-  // Realtime subscription
   useEffect(() => {
     const channel = supabase
       .channel("deals-changes")
@@ -86,8 +85,10 @@ export function useDeals() {
       assigned_to?: string;
       pipeline_stage_id?: string;
       tenant_id: string;
+      priority?: string;
+      expected_close_date?: string | null;
     }) => {
-      const { data, error } = await supabase.from("deals").insert(deal).select().single();
+      const { data, error } = await supabase.from("deals").insert(deal as never).select().single();
       if (error) throw error;
       return data;
     },
@@ -96,8 +97,9 @@ export function useDeals() {
 
   const updateDeal = useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Deal> & { id: string }) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await supabase.from("deals").update(updates as any).eq("id", id);
+      // Clean up joined fields before updating
+      const { contact, assignee, deal_items, ...cleanUpdates } = updates as Record<string, unknown>;
+      const { error } = await supabase.from("deals").update(cleanUpdates as never).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["deals"] }),
@@ -105,19 +107,11 @@ export function useDeals() {
 
   const moveDeal = useMutation({
     mutationFn: async ({
-      id,
-      stage,
-      pipeline_stage_id,
-      previousStage,
+      id, stage, pipeline_stage_id, previousStage,
     }: {
-      id: string;
-      stage: string;
-      pipeline_stage_id?: string;
-      previousStage?: string;
+      id: string; stage: string; pipeline_stage_id?: string; previousStage?: string;
     }) => {
       const updates: Record<string, unknown> = { stage, pipeline_stage_id };
-
-      // Auto-update status based on stage name
       const lowerStage = stage.toLowerCase();
       if (lowerStage.includes("ganho") || lowerStage.includes("won")) {
         updates.status = "won";
@@ -130,14 +124,12 @@ export function useDeals() {
         updates.closed_at = null;
       }
 
-      const { error } = await supabase.from("deals").update(updates).eq("id", id);
+      const { error } = await supabase.from("deals").update(updates as never).eq("id", id);
       if (error) throw error;
 
-      // Log activity
       if (previousStage && previousStage !== stage) {
         const { data: { user } } = await supabase.auth.getUser();
         const { data: tenantId } = await supabase.rpc("get_user_tenant_id", { _user_id: user!.id });
-        // get deal's contact_id
         const { data: deal } = await supabase.from("deals").select("contact_id").eq("id", id).single();
         await supabase.from("activities").insert({
           tenant_id: tenantId as string,

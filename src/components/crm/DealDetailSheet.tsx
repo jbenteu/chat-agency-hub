@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -14,12 +14,10 @@ import { DealItemsForm } from "./DealItemsForm";
 import { useContacts } from "@/hooks/use-contacts";
 import { useActivities } from "@/hooks/use-activities";
 import { usePipeline } from "@/hooks/use-pipeline";
-import { BRAZIL_STATES, BRAZIL_CITIES } from "@/data/brazil-locations";
-import { formatPhoneWhatsApp, maskPhoneInput, detectCountryCode, COUNTRY_CODES } from "@/data/country-codes";
-import { TagSelector } from "@/components/whatsapp/TagSelector";
 import { ActivityTimeline } from "./ActivityTimeline";
-import { MessageCircle, ExternalLink, Save } from "lucide-react";
+import { MessageCircle, ExternalLink, Save, Gem } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { formatPhoneWhatsApp } from "@/data/country-codes";
 
 interface Props {
   deal: Deal | null;
@@ -61,45 +59,33 @@ export function DealDetailSheet({ deal, open, onOpenChange }: Props) {
 
 function DealDataTab({ deal }: { deal: Deal }) {
   const { updateDeal } = useDeals();
-  const { updateContact } = useContacts();
+  const { contacts } = useContacts();
   const { stages } = usePipeline();
   const { toast } = useToast();
-  const contact = deal.contact;
 
-  const [contactName, setContactName] = useState(contact?.name || "");
-  const [contactCountryCode, setContactCountryCode] = useState(() => detectCountryCode(contact?.phone));
-  const [contactPhoneLocal, setContactPhoneLocal] = useState(() => {
-    if (!contact?.phone) return "";
-    const digits = contact.phone.replace(/\D/g, "");
-    const dialDigits = detectCountryCode(contact.phone).replace(/\D/g, "");
-    const local = digits.startsWith(dialDigits) ? digits.slice(dialDigits.length) : digits;
-    return maskPhoneInput(local);
-  });
-  const [contactEmail, setContactEmail] = useState(contact?.email || "");
-  const [contactCompany, setContactCompany] = useState(contact?.company || "");
-  const [contactState, setContactState] = useState(contact?.state || "");
-  const [contactCity, setContactCity] = useState(contact?.city || "");
-  const [contactTags, setContactTags] = useState<string[]>(contact?.tags || []);
+  const [contactId, setContactId] = useState(deal.contact_id || "");
   const [dealTitle, setDealTitle] = useState(deal.title);
-  const [dealValue, setDealValue] = useState(deal.value?.toString() || "0");
-  const [dealStage, setDealStage] = useState(deal.pipeline_stage_id || deal.stage);
+  const [dealStage, setDealStage] = useState(() => {
+    const matched = stages.find((s) => s.name === deal.stage);
+    return matched?.id || stages[0]?.id || "";
+  });
   const [dealStatus, setDealStatus] = useState(deal.status);
   const [dealPriority, setDealPriority] = useState(deal.priority || "media");
   const [dealExpectedClose, setDealExpectedClose] = useState(deal.expected_close_date || "");
   const [dealLossReason, setDealLossReason] = useState(deal.loss_reason || "");
+  const [notes, setNotes] = useState("");
 
-  const cities = contactState ? BRAZIL_CITIES[contactState] || [] : [];
+  // Sync stage select when stages load
+  useEffect(() => {
+    if (stages.length > 0 && !dealStage) {
+      const matched = stages.find((s) => s.name === deal.stage);
+      setDealStage(matched?.id || stages[0]?.id || "");
+    }
+  }, [stages, deal.stage, dealStage]);
 
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setContactPhoneLocal(maskPhoneInput(e.target.value));
-  };
-
-  const buildFullPhone = () => {
-    const digits = contactPhoneLocal.replace(/\D/g, "");
-    if (!digits) return "";
-    const dialDigits = contactCountryCode.replace(/\D/g, "");
-    return dialDigits + digits;
-  };
+  const totalItemsValue = (deal.deal_items || []).reduce(
+    (sum, item) => sum + item.quantity * item.unit_price, 0
+  );
 
   const handleSave = async () => {
     try {
@@ -107,120 +93,43 @@ function DealDataTab({ deal }: { deal: Deal }) {
       await updateDeal.mutateAsync({
         id: deal.id,
         title: dealTitle,
-        value: parseFloat(dealValue) || 0,
-        stage: matchedStage?.name || dealStage,
+        value: totalItemsValue,
+        stage: matchedStage?.name || deal.stage,
         pipeline_stage_id: matchedStage?.id || null,
         status: dealStatus,
         priority: dealPriority,
         expected_close_date: dealExpectedClose || null,
         loss_reason: dealLossReason || null,
+        contact_id: contactId || null,
       });
-
-      if (contact) {
-        await updateContact.mutateAsync({
-          id: contact.id,
-          name: contactName,
-          phone: buildFullPhone(),
-          email: contactEmail,
-          company: contactCompany,
-          state: contactState,
-          city: contactCity,
-          tags: contactTags,
-        });
-      }
-      toast({ title: "Salvo com sucesso" });
-    } catch (err) {
+      toast({ title: "Salvo com sucesso ✅" });
+    } catch {
       toast({ title: "Erro ao salvar", variant: "destructive" });
     }
   };
 
   return (
     <div className="px-6 py-4 space-y-5">
-      {/* Contact section */}
-      <div>
-        <h4 className="text-sm font-medium mb-3">Contato</h4>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <Label className="text-xs">Nome</Label>
-            <Input value={contactName} onChange={(e) => setContactName(e.target.value)} />
-          </div>
-          <div className="col-span-2">
-            <Label className="text-xs">Telefone</Label>
-            <div className="flex gap-2">
-              <Select value={contactCountryCode} onValueChange={setContactCountryCode}>
-                <SelectTrigger className="w-[100px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {COUNTRY_CODES.map((c) => (
-                    <SelectItem key={c.code} value={c.dial}>
-                      {c.flag} {c.dial}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                placeholder="(99) 9 9999-9999"
-                value={contactPhoneLocal}
-                onChange={handlePhoneChange}
-                className="flex-1"
-              />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">E-mail</Label>
-            <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
-          </div>
-          <div>
-            <Label className="text-xs">Empresa</Label>
-            <Input value={contactCompany} onChange={(e) => setContactCompany(e.target.value)} />
-          </div>
-          <div>
-            <Label className="text-xs">Origem</Label>
-            <Badge variant="secondary">{contact?.origin || "manual"}</Badge>
-          </div>
-          <div>
-            <Label className="text-xs">Estado</Label>
-            <Select value={contactState} onValueChange={(v) => { setContactState(v); setContactCity(""); }}>
-              <SelectTrigger><SelectValue placeholder="UF" /></SelectTrigger>
-              <SelectContent>
-                {BRAZIL_STATES.map((s) => (
-                  <SelectItem key={s.uf} value={s.uf}>{s.uf} - {s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Cidade</Label>
-            <Select value={contactCity} onValueChange={setContactCity} disabled={!contactState}>
-              <SelectTrigger><SelectValue placeholder="Cidade" /></SelectTrigger>
-              <SelectContent>
-                {cities.map((c) => (
-                  <SelectItem key={c} value={c}>{c}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="mt-3">
-          <Label className="text-xs">Tags</Label>
-          <TagSelector tags={contactTags} onChange={setContactTags} />
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Deal section */}
+      {/* Deal fields */}
       <div>
         <h4 className="text-sm font-medium mb-3">Negociação</h4>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
+            <Label className="text-xs">Contato</Label>
+            <Select value={contactId} onValueChange={setContactId}>
+              <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+              <SelectContent>
+                {contacts.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}{c.phone ? ` · ${c.phone}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="col-span-2">
             <Label className="text-xs">Título</Label>
             <Input value={dealTitle} onChange={(e) => setDealTitle(e.target.value)} />
-          </div>
-          <div>
-            <Label className="text-xs">Valor (R$)</Label>
-            <Input type="number" value={dealValue} onChange={(e) => setDealValue(e.target.value)} />
           </div>
           <div>
             <Label className="text-xs">Estágio</Label>
@@ -264,14 +173,6 @@ function DealDataTab({ deal }: { deal: Deal }) {
               onChange={(e) => setDealExpectedClose(e.target.value)}
             />
           </div>
-          <div>
-            <Label className="text-xs">Criado em</Label>
-            <p className="text-sm text-muted-foreground mt-1">
-              {deal.created_at
-                ? new Date(deal.created_at).toLocaleDateString("pt-BR")
-                : "—"}
-            </p>
-          </div>
           {dealStatus === "lost" && (
             <div className="col-span-2">
               <Label className="text-xs">Motivo da perda</Label>
@@ -289,54 +190,44 @@ function DealDataTab({ deal }: { deal: Deal }) {
 
       {/* Products section */}
       <div>
-        <h4 className="text-sm font-medium mb-3">Produtos / Itens</h4>
+        <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+          <Gem className="h-4 w-4" /> Produtos / Itens da Venda
+        </h4>
         <DealItemsForm
           dealId={deal.id}
           tenantId={deal.tenant_id}
           items={deal.deal_items || []}
         />
+        {totalItemsValue > 0 && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Este valor será salvo automaticamente no deal ao clicar em "Salvar".
+          </p>
+        )}
       </div>
 
       <Separator />
 
-      {/* WhatsApp section (moved from tab) */}
-      <WhatsAppSection deal={deal} />
+      {/* WhatsApp section */}
+      {deal.contact?.phone && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium">WhatsApp</h4>
+          <div className="flex items-center gap-3">
+            <MessageCircle className="h-5 w-5 text-green-600" />
+            <div>
+              <p className="text-sm font-medium">{deal.contact.name}</p>
+              <p className="text-xs text-muted-foreground">{formatPhoneWhatsApp(deal.contact.phone)}</p>
+            </div>
+          </div>
+          <Button asChild variant="outline" className="w-full" size="sm">
+            <a href="/whatsapp">
+              <ExternalLink className="h-4 w-4 mr-2" /> Abrir conversa no Inbox
+            </a>
+          </Button>
+        </div>
+      )}
 
       <Button onClick={handleSave} className="w-full" disabled={updateDeal.isPending}>
-        <Save className="h-4 w-4 mr-2" />
-        Salvar alterações
-      </Button>
-    </div>
-  );
-}
-
-function WhatsAppSection({ deal }: { deal: Deal }) {
-  const contact = deal.contact;
-
-  if (!contact?.phone) {
-    return (
-      <div className="py-4 text-center">
-        <MessageCircle className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-        <p className="text-xs text-muted-foreground">Contato sem telefone vinculado</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <h4 className="text-sm font-medium">WhatsApp</h4>
-      <div className="flex items-center gap-3">
-        <MessageCircle className="h-5 w-5 text-green-600" />
-        <div>
-          <p className="text-sm font-medium">{contact.name}</p>
-          <p className="text-xs text-muted-foreground">{formatPhoneWhatsApp(contact.phone)}</p>
-        </div>
-      </div>
-      <Button asChild variant="outline" className="w-full" size="sm">
-        <a href="/whatsapp">
-          <ExternalLink className="h-4 w-4 mr-2" />
-          Abrir conversa no Inbox
-        </a>
+        <Save className="h-4 w-4 mr-2" /> Salvar alterações
       </Button>
     </div>
   );
@@ -348,11 +239,12 @@ function ActivitiesTab({ deal }: { deal: Deal }) {
     contact_id: deal.contact_id || undefined,
   });
   const [note, setNote] = useState("");
+  const [activityType, setActivityType] = useState("nota");
 
-  const handleAddNote = async () => {
+  const handleAdd = async () => {
     if (!note.trim()) return;
     await createActivity.mutateAsync({
-      type: "nota",
+      type: activityType,
       content: note,
       deal_id: deal.id,
       contact_id: deal.contact_id || undefined,
@@ -363,14 +255,27 @@ function ActivitiesTab({ deal }: { deal: Deal }) {
   return (
     <div className="px-6 py-4 space-y-4">
       <div className="space-y-2">
+        <div className="flex gap-2">
+          <Select value={activityType} onValueChange={setActivityType}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="nota">📝 Nota</SelectItem>
+              <SelectItem value="ligacao">📞 Ligação</SelectItem>
+              <SelectItem value="reuniao">🤝 Reunião</SelectItem>
+              <SelectItem value="whatsapp">💬 WhatsApp</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <Textarea
-          placeholder="Adicionar uma nota..."
+          placeholder="Adicionar atividade..."
           value={note}
           onChange={(e) => setNote(e.target.value)}
           className="min-h-[80px]"
         />
-        <Button size="sm" onClick={handleAddNote} disabled={!note.trim() || createActivity.isPending}>
-          Adicionar nota
+        <Button size="sm" onClick={handleAdd} disabled={!note.trim() || createActivity.isPending}>
+          Adicionar
         </Button>
       </div>
       <Separator />

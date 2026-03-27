@@ -96,6 +96,8 @@ function ContactDataTab({ contact }: { contact: Contact }) {
     return dialDigits + digits;
   };
 
+  const hasWhatsApp = contact.whatsapp_conversations && contact.whatsapp_conversations.length > 0;
+
   const handleSave = async () => {
     try {
       await updateContact.mutateAsync({
@@ -109,7 +111,7 @@ function ContactDataTab({ contact }: { contact: Contact }) {
         notes: notes || null,
         tags,
       });
-      toast({ title: "Salvo com sucesso" });
+      toast({ title: "Salvo com sucesso ✅" });
     } catch {
       toast({ title: "Erro ao salvar", variant: "destructive" });
     }
@@ -155,7 +157,13 @@ function ContactDataTab({ contact }: { contact: Contact }) {
         </div>
         <div>
           <Label className="text-xs">Origem</Label>
-          <Badge variant="secondary" className="mt-1 block w-fit">{contact.origin || "manual"}</Badge>
+          <Badge
+            variant="secondary"
+            className={`mt-1 ${hasWhatsApp ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400" : ""}`}
+          >
+            {hasWhatsApp && <MessageCircle className="h-3 w-3 mr-1" />}
+            {hasWhatsApp ? "WhatsApp" : "Manual"}
+          </Badge>
         </div>
         <div>
           <Label className="text-xs">Estado</Label>
@@ -206,8 +214,7 @@ function ContactDataTab({ contact }: { contact: Contact }) {
       )}
 
       <Button onClick={handleSave} className="w-full" disabled={updateContact.isPending}>
-        <Save className="h-4 w-4 mr-2" />
-        Salvar alterações
+        <Save className="h-4 w-4 mr-2" /> Salvar alterações
       </Button>
     </div>
   );
@@ -238,7 +245,7 @@ function ContactDealsTab({ contact }: { contact: Contact }) {
               </Badge>
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span>{deal.stage}</span>
+              <Badge variant="secondary" className="text-[10px]">{deal.stage}</Badge>
               {deal.value != null && deal.value > 0 && (
                 <span className="tabular-nums font-medium text-foreground">
                   {deal.value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
@@ -260,11 +267,12 @@ function ContactDealsTab({ contact }: { contact: Contact }) {
 function ContactActivitiesTab({ contact }: { contact: Contact }) {
   const { activities, isLoading, createActivity } = useActivities({ contact_id: contact.id });
   const [note, setNote] = useState("");
+  const [activityType, setActivityType] = useState("nota");
 
-  const handleAddNote = async () => {
+  const handleAdd = async () => {
     if (!note.trim()) return;
     await createActivity.mutateAsync({
-      type: "nota",
+      type: activityType,
       content: note,
       contact_id: contact.id,
     });
@@ -274,14 +282,27 @@ function ContactActivitiesTab({ contact }: { contact: Contact }) {
   return (
     <div className="px-6 py-4 space-y-4">
       <div className="space-y-2">
+        <div className="flex gap-2">
+          <Select value={activityType} onValueChange={setActivityType}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="nota">📝 Nota</SelectItem>
+              <SelectItem value="ligacao">📞 Ligação</SelectItem>
+              <SelectItem value="reuniao">🤝 Reunião</SelectItem>
+              <SelectItem value="whatsapp">💬 WhatsApp</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <Textarea
-          placeholder="Adicionar uma nota..."
+          placeholder="Adicionar atividade..."
           value={note}
           onChange={(e) => setNote(e.target.value)}
           className="min-h-[80px]"
         />
-        <Button size="sm" onClick={handleAddNote} disabled={!note.trim() || createActivity.isPending}>
-          Adicionar nota
+        <Button size="sm" onClick={handleAdd} disabled={!note.trim() || createActivity.isPending}>
+          Adicionar
         </Button>
       </div>
       <Separator />

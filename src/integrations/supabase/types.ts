@@ -376,6 +376,54 @@ export type Database = {
           },
         ]
       }
+      deal_items: {
+        Row: {
+          created_at: string | null
+          deal_id: string
+          id: string
+          notes: string | null
+          product_name: string
+          quantity: number
+          tenant_id: string
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string | null
+          deal_id: string
+          id?: string
+          notes?: string | null
+          product_name: string
+          quantity?: number
+          tenant_id: string
+          unit_price?: number
+        }
+        Update: {
+          created_at?: string | null
+          deal_id?: string
+          id?: string
+          notes?: string | null
+          product_name?: string
+          quantity?: number
+          tenant_id?: string
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_items_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_items_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       deals: {
         Row: {
           assigned_to: string | null
@@ -383,8 +431,11 @@ export type Database = {
           contact_id: string | null
           created_at: string | null
           created_by: string | null
+          expected_close_date: string | null
           id: string
+          loss_reason: string | null
           pipeline_stage_id: string | null
+          priority: string | null
           stage: string
           status: string
           tenant_id: string
@@ -398,8 +449,11 @@ export type Database = {
           contact_id?: string | null
           created_at?: string | null
           created_by?: string | null
+          expected_close_date?: string | null
           id?: string
+          loss_reason?: string | null
           pipeline_stage_id?: string | null
+          priority?: string | null
           stage?: string
           status?: string
           tenant_id: string
@@ -413,8 +467,11 @@ export type Database = {
           contact_id?: string | null
           created_at?: string | null
           created_by?: string | null
+          expected_close_date?: string | null
           id?: string
+          loss_reason?: string | null
           pipeline_stage_id?: string | null
+          priority?: string | null
           stage?: string
           status?: string
           tenant_id?: string

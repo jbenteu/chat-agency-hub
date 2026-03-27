@@ -20,6 +20,9 @@ export interface Contact {
   created_at: string | null;
   updated_at: string | null;
   created_by: string | null;
+  // joined
+  deals?: { id: string; title: string; value: number | null; stage: string; status: string }[];
+  whatsapp_conversations?: { id: string; last_message_at: string | null; remote_jid: string }[];
 }
 
 export function useContacts(filters?: {
@@ -35,7 +38,11 @@ export function useContacts(filters?: {
     queryFn: async () => {
       let q = supabase
         .from("contacts")
-        .select("*")
+        .select(`
+          *,
+          deals(id, title, value, stage, status),
+          whatsapp_conversations(id, last_message_at, remote_jid)
+        `)
         .order("created_at", { ascending: false });
 
       if (filters?.search) {
@@ -65,7 +72,7 @@ export function useContacts(filters?: {
 
   const createContact = useMutation({
     mutationFn: async (contact: Partial<Contact> & { name: string; tenant_id: string }) => {
-      const { data, error } = await supabase.from("contacts").insert(contact).select().single();
+      const { data, error } = await supabase.from("contacts").insert(contact as never).select().single();
       if (error) throw error;
       return data;
     },
@@ -74,7 +81,7 @@ export function useContacts(filters?: {
 
   const updateContact = useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Contact> & { id: string }) => {
-      const { error } = await supabase.from("contacts").update(updates).eq("id", id);
+      const { error } = await supabase.from("contacts").update(updates as never).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["contacts"] }),
