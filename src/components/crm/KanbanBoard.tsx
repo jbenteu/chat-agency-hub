@@ -8,6 +8,7 @@ import { CRMContactDrawer } from "./CRMContactDrawer";
 import { CRMHeader } from "./CRMHeader";
 import { LostReasonModal } from "./LostReasonModal";
 import { NewDealDialog } from "./NewDealDialog";
+import { CRMSettingsDialog } from "./CRMSettingsDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDeals as useDealsForLoss } from "@/hooks/use-deals";
 import { usePipelineViews } from "@/hooks/use-pipeline-views";
