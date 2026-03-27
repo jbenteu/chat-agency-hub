@@ -40,7 +40,7 @@ export function ContactDrawer({ contact, open, onOpenChange }: Props) {
         <Tabs defaultValue="dados" className="flex-1 flex flex-col overflow-hidden">
           <TabsList className="mx-6 w-auto">
             <TabsTrigger value="dados">Dados</TabsTrigger>
-            <TabsTrigger value="negocios">Negociações</TabsTrigger>
+            <TabsTrigger value="negocios">Vendas</TabsTrigger>
             <TabsTrigger value="atividades">Atividades</TabsTrigger>
           </TabsList>
 
@@ -230,7 +230,7 @@ function ContactDealsTab({ contact }: { contact: Contact }) {
   return (
     <div className="px-6 py-4 space-y-3">
       {contactDeals.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-8">Nenhuma negociação encontrada</p>
+        <p className="text-sm text-muted-foreground text-center py-8">Nenhuma venda encontrada</p>
       ) : (
         contactDeals.map((deal) => (
           <div

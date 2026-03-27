@@ -20,9 +20,9 @@ export function NewDealDialog({ open, onOpenChange, stages = [], defaultContactI
   const { createDeal } = useDeals();
   const { contacts } = useContacts();
   const { toast } = useToast();
-  const [title, setTitle] = useState("");
+  const [value, setValue] = useState("");
+  const [description, setDescription] = useState("");
   const [contactId, setContactId] = useState(defaultContactId || "");
-  const [stageId, setStageId] = useState("");
 
   // Sync defaultContactId when it changes
   React.useEffect(() => {
@@ -33,24 +33,26 @@ export function NewDealDialog({ open, onOpenChange, stages = [], defaultContactI
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!value.trim()) return;
     try {
       const tenantId = await getTenantId();
-      const selectedStage = stages.find((s) => s.id === stageId) || defaultStage;
+      const contact = contacts.find((c) => c.id === contactId);
+      const title = description.trim() || (contact ? `Venda - ${contact.name}` : "Nova Venda");
       await createDeal.mutateAsync({
         title,
+        value: parseFloat(value.replace(",", ".")),
         contact_id: contactId || undefined,
-        stage: selectedStage?.name || "Novo Lead",
-        pipeline_stage_id: selectedStage?.id,
+        stage: defaultStage?.name || "Novo Lead",
+        pipeline_stage_id: defaultStage?.id,
         tenant_id: tenantId,
       });
-      toast({ title: "Negociação criada ✅" });
+      toast({ title: "Venda cadastrada ✅" });
       onOpenChange(false);
-      setTitle("");
+      setValue("");
+      setDescription("");
       setContactId("");
-      setStageId("");
     } catch {
-      toast({ title: "Erro ao criar negociação", variant: "destructive" });
+      toast({ title: "Erro ao cadastrar venda", variant: "destructive" });
     }
   };
 
@@ -58,12 +60,26 @@ export function NewDealDialog({ open, onOpenChange, stages = [], defaultContactI
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nova Negociação</DialogTitle>
+          <DialogTitle>Nova Venda</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <Label className="text-xs">Título *</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
+            <Label className="text-xs">Valor (R$) *</Label>
+            <Input
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="0,00"
+              inputMode="decimal"
+              required
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Descrição</Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ex: Anel de ouro 18k..."
+            />
           </div>
           <div>
             <Label className="text-xs">Contato</Label>
@@ -78,19 +94,8 @@ export function NewDealDialog({ open, onOpenChange, stages = [], defaultContactI
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <Label className="text-xs">Estágio</Label>
-            <Select value={stageId} onValueChange={setStageId}>
-              <SelectTrigger><SelectValue placeholder={defaultStage?.name || "Selecione..."} /></SelectTrigger>
-              <SelectContent>
-                {stages.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <Button type="submit" className="w-full" disabled={createDeal.isPending}>
-            Criar negociação
+            Cadastrar venda
           </Button>
         </form>
       </DialogContent>

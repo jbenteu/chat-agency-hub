@@ -585,7 +585,7 @@ export function InfoPanel({
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs font-medium flex items-center gap-1.5">
                     <ShoppingBag className="h-3.5 w-3.5 text-muted-foreground" />
-                    Negociações ({contactDeals.length})
+                    Vendas ({contactDeals.length})
                   </p>
                   {contactDetails && (
                     <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1" onClick={() => setShowNewDeal(true)}>
@@ -618,7 +618,7 @@ export function InfoPanel({
                     })}
                   </div>
                 ) : (
-                  <p className="text-[11px] text-muted-foreground">Nenhuma negociação</p>
+                  <p className="text-[11px] text-muted-foreground">Nenhuma venda</p>
                 )}
               </div>
 
