@@ -782,9 +782,9 @@ Deno.serve(async (req) => {
         .eq("instance_name", instanceName);
 
       // ── Auto-import WhatsApp contacts on connection ──
-      if (newStatus === "connected" && evoBaseUrl) {
+      if (newStatus === "connected" && evoBaseUrl && instanceSettings.importContacts === true) {
         // Fire-and-forget: don't block the webhook response
-        (async () => {
+        const importTask = (async () => {
           const progressId = `${tenantId}-${instanceName}`;
           try {
             // Initialize progress
@@ -800,24 +800,35 @@ Deno.serve(async (req) => {
               error_message: null,
             });
 
-            // Fetch contacts from Evolution API
+            // Fetch contacts from Evolution API — retry até 3x com delay crescente
+            // porque logo após o QR ser escaneado o WhatsApp ainda está sincronizando contatos
             let contacts: any[] = [];
-            for (const path of [
-              `/chat/findContacts/${instanceName}`,
-              `/contact/find/${instanceName}`,
-            ]) {
-              try {
-                const res = await fetchWithTimeout(
-                  `${evoBaseUrl}${path}`,
-                  { method: "POST", headers: evoHeaders, body: JSON.stringify({ where: {} }) },
-                  15000,
-                );
-                if (res.ok) {
-                  const json = await res.json();
-                  contacts = Array.isArray(json) ? json : json?.contacts || json?.data || [];
-                  if (contacts.length > 0) break;
-                }
-              } catch { /* try next path */ }
+            const delays = [0, 10000, 20000]; // tentativas em 0s, 10s e 20s
+            for (const delay of delays) {
+              if (delay > 0) await new Promise(r => setTimeout(r, delay));
+
+              for (const path of [
+                `/chat/findContacts/${instanceName}`,
+                `/contact/find/${instanceName}`,
+              ]) {
+                try {
+                  const res = await fetchWithTimeout(
+                    `${evoBaseUrl}${path}`,
+                    { method: "POST", headers: evoHeaders, body: JSON.stringify({ where: {} }) },
+                    15000,
+                  );
+                  if (res.ok) {
+                    const json = await res.json();
+                    const parsed = Array.isArray(json) ? json : json?.contacts || json?.data || [];
+                    if (parsed.length > 0) {
+                      contacts = parsed;
+                      break;
+                    }
+                  }
+                } catch { /* try next path */ }
+              }
+
+              if (contacts.length > 0) break;
             }
 
             if (contacts.length === 0) {
@@ -887,6 +898,8 @@ Deno.serve(async (req) => {
             }).eq("id", progressId).then(() => {}, () => {});
           }
         })();
+        // Sinaliza ao runtime para aguardar a tarefa em background antes de encerrar
+        (globalThis as any).EdgeRuntime?.waitUntil(importTask);
       }
 
       return jsonResponse({ ok: true, event: "status_updated", status: newStatus, phoneNumber });
