@@ -136,7 +136,7 @@ interface ChatMessage {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const AIAnalysis: React.FC = () => {
-  const { getDashboard, generateScript, askAI, getInsights, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, analyzeAllConversations, processQueue, listAccessibleTenants } = useAIAnalysis();
+  const { getDashboard, generateScript, askAI, getInsightsEnhanced, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, analyzeAllConversations, processQueue, listAccessibleTenants } = useAIAnalysis();
   const { profile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -174,6 +174,8 @@ const AIAnalysis: React.FC = () => {
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsLoaded, setInsightsLoaded] = useState(false);
+  const [estimatedLoss, setEstimatedLoss] = useState<number | null>(null);
+  const [expandedInsight, setExpandedInsight] = useState<number | null>(null);
 
   // Pipeline
   const [hotLeads, setHotLeads] = useState<PipelineLead[]>([]);
@@ -249,8 +251,9 @@ const AIAnalysis: React.FC = () => {
     try {
       setInsightsLoading(true);
       setInsights([]);
-      const result = await getInsights(selectedInstanceId, targetTenantId);
+      const result = await getInsightsEnhanced(selectedInstanceId, targetTenantId);
       setInsights(result.insights || []);
+      if (result.estimated_loss_total_brl != null) setEstimatedLoss(result.estimated_loss_total_brl);
       setInsightsLoaded(true);
     } catch (err) {
       toast({ title: "Erro ao gerar insights", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
@@ -886,6 +889,44 @@ const AIAnalysis: React.FC = () => {
                   )}
                 </div>
 
+                {/* Estimated loss banner */}
+                {!loading && estimatedLoss !== null && estimatedLoss > 0 && (
+                  <div className="flex items-center justify-between gap-4 bg-red-50 border border-red-200 rounded-xl px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center shrink-0">
+                        <TrendingDown size={18} className="text-red-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-red-700">Perda Total Estimada de Vendas</p>
+                        <p className="text-xs text-red-400 mt-0.5">Leads perdidos + leads quentes sem resposta × ticket médio</p>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-2xl font-bold text-red-600 tabular-nums">
+                        {estimatedLoss.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+                      </p>
+                      <p className="text-xs text-red-400">estimativa do mês</p>
+                    </div>
+                  </div>
+                )}
+                {!loading && estimatedLoss === null && !insightsLoaded && (
+                  <button
+                    onClick={() => { setActiveTab("insights"); loadInsights(isOnDemandRole ? selectedClientTenantId : null); }}
+                    className="flex items-center justify-between gap-4 bg-zinc-50 border border-dashed border-zinc-300 rounded-xl px-5 py-4 w-full hover:bg-violet-50 hover:border-violet-300 transition-colors group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-zinc-100 rounded-lg flex items-center justify-center group-hover:bg-violet-100">
+                        <Sparkles size={18} className="text-zinc-400 group-hover:text-violet-500" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-medium text-muted-foreground group-hover:text-foreground">Calcular perda estimada de vendas</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Clique para gerar insights e ver o impacto financeiro</p>
+                      </div>
+                    </div>
+                    <ArrowUpRight size={16} className="text-zinc-400 group-hover:text-violet-500 shrink-0" />
+                  </button>
+                )}
+
                 {/* Charts row */}
                 {!loading && dashboardData && (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -1091,30 +1132,129 @@ const AIAnalysis: React.FC = () => {
                 )}
 
                 {!insightsLoading && insights.length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {insights.map((insight, i) => {
-                      const cfg = insightConfig[insight.tipo] || insightConfig.alerta;
-                      const Icon = cfg.icon;
-                      return (
-                        <div
-                          key={i}
-                          className={`bg-white rounded-xl border p-5 hover:shadow-sm transition-all ${cfg.border}`}
-                        >
-                          <div className="flex items-center gap-2 mb-3">
-                            <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.border} ${cfg.color}`}>
-                              <Icon size={11} />
-                              {cfg.label}
-                            </span>
+                  <div className="space-y-4">
+                    {/* Total loss summary */}
+                    {estimatedLoss !== null && estimatedLoss > 0 && (
+                      <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                        <TrendingDown size={16} className="text-red-500 shrink-0" />
+                        <p className="text-sm text-red-700">
+                          Perda total estimada:{" "}
+                          <strong className="font-bold">
+                            {estimatedLoss.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+                          </strong>
+                          <span className="text-red-400 text-xs ml-2">no mês corrente</span>
+                        </p>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {insights.map((insight, i) => {
+                        const cfg = insightConfig[insight.tipo] || insightConfig.alerta;
+                        const Icon = cfg.icon;
+                        const isExpanded = expandedInsight === i;
+                        const hasExamples = (insight.exemplos?.length ?? 0) > 0;
+                        return (
+                          <div
+                            key={i}
+                            className={`bg-white rounded-xl border p-5 hover:shadow-sm transition-all ${cfg.border}`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.border} ${cfg.color}`}>
+                                <Icon size={11} />
+                                {cfg.label}
+                              </span>
+                              {insight.valor_estimado_perdido_brl != null && insight.valor_estimado_perdido_brl > 0 && (
+                                <span className="text-xs text-red-600 font-semibold flex items-center gap-1">
+                                  <TrendingDown size={11} />
+                                  {insight.valor_estimado_perdido_brl.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="text-sm font-semibold text-foreground leading-snug mb-2">{insight.titulo}</h3>
+                            <p className="text-sm text-muted-foreground leading-relaxed mb-3">{insight.descricao}</p>
+                            <div className={`flex items-start gap-2 p-3 rounded-lg ${cfg.bg} border ${cfg.border}`}>
+                              <ChevronRight size={14} className={`${cfg.color} mt-0.5 shrink-0`} />
+                              <p className={`text-xs font-medium ${cfg.color}`}>{insight.acao}</p>
+                            </div>
+
+                            {/* Real conversation examples */}
+                            {hasExamples && (
+                              <div className="mt-3">
+                                <button
+                                  onClick={() => setExpandedInsight(isExpanded ? null : i)}
+                                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                  <Eye size={12} />
+                                  {isExpanded ? "Ocultar exemplos" : `Ver ${insight.exemplos!.length} exemplo${insight.exemplos!.length > 1 ? "s" : ""} real`}
+                                  <ChevronDown size={12} className={`transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                                </button>
+                                {isExpanded && (
+                                  <div className="mt-2 space-y-3">
+                                    {insight.exemplos!.map((ex, j) => (
+                                      <div key={j} className="border border-zinc-200 rounded-lg overflow-hidden text-xs">
+                                        <div className="flex items-center justify-between px-3 py-2 bg-zinc-50 border-b border-zinc-200">
+                                          <span className="font-medium text-foreground">{ex.contact_name || "Cliente"}</span>
+                                          {ex.horas_sem_resposta != null && ex.horas_sem_resposta > 0 && (
+                                            <span className="text-red-500 flex items-center gap-1">
+                                              <Clock size={10} />
+                                              {formatHours(ex.horas_sem_resposta)} sem resposta
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="p-3 space-y-2">
+                                          {ex.mensagem_cliente && (
+                                            <div className="flex gap-2">
+                                              <div className="w-5 h-5 rounded-full bg-zinc-200 flex items-center justify-center shrink-0 mt-0.5">
+                                                <User size={10} className="text-zinc-500" />
+                                              </div>
+                                              <div className="bg-zinc-100 rounded-lg px-2.5 py-1.5 flex-1">
+                                                <p className="text-foreground">{ex.mensagem_cliente}</p>
+                                              </div>
+                                            </div>
+                                          )}
+                                          {ex.resposta_atendente === null ? (
+                                            <div className="flex items-center gap-2 text-red-500 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+                                              <AlertTriangle size={11} />
+                                              <span>Sem resposta da atendente</span>
+                                            </div>
+                                          ) : ex.resposta_atendente ? (
+                                            <div className="flex gap-2 justify-end">
+                                              <div className="bg-violet-100 rounded-lg px-2.5 py-1.5 max-w-[85%]">
+                                                <p className="text-foreground">{ex.resposta_atendente}</p>
+                                              </div>
+                                            </div>
+                                          ) : null}
+                                          {ex.problema && (
+                                            <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                                              <p className="text-[10px] text-amber-600 font-semibold uppercase tracking-wide mb-0.5">Problema</p>
+                                              <p className="text-amber-700">{ex.problema}</p>
+                                            </div>
+                                          )}
+                                          {ex.script_sugerido && (
+                                            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                                              <div className="flex items-center justify-between mb-0.5">
+                                                <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wide">Script sugerido</p>
+                                                <button
+                                                  onClick={() => handleCopy(ex.script_sugerido)}
+                                                  className="text-[10px] text-emerald-600 hover:text-emerald-800 flex items-center gap-1"
+                                                >
+                                                  <Copy size={10} />
+                                                  Copiar
+                                                </button>
+                                              </div>
+                                              <p className="text-emerald-700">{ex.script_sugerido}</p>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <h3 className="text-sm font-semibold text-foreground leading-snug mb-2">{insight.titulo}</h3>
-                          <p className="text-sm text-muted-foreground leading-relaxed mb-3">{insight.descricao}</p>
-                          <div className={`flex items-start gap-2 p-3 rounded-lg ${cfg.bg} border ${cfg.border}`}>
-                            <ChevronRight size={14} className={`${cfg.color} mt-0.5 shrink-0`} />
-                            <p className={`text-xs font-medium ${cfg.color}`}>{insight.acao}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>

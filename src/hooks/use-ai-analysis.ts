@@ -71,11 +71,37 @@ export interface AnalysisStatus {
   coverage_pct: number;
 }
 
+export interface AIInsightExample {
+  contact_name: string | null;
+  mensagem_cliente: string | null;
+  resposta_atendente: string | null;
+  horas_sem_resposta: number | null;
+  problema: string;
+  script_sugerido: string;
+}
+
 export interface AIInsight {
   tipo: 'urgente' | 'oportunidade' | 'alerta' | 'tendencia';
   titulo: string;
   descricao: string;
   acao: string;
+  valor_estimado_perdido_brl?: number | null;
+  exemplos?: AIInsightExample[];
+}
+
+export interface AIAnalysisSettings {
+  provider: 'anthropic' | 'openai';
+  analysis_model: string;
+  insights_model: string;
+  api_key_configured: boolean;
+  avg_ticket_brl: number;
+  schedule_enabled: boolean;
+  schedule_days: number[];
+  schedule_hour: number;
+  schedule_minute: number;
+  schedule_timezone: string;
+  last_run_at: string | null;
+  next_run_at: string | null;
 }
 
 export interface TemporalPattern {
@@ -156,6 +182,9 @@ export function useAIAnalysis() {
   const getInsights = (instanceId?: string | null, targetTenantId?: string | null): Promise<{ insights: AIInsight[] }> =>
     invokeAI("get_insights", { instance_id: instanceId ?? null, target_tenant_id: targetTenantId ?? undefined });
 
+  const getInsightsEnhanced = (instanceId?: string | null, targetTenantId?: string | null): Promise<{ insights: AIInsight[]; estimated_loss_total_brl: number }> =>
+    invokeAI("get_insights", { instance_id: instanceId ?? null, target_tenant_id: targetTenantId ?? undefined });
+
   const getTemporalPatterns = (instanceId?: string | null, targetTenantId?: string | null): Promise<TemporalPattern> =>
     invokeAI("get_temporal_patterns", { instance_id: instanceId ?? null, target_tenant_id: targetTenantId ?? undefined });
 
@@ -187,12 +216,19 @@ export function useAIAnalysis() {
     return data as AIConversationAnalysis | null;
   };
 
+  const getAISettings = (): Promise<AIAnalysisSettings> =>
+    invokeAI("get_ai_settings", {});
+
+  const updateAISettings = (settings: Partial<AIAnalysisSettings> & { api_key?: string }): Promise<{ success: boolean }> =>
+    invokeAI("update_ai_settings", settings);
+
   return {
     analyzeConversation,
     askAI,
     generateScript,
     getDashboard,
     getInsights,
+    getInsightsEnhanced,
     getTemporalPatterns,
     getPipeline,
     listInstances,
@@ -201,5 +237,7 @@ export function useAIAnalysis() {
     processQueue,
     getConversationAnalysis,
     listAccessibleTenants,
+    getAISettings,
+    updateAISettings,
   };
 }

@@ -9,9 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Camera, Lock, User, GitBranch, Sliders } from "lucide-react";
+import { Loader2, Camera, Lock, User, GitBranch, Sliders, Bot } from "lucide-react";
 import { PipelineStagesConfig } from "@/components/crm/PipelineStagesConfig";
 import { CustomFieldsManager } from "@/components/crm/CustomFieldsManager";
+import { AIAnalysisSettings } from "@/components/ai/AIAnalysisSettings";
 
 const SettingsPage = () => {
   const { profile, user, refreshProfile } = useAuth();
@@ -142,6 +143,9 @@ const SettingsPage = () => {
             <TabsTrigger value="campos" className="gap-1.5">
               <Sliders className="h-3.5 w-3.5" /> Campos
             </TabsTrigger>
+            <TabsTrigger value="ia" className="gap-1.5">
+              <Bot className="h-3.5 w-3.5" /> IA
+            </TabsTrigger>
           </TabsList>
 
           {/* ── Perfil ── */}
@@ -250,6 +254,11 @@ const SettingsPage = () => {
                 <CustomFieldsManager />
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ── IA ── */}
+          <TabsContent value="ia">
+            <AIAnalysisSettings />
           </TabsContent>
         </Tabs>
       </div>

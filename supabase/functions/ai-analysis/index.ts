@@ -250,6 +250,7 @@ Deno.serve(async (req) => {
     maxTokens: number,
     systemPrompt: string | undefined,
     userMessage: string,
+    apiKey: string = ANTHROPIC_API_KEY,
   ) => {
     const anthropicBody: Record<string, unknown> = {
       model,
@@ -263,7 +264,7 @@ Deno.serve(async (req) => {
       {
         method: "POST",
         headers: {
-          "x-api-key": ANTHROPIC_API_KEY,
+          "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
           "Content-Type": "application/json",
         },
@@ -279,7 +280,160 @@ Deno.serve(async (req) => {
     return await resp.json();
   };
 
+  // ─── OpenAI helper ─────────────────────────────────────────────────────────
+  const callOpenAI = async (
+    model: string,
+    maxTokens: number,
+    systemPrompt: string | undefined,
+    userMessage: string,
+    apiKey: string,
+  ) => {
+    const messages: Array<{ role: string; content: string }> = [];
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: userMessage });
+    const resp = await fetchWithTimeout(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
+      },
+      30000,
+    );
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`OpenAI API error: ${resp.status} ${errText.substring(0, 200)}`);
+    }
+    const json = await resp.json();
+    return { content: [{ text: json.choices?.[0]?.message?.content ?? "" }] };
+  };
+
+  // ─── Tenant AI settings ────────────────────────────────────────────────────
+  interface TenantSettings {
+    provider: "anthropic" | "openai";
+    analysis_model: string;
+    insights_model: string;
+    api_key: string | null;
+    avg_ticket_brl: number;
+  }
+
+  const loadTenantSettings = async (tid: string): Promise<TenantSettings> => {
+    const { data } = await supabaseAdmin
+      // deno-lint-ignore no-explicit-any
+      .from("ai_analysis_settings" as any)
+      .select("provider, analysis_model, insights_model, api_key, avg_ticket_brl")
+      .eq("tenant_id", tid)
+      .maybeSingle();
+    return {
+      provider: ((data as Record<string, unknown>)?.provider as "anthropic" | "openai") || "anthropic",
+      analysis_model: (data as Record<string, unknown>)?.analysis_model as string || "claude-haiku-4-5-20251001",
+      insights_model: (data as Record<string, unknown>)?.insights_model as string || "claude-sonnet-4-6",
+      api_key: (data as Record<string, unknown>)?.api_key as string | null || null,
+      avg_ticket_brl: Number((data as Record<string, unknown>)?.avg_ticket_brl) || 2500,
+    };
+  };
+
+  // Unified AI caller — dispatches to correct provider using tenant settings
+  const callAI = async (
+    settings: TenantSettings,
+    model: string,
+    maxTokens: number,
+    systemPrompt: string | undefined,
+    userMessage: string,
+  ) => {
+    const key = settings.api_key || (settings.provider === "openai" ? "" : ANTHROPIC_API_KEY);
+    if (settings.provider === "openai") {
+      if (!key) throw new Error("Chave de API OpenAI não configurada. Configure nas Configurações > IA.");
+      return callOpenAI(model, maxTokens, systemPrompt, userMessage, key);
+    }
+    return callAnthropic(model, maxTokens, systemPrompt, userMessage, key || ANTHROPIC_API_KEY);
+  };
+
   try {
+    // ─── Load tenant AI settings (used by all AI actions) ─────────────────
+    const tenantSettings: TenantSettings = tenantId
+      ? await loadTenantSettings(tenantId)
+      : { provider: "anthropic", analysis_model: "claude-haiku-4-5-20251001", insights_model: "claude-sonnet-4-6", api_key: null, avg_ticket_brl: 2500 };
+
+    // ─── get_ai_settings ──────────────────────────────────────────────────
+    if (action === "get_ai_settings") {
+      const { data: settings } = await supabaseAdmin
+        // deno-lint-ignore no-explicit-any
+        .from("ai_analysis_settings" as any)
+        .select("provider, analysis_model, insights_model, api_key, avg_ticket_brl, schedule_enabled, schedule_days, schedule_hour, schedule_minute, schedule_timezone, last_run_at, next_run_at")
+        .eq("tenant_id", tenantId!)
+        .maybeSingle();
+      const s = (settings as Record<string, unknown>) || {};
+      return jsonResponse({
+        provider: s.provider || "anthropic",
+        analysis_model: s.analysis_model || "claude-haiku-4-5-20251001",
+        insights_model: s.insights_model || "claude-sonnet-4-6",
+        api_key_configured: !!(s.api_key),
+        avg_ticket_brl: Number(s.avg_ticket_brl) || 2500,
+        schedule_enabled: s.schedule_enabled || false,
+        schedule_days: s.schedule_days || [1, 2, 3, 4, 5],
+        schedule_hour: s.schedule_hour ?? 9,
+        schedule_minute: s.schedule_minute ?? 0,
+        schedule_timezone: s.schedule_timezone || "America/Sao_Paulo",
+        last_run_at: s.last_run_at || null,
+        next_run_at: s.next_run_at || null,
+      });
+    }
+
+    // ─── update_ai_settings ───────────────────────────────────────────────
+    if (action === "update_ai_settings") {
+      // Only admin/super_admin can update settings
+      const { data: roleCheck } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId!)
+        .limit(1)
+        .maybeSingle();
+      const callerRole = (roleCheck as Record<string, unknown>)?.role as string | undefined;
+      if (!callerRole || !["admin", "super_admin"].includes(callerRole)) {
+        return jsonResponse({ error: "Apenas administradores podem alterar as configurações de IA." }, 403);
+      }
+
+      const updates: Record<string, unknown> = {
+        tenant_id: tenantId,
+        updated_at: new Date().toISOString(),
+      };
+      if (payload.provider !== undefined) updates.provider = payload.provider;
+      if (payload.analysis_model !== undefined) updates.analysis_model = payload.analysis_model;
+      if (payload.insights_model !== undefined) updates.insights_model = payload.insights_model;
+      if (payload.api_key) updates.api_key = payload.api_key;
+      if (payload.avg_ticket_brl !== undefined) updates.avg_ticket_brl = Number(payload.avg_ticket_brl);
+      if (payload.schedule_enabled !== undefined) updates.schedule_enabled = payload.schedule_enabled;
+      if (payload.schedule_days !== undefined) updates.schedule_days = payload.schedule_days;
+      if (payload.schedule_hour !== undefined) updates.schedule_hour = Number(payload.schedule_hour);
+      if (payload.schedule_minute !== undefined) updates.schedule_minute = Number(payload.schedule_minute);
+      if (payload.schedule_timezone !== undefined) updates.schedule_timezone = payload.schedule_timezone;
+
+      // Compute next_run_at when schedule is enabled
+      if (updates.schedule_enabled) {
+        const { data: nextRun } = await supabaseAdmin.rpc("compute_next_ai_run", {
+          p_days: (updates.schedule_days || payload.schedule_days || [1, 2, 3, 4, 5]) as number[],
+          p_hour: Number(updates.schedule_hour ?? payload.schedule_hour ?? 9),
+          p_minute: Number(updates.schedule_minute ?? payload.schedule_minute ?? 0),
+          p_timezone: (updates.schedule_timezone || payload.schedule_timezone || "America/Sao_Paulo") as string,
+        });
+        if (nextRun) updates.next_run_at = nextRun;
+      } else if (updates.schedule_enabled === false) {
+        updates.next_run_at = null;
+      }
+
+      const { error: upsertErr } = await supabaseAdmin
+        // deno-lint-ignore no-explicit-any
+        .from("ai_analysis_settings" as any)
+        .upsert(updates, { onConflict: "tenant_id" });
+      if (upsertErr) throw upsertErr;
+      return jsonResponse({ success: true });
+    }
+
+
     // ─── analyze_conversation ──────────────────────────────────────────────
     if (action === "analyze_conversation") {
       const conversationId = payload.conversation_id as string;
@@ -339,8 +493,9 @@ Deno.serve(async (req) => {
 Conversa (${messages.length} mensagens):
 ${transcript}`;
 
-      const data = await callAnthropic(
-        "claude-haiku-4-5-20251001",
+      const data = await callAI(
+        tenantSettings,
+        tenantSettings.analysis_model,
         600,
         "Você analisa conversas de WhatsApp de joalherias. Responda APENAS com JSON válido, sem texto extra, sem markdown.",
         userMessage,
@@ -438,8 +593,9 @@ ${transcript}`;
               `${m.direction === "outbound" ? "Atendente" : "Cliente"}: ${m.content || "[mídia]"}`)
             .join("\n");
 
-          const aiData = await callAnthropic(
-            "claude-haiku-4-5-20251001",
+          const aiData = await callAI(
+            tenantSettings,
+            tenantSettings.analysis_model,
             600,
             "Você analisa conversas de WhatsApp de joalherias. Responda APENAS com JSON válido, sem texto extra, sem markdown.",
             `Analise esta conversa de joalheria e retorne JSON com exatamente estas chaves:
@@ -824,8 +980,9 @@ Conversa (${messages.length} msgs):\n${transcript}`,
               `${m.direction === "outbound" ? "Atendente" : "Cliente"}: ${m.content || "[mídia]"}`)
             .join("\n");
 
-          const aiData = await callAnthropic(
-            "claude-haiku-4-5-20251001",
+          const aiData = await callAI(
+            tenantSettings,
+            tenantSettings.analysis_model,
             600,
             "Você analisa conversas de WhatsApp de joalherias. Responda APENAS com JSON válido, sem texto extra, sem markdown.",
             `Analise esta conversa de joalheria e retorne JSON com exatamente estas chaves:
@@ -912,8 +1069,9 @@ Conversa (${messages.length} msgs):\n${transcript}`,
         : { data: null };
       const instLabel = instRow ? (instRow.display_name || instRow.instance_name) : "todas as instâncias";
 
-      const data = await callAnthropic(
-        "claude-sonnet-4-6",
+      const data = await callAI(
+        tenantSettings,
+        tenantSettings.insights_model,
         1024,
         "Você é um consultor especialista em vendas de joalherias. Analise os dados fornecidos e responda de forma direta, prática e em português brasileiro. Seja específico com números quando disponíveis.",
         `Dados da joalheria (últimos 30 dias) — instância: ${instLabel}:\n${JSON.stringify(context, null, 2)}\n\nPergunta do gestor: ${question}`,
@@ -932,7 +1090,7 @@ Contexto: se interessou por ${product_interest || "produto"} há ${hours_without
 ${objecao ? `Objeção detectada anteriormente: "${objecao}"` : ""}
 Regras: tom amigável e consultivo, sem pressão, máximo 3 linhas, sem emojis em excesso (máx 1), sem markdown, em português brasileiro.`;
 
-      const data = await callAnthropic("claude-haiku-4-5-20251001", 300, undefined, userMsg);
+      const data = await callAI(tenantSettings, tenantSettings.analysis_model, 300, undefined, userMsg);
       return jsonResponse({ script: data.content[0].text });
     }
 
@@ -1067,14 +1225,13 @@ Regras: tom amigável e consultivo, sem pressão, máximo 3 linhas, sem emojis e
       const convIds = await getInstanceConvIds(instanceId);
       const context = await buildDashboardContext(convIds, instanceId);
 
-      // Fetch extra detail: top conversion analysis
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
       const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
 
-      const [recentAnalyses, weekAnalyses] = await Promise.all([
+      const [recentAnalyses, weekAnalyses, worstCasesResult] = await Promise.all([
         applyConvFilter(
           supabaseAdmin.from("ai_conversation_analysis")
-            .select("status_lead, sentimento, score_qualidade, horas_sem_resposta, produto_interesse, objecao_detectada")
+            .select("conversation_id, status_lead, sentimento, score_qualidade, horas_sem_resposta, produto_interesse, objecao_detectada")
             .eq("tenant_id", tenantId!)
             .gte("analyzed_at", thirtyDaysAgo),
           convIds,
@@ -1086,16 +1243,68 @@ Regras: tom amigável e consultivo, sem pressão, máximo 3 linhas, sem emojis e
             .gte("analyzed_at", sevenDaysAgo),
           convIds,
         ),
+        // Fetch worst cases for real conversation examples
+        applyConvFilter(
+          supabaseAdmin.from("ai_conversation_analysis")
+            .select("conversation_id, status_lead, horas_sem_resposta, produto_interesse, objecao_detectada, sentimento, resumo")
+            .eq("tenant_id", tenantId!)
+            .gte("analyzed_at", thirtyDaysAgo)
+            .order("horas_sem_resposta", { ascending: false })
+            .limit(8),
+          convIds,
+        ),
       ]);
 
       const allAnalyses = recentAnalyses.data || [];
       const weekData = weekAnalyses.data || [];
+      const worstCases = (worstCasesResult.data || []).slice(0, 5);
 
-      // Compute enriched stats for prompt
+      // Fetch real message examples for worst cases (parallel)
+      const realExamples = await Promise.all(
+        worstCases.map(async (case_: Record<string, unknown>) => {
+          try {
+            const convId = case_.conversation_id as string;
+            const [convRes, msgsRes] = await Promise.all([
+              supabaseAdmin.from("whatsapp_conversations")
+                .select("contact_name, contact_phone")
+                .eq("id", convId).maybeSingle(),
+              supabaseAdmin.from("whatsapp_messages")
+                .select("direction, content, created_at")
+                .eq("conversation_id", convId)
+                .order("created_at", { ascending: false })
+                .limit(8),
+            ]);
+            const msgs = ((msgsRes.data || []) as Array<{ direction: string; content: string | null; created_at: string }>).reverse();
+            const lastClientMsg = [...msgs].reverse().find((m) => m.direction === "inbound");
+            const lastAgentMsg = [...msgs].reverse().find((m) => m.direction === "outbound");
+            const clientTime = lastClientMsg ? new Date(lastClientMsg.created_at).getTime() : 0;
+            const agentTime = lastAgentMsg ? new Date(lastAgentMsg.created_at).getTime() : 0;
+            const semResposta = clientTime > 0 && (agentTime === 0 || agentTime < clientTime);
+            const conv = convRes.data as Record<string, unknown> | null;
+            return {
+              contact_name: conv?.contact_name || "Cliente",
+              horas_sem_resposta: case_.horas_sem_resposta,
+              produto_interesse: case_.produto_interesse,
+              status_lead: case_.status_lead,
+              sentimento: case_.sentimento,
+              ultima_msg_cliente: lastClientMsg?.content || null,
+              ultima_resposta_atendente: semResposta ? null : (lastAgentMsg?.content || null),
+              sem_resposta: semResposta,
+              resumo: case_.resumo,
+            };
+          } catch { return null; }
+        })
+      );
+      const validExamples = realExamples.filter(Boolean);
+
+      // Compute enriched stats
       const totalAnalyzed = allAnalyses.length;
       const hotCount = allAnalyses.filter((a: Record<string, unknown>) => a.status_lead === "quente").length;
       const coldCount = allAnalyses.filter((a: Record<string, unknown>) => a.status_lead === "frio").length;
       const lostCount = allAnalyses.filter((a: Record<string, unknown>) => a.status_lead === "perdido").length;
+      const hotNoReply6h = allAnalyses.filter((a: Record<string, unknown>) =>
+        a.status_lead === "quente" && (a.horas_sem_resposta as number) > 6
+      ).length;
       const avgResponseH = allAnalyses.filter((a: Record<string, unknown>) => a.horas_sem_resposta !== null)
         .reduce((s: number, a: Record<string, unknown>) => s + (a.horas_sem_resposta as number), 0) /
         (allAnalyses.filter((a: Record<string, unknown>) => a.horas_sem_resposta !== null).length || 1);
@@ -1104,33 +1313,59 @@ Regras: tom amigável e consultivo, sem pressão, máximo 3 linhas, sem emojis e
         ? weekData.reduce((s: number, a: Record<string, unknown>) => s + ((a.score_qualidade as number) || 0), 0) / weekData.length
         : null;
 
+      // Estimated loss: conservative formula based on lost + hot leads with no reply
+      const avgTicket = tenantSettings.avg_ticket_brl;
+      const estimatedLossTotal = Math.round(
+        (lostCount * avgTicket * 0.15) + (hotNoReply6h * avgTicket * 0.35)
+      );
+
       const enrichedContext = {
         ...context,
         total_conversas_analisadas: totalAnalyzed,
         leads_quentes: hotCount,
+        leads_quentes_sem_resposta_6h: hotNoReply6h,
         leads_frios: coldCount,
         leads_perdidos: lostCount,
         media_horas_sem_resposta: Math.round(avgResponseH * 10) / 10,
         clientes_frustrados: frustratedCount,
         score_medio_semana: weekAvgScore ? Math.round(weekAvgScore * 10) / 10 : null,
         taxa_conversao_estimada_pct: totalAnalyzed > 0 ? Math.round((hotCount / totalAnalyzed) * 100) : 0,
+        ticket_medio_brl: avgTicket,
+        perda_estimada_total_brl: estimatedLossTotal,
       };
 
-      const insightsData = await callAnthropic(
-        "claude-sonnet-4-6",
-        2000,
+      const examplesText = validExamples.length > 0
+        ? `\n\nEXEMPLOS REAIS DE CONVERSAS CRÍTICAS (use nos insights urgentes/alertas):\n${JSON.stringify(validExamples, null, 2)}`
+        : "";
+
+      const insightsData = await callAI(
+        tenantSettings,
+        tenantSettings.insights_model,
+        2800,
         `Você é um consultor sênior de vendas especializado em joalherias de varejo.
 Analise os dados e gere exatamente 6 insights estratégicos e altamente acionáveis.
 Cada insight deve ser específico com os números fornecidos, não genérico.
+Para insights do tipo "urgente" ou "alerta", inclua 1-2 exemplos reais das conversas fornecidas em "exemplos".
 Retorne APENAS um JSON válido com o array "insights" onde cada item tem:
 {
   "tipo": "urgente" | "oportunidade" | "alerta" | "tendencia",
   "titulo": string (máx 55 chars, impactante),
   "descricao": string (máx 220 chars, cite números reais dos dados),
-  "acao": string (máx 100 chars, ação concreta e específica)
+  "acao": string (máx 100 chars, ação concreta e específica),
+  "valor_estimado_perdido_brl": number ou null (use ticket médio R$${avgTicket} quando aplicável),
+  "exemplos": [
+    {
+      "contact_name": string,
+      "mensagem_cliente": string ou null,
+      "resposta_atendente": string ou null (null = sem resposta da atendente),
+      "horas_sem_resposta": number ou null,
+      "problema": string (1 frase curta explicando o problema),
+      "script_sugerido": string (mensagem WhatsApp para recuperar o cliente, 2-3 linhas, tom amigável, sem exagerar emojis)
+    }
+  ]
 }
-Priorize: risco de receita, oportunidades de conversão, eficiência operacional, padrões sazonais de joalherias (datas comemorativas próximas), e coaching de equipe.`,
-        `Dados joalheria (30 dias):\n${JSON.stringify(enrichedContext, null, 2)}\n\nGere 6 insights estratégicos altamente acionáveis para o gestor.`,
+Priorize: risco de receita, oportunidades de conversão, eficiência operacional, padrões sazonais de joalherias, coaching de equipe.`,
+        `Dados joalheria (30 dias):\n${JSON.stringify(enrichedContext, null, 2)}${examplesText}\n\nGere 6 insights estratégicos acionáveis.`,
       );
 
       let parsed: { insights: unknown[] };
@@ -1139,10 +1374,14 @@ Priorize: risco de receita, oportunidades de conversão, eficiência operacional
         const cleaned = raw.replace(/^```json\n?/, "").replace(/\n?```$/, "");
         parsed = JSON.parse(cleaned);
       } catch {
-        return jsonResponse({ error: "Failed to parse insights" }, 422);
+        try { parsed = extractJson(insightsData.content[0].text) as { insights: unknown[] }; }
+        catch { return jsonResponse({ error: "Failed to parse insights" }, 422); }
       }
 
-      return jsonResponse({ insights: parsed.insights });
+      return jsonResponse({
+        insights: parsed.insights,
+        estimated_loss_total_brl: estimatedLossTotal,
+      });
     }
 
     // ─── get_temporal_patterns ─────────────────────────────────────────────
