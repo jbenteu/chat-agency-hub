@@ -22,6 +22,7 @@ import { CRMContactDrawerData } from "./CRMContactDrawerData";
 import { CRMTaskList } from "./CRMTaskList";
 import { CRMTimeline } from "./CRMTimeline";
 import { CRMScoreBadge } from "./CRMScoreBadge";
+import { NewDealDialog } from "./NewDealDialog";
 
 function getAvatarColor(name: string): string {
   let hash = 0;
