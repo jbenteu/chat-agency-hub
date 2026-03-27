@@ -146,11 +146,20 @@ export function useDeals() {
       }
     },
     onMutate: async ({ id, stage, pipeline_stage_id }) => {
+      mutatingRef.current = true;
       await queryClient.cancelQueries({ queryKey: ["deals"] });
       const previous = queryClient.getQueryData<Deal[]>(["deals"]);
+      const lowerStage = stage.toLowerCase();
+      const newStatus = lowerStage.includes("ganho") || lowerStage.includes("won")
+        ? "won"
+        : lowerStage.includes("perdido") || lowerStage.includes("lost")
+        ? "lost"
+        : "open";
       queryClient.setQueryData<Deal[]>(["deals"], (old) =>
         (old || []).map((d) =>
-          d.id === id ? { ...d, stage, pipeline_stage_id: pipeline_stage_id ?? d.pipeline_stage_id } : d
+          d.id === id
+            ? { ...d, stage, status: newStatus, pipeline_stage_id: pipeline_stage_id ?? d.pipeline_stage_id }
+            : d
         )
       );
       return { previous };
@@ -160,7 +169,12 @@ export function useDeals() {
         queryClient.setQueryData(["deals"], context.previous);
       }
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["deals"] }),
+    onSettled: () => {
+      setTimeout(() => {
+        mutatingRef.current = false;
+        queryClient.invalidateQueries({ queryKey: ["deals"] });
+      }, 500);
+    },
   });
 
   const deleteDeal = useMutation({
