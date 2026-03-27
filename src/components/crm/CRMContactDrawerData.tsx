@@ -221,12 +221,9 @@ export function CRMContactDrawerData({ contact, onDirtyChange }: CRMContactDrawe
           <Select value={form.source || "manual"} onValueChange={(v) => set("source", v)}>
             <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="manual">Manual</SelectItem>
-              <SelectItem value="whatsapp">WhatsApp</SelectItem>
-              <SelectItem value="instagram">Instagram</SelectItem>
-              <SelectItem value="facebook">Facebook</SelectItem>
-              <SelectItem value="landing_page">Landing Page</SelectItem>
-              <SelectItem value="indicacao">Indicação</SelectItem>
+              {origins.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </FormField>
@@ -234,10 +231,9 @@ export function CRMContactDrawerData({ contact, onDirtyChange }: CRMContactDrawe
           <Select value={form.lifecycle_stage || "lead"} onValueChange={(v) => set("lifecycle_stage", v)}>
             <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="lead">Lead</SelectItem>
-              <SelectItem value="prospect">Prospect</SelectItem>
-              <SelectItem value="customer">Cliente</SelectItem>
-              <SelectItem value="inactive">Inativo</SelectItem>
+              {lifecycleStages.map((s) => (
+                <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </FormField>
