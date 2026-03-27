@@ -13,15 +13,21 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   stages?: PipelineStage[];
+  defaultContactId?: string;
 }
 
-export function NewDealDialog({ open, onOpenChange, stages = [] }: Props) {
+export function NewDealDialog({ open, onOpenChange, stages = [], defaultContactId }: Props) {
   const { createDeal } = useDeals();
   const { contacts } = useContacts();
   const { toast } = useToast();
   const [title, setTitle] = useState("");
-  const [contactId, setContactId] = useState("");
+  const [contactId, setContactId] = useState(defaultContactId || "");
   const [stageId, setStageId] = useState("");
+
+  // Sync defaultContactId when it changes
+  React.useEffect(() => {
+    if (defaultContactId) setContactId(defaultContactId);
+  }, [defaultContactId]);
 
   const defaultStage = stages[0];
 

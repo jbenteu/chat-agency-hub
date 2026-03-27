@@ -1668,6 +1668,7 @@ const WhatsAppInbox = () => {
               profilePics={profilePics}
               groupInfo={currentGroupInfo}
               instanceName={instances.find((i) => i.id === selectedConv.instance_id)?.instance_name || ""}
+              instanceDisplayName={instances.find((i) => i.id === selectedConv.instance_id)?.display_name || undefined}
               messages={messages}
               onClose={() => setShowContactPanel(false)}
             />
