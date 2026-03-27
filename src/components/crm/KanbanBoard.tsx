@@ -149,6 +149,8 @@ export function KanbanBoard() {
               stage={stage}
               deals={dealsByStage[stage.id] || []}
               onDealClick={setSelectedDeal}
+              onRenameStage={handleRenameStage}
+              onHideStage={toggleStage}
             />
           ))}
         </div>
