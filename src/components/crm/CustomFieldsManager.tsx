@@ -304,7 +304,7 @@ export function CustomFieldsManager({ entityType = "contact" }: CustomFieldsMana
             <AlertDialogTitle>Excluir campo</AlertDialogTitle>
             <AlertDialogDescription>
               Tem certeza que deseja excluir "{deleteTarget?.field_label}"?
-              Os dados deste campo em todos os {entityType === "contact" ? "contatos" : "negociações"} serão perdidos.
+              Os dados deste campo em todos os {entityType === "contact" ? "contatos" : "vendas"} serão perdidos.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

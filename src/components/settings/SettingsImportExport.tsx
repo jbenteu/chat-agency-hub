@@ -45,7 +45,7 @@ export function SettingsImportExport() {
           <div className="space-y-2">
             {[
               { label: "Contatos", icon: Users, desc: "Todos os contatos do CRM" },
-              { label: "Negociações", icon: DollarSign, desc: "Histórico de deals" },
+              { label: "Vendas", icon: DollarSign, desc: "Histórico de vendas" },
               { label: "Atividades", icon: Activity, desc: "Log de atividades" },
               { label: "Mensagens WhatsApp", icon: MessageCircle, desc: "Histórico de conversas" },
             ].map((item) => (

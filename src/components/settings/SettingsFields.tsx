@@ -16,7 +16,7 @@ export function SettingsFields() {
           <Tabs defaultValue="contacts">
             <TabsList className="mb-4">
               <TabsTrigger value="contacts">Contatos</TabsTrigger>
-              <TabsTrigger value="deals">Negociações</TabsTrigger>
+              <TabsTrigger value="deals">Vendas</TabsTrigger>
             </TabsList>
             <TabsContent value="contacts">
               <CustomFieldsManager entityType="contact" />

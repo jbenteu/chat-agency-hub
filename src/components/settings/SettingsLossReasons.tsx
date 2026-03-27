@@ -84,7 +84,7 @@ export function SettingsLossReasons() {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">Motivos de Perda</h2>
-        <p className="text-sm text-muted-foreground">Configure os motivos para negociações perdidas</p>
+        <p className="text-sm text-muted-foreground">Configure os motivos para vendas perdidas</p>
       </div>
 
       <Card>
