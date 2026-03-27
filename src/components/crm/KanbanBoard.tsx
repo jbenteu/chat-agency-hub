@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
 import { usePipeline, type PipelineStage } from "@/hooks/use-pipeline";
 import { useDeals, type Deal } from "@/hooks/use-deals";
@@ -11,6 +11,7 @@ import { NewDealDialog } from "./NewDealDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDeals as useDealsForLoss } from "@/hooks/use-deals";
 import { usePipelineViews } from "@/hooks/use-pipeline-views";
+import { toast } from "sonner";
 
 export function KanbanBoard() {
   const { stages, isLoading: stagesLoading } = usePipeline();
@@ -25,6 +26,12 @@ export function KanbanBoard() {
   const [pendingMove, setPendingMove] = useState<{ dealId: string; stage: PipelineStage; prevStage: string } | null>(null);
 
   const { views, activeViewId, createView, deleteView, changeView, hiddenStageIds, toggleStage } = usePipelineViews();
+  const { updateStage } = usePipeline();
+
+  const handleRenameStage = useCallback((stageId: string, newName: string) => {
+    updateStage.mutate({ id: stageId, name: newName });
+    toast.success(`Estágio renomeado para "${newName}"`);
+  }, [updateStage]);
 
   const visibleStages = useMemo(() => {
     return stages.filter((s) => !hiddenStageIds.includes(s.id));
@@ -142,6 +149,8 @@ export function KanbanBoard() {
               stage={stage}
               deals={dealsByStage[stage.id] || []}
               onDealClick={setSelectedDeal}
+              onRenameStage={handleRenameStage}
+              onHideStage={toggleStage}
             />
           ))}
         </div>
