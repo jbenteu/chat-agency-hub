@@ -40,7 +40,7 @@ export function MessageContextMenu({
   return (
     <ContextMenu onOpenChange={(open) => { if (!open) setShowFullPicker(false); }}>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className={showFullPicker ? "w-80 p-0" : "w-52"}>
+      <ContextMenuContent className={showFullPicker ? "w-80 p-0" : "w-52"} onPointerDownOutside={showFullPicker ? (e) => e.preventDefault() : undefined}>
         {showFullPicker ? (
           <div>
             <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border">
@@ -62,6 +62,7 @@ export function MessageContextMenu({
                   {QUICK_REACTIONS.map((emoji) => (
                     <button
                       key={emoji}
+                      onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onReact(emoji); }}
                       className="flex h-8 w-8 items-center justify-center rounded-full text-lg transition-transform hover:scale-125 active:scale-95"
                     >
@@ -69,6 +70,7 @@ export function MessageContextMenu({
                     </button>
                   ))}
                   <button
+                    onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowFullPicker(true); }}
                     className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-all hover:scale-110 hover:bg-accent active:scale-95"
                     title="Mais emojis"
@@ -171,7 +173,9 @@ function EmojiPickerGrid({ onSelect }: { onSelect: (emoji: string) => void }) {
             <p className="text-[10px] font-medium text-muted-foreground mb-1 px-0.5">{cat.label}</p>
             <div className="grid grid-cols-8 gap-0.5 mb-2">
               {cat.emojis.map((emoji) => (
-                <button key={emoji} onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(emoji); }}
+              <button key={emoji}
+                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSelect(emoji); }}
                   className="flex h-8 w-8 items-center justify-center rounded-md text-lg hover:bg-accent transition-colors active:scale-95"
                 >{emoji}</button>
               ))}
