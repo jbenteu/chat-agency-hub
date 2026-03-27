@@ -82,7 +82,7 @@ export function CRMContactDrawerData({ contact }: CRMContactDrawerDataProps) {
 
   const [form, setForm] = useState({
     name: contact.name || "",
-    phone: contact.phone || "",
+    phone: formatPhoneForDisplay(contact.phone || ""),
     email: contact.email || "",
     company: contact.company || "",
     instagram: contact.instagram || "",
