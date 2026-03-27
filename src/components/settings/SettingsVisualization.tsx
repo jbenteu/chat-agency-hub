@@ -129,7 +129,7 @@ export function SettingsVisualization() {
         <CardContent className="space-y-3">
           {[
             { label: "Mostrar foto/avatar no card", checked: prefs.showAvatar, key: "showAvatar" as const },
-            { label: "Mostrar valor da negociação", checked: prefs.showValue, key: "showValue" as const },
+            { label: "Mostrar valor da venda", checked: prefs.showValue, key: "showValue" as const },
             { label: "Mostrar tags no card", checked: prefs.showTags, key: "showTags" as const },
             { label: "Mostrar data de criação", checked: prefs.showDate, key: "showDate" as const },
             { label: "Compactar cards", checked: prefs.compactCards, key: "compactCards" as const },

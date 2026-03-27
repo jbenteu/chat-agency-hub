@@ -19,7 +19,7 @@ interface NotifRow {
 const CRM_DEFAULTS: NotifRow[] = [
   { label: "Novo lead atribuído a mim", key: "lead_assigned", inApp: true, email: false },
   { label: "Lead movido de estágio", key: "lead_moved", inApp: true, email: false },
-  { label: "Negociação fechada (ganha ou perdida)", key: "deal_closed", inApp: true, email: true },
+  { label: "Venda fechada (ganha ou perdida)", key: "deal_closed", inApp: true, email: true },
   { label: "Tarefa com prazo vencido", key: "task_overdue", inApp: true, email: true },
   { label: "Menção em comentário", key: "mention", inApp: true, email: false },
 ];

@@ -146,7 +146,7 @@ export function DealCard({ deal, onClick, stageColor }: DealCardProps) {
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir negociação</AlertDialogTitle>
+            <AlertDialogTitle>Excluir venda</AlertDialogTitle>
             <AlertDialogDescription>
               Tem certeza que deseja excluir "{deal.title}"? Esta ação não pode ser desfeita.
             </AlertDialogDescription>

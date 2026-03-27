@@ -43,7 +43,7 @@ function ContactDealsTab({ contact }: { contact: Contact }) {
         <ShoppingBag className="h-3.5 w-3.5" /> Nova Venda
       </Button>
       {contactDeals.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-4">Nenhuma negociação vinculada</p>
+        <p className="text-sm text-muted-foreground text-center py-4">Nenhuma venda vinculada</p>
       ) : (
         contactDeals.map((deal) => {
           const stage = stages.find((s) => s.id === deal.pipeline_stage_id || s.name === deal.stage);
