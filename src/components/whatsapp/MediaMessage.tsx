@@ -294,14 +294,13 @@ function VideoPlayer({ src, mimeType, thumbSrc, mediaWidth, mediaHeight, onRedow
   return (
     <div
       className="relative mb-1 overflow-hidden rounded-lg bg-black"
-      style={{ maxWidth: 280 }}
+      style={containerStyle}
       onMouseMove={revealControls}
       onTouchStart={revealControls}
     >
       <video
         ref={videoRef}
-        className="block w-full"
-        style={{ maxHeight: 300 }}
+        className="block w-full h-full object-contain"
         preload="metadata"
         poster={thumbSrc || undefined}
         muted={muted}
