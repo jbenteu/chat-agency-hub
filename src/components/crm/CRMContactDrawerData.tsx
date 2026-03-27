@@ -101,18 +101,31 @@ export function CRMContactDrawerData({ contact, onDirtyChange }: CRMContactDrawe
     tags: contact.tags || [],
   });
 
+  const initialFormRef = useRef(JSON.stringify(form));
+
   const set = (key: keyof typeof form, value: unknown) =>
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => {
+      const next = { ...f, [key]: value };
+      onDirtyChange?.(JSON.stringify(next) !== initialFormRef.current);
+      return next;
+    });
 
   const handleSave = () => {
     updateContact.mutate(
       { id: contact.id, ...form, custom_fields: customValues },
       {
-        onSuccess: () => toast.success("Contato atualizado"),
+        onSuccess: () => {
+          toast.success("Contato atualizado");
+          initialFormRef.current = JSON.stringify(form);
+          onDirtyChange?.(false);
+        },
         onError: () => toast.error("Erro ao atualizar contato"),
       }
     );
   };
+
+  const origins = getCustomOrigins();
+  const lifecycleStages = getCustomLifecycleStages();
 
   return (
     <div className="p-4 space-y-4">
