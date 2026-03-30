@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useEffect } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 export interface Contact {
   id: string;
@@ -80,19 +80,41 @@ export function useContacts(filters?: ContactFilters) {
 
       const { data, error } = await q;
       if (error) throw error;
-      return (data || []) as Contact[];
+
+      // Deduplicate contacts by ID to prevent duplicates from real-time race conditions
+      const seen = new Set<string>();
+      const deduplicated: Contact[] = [];
+      for (const contact of (data || []) as Contact[]) {
+        if (!seen.has(contact.id)) {
+          seen.add(contact.id);
+          deduplicated.push(contact);
+        }
+      }
+      return deduplicated;
     },
   });
+
+  // Debounced invalidation to prevent rapid-fire real-time events
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const invalidateContacts = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+    }, 300);
+  }, [queryClient]);
 
   useEffect(() => {
     const channel = supabase
       .channel("contacts-changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "contacts" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["contacts"] });
+        invalidateContacts();
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient, invalidateContacts]);
 
   const createContact = useMutation({
     mutationFn: async (contact: Partial<Contact> & { name: string; tenant_id: string }) => {

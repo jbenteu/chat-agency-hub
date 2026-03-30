@@ -10,15 +10,13 @@ import { LostReasonModal } from "./LostReasonModal";
 import { NewDealDialog } from "./NewDealDialog";
 import { CRMSettingsDialog } from "./CRMSettingsDialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDeals as useDealsForLoss } from "@/hooks/use-deals";
 import { usePipelineViews } from "@/hooks/use-pipeline-views";
 import { toast } from "sonner";
 
 export function KanbanBoard() {
   const { stages, isLoading: stagesLoading } = usePipeline();
-  const { deals, isLoading: dealsLoading, moveDeal } = useDeals();
+  const { deals, isLoading: dealsLoading, moveDeal, updateDeal } = useDeals();
   const { contacts } = useContacts();
-  const { updateDeal } = useDealsForLoss();
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [showNewDeal, setShowNewDeal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -40,7 +38,17 @@ export function KanbanBoard() {
   }, [stages, hiddenStageIds]);
 
   const filteredDeals = useMemo(() => {
-    let result = deals;
+    // Deduplicate deals by ID as a safety net against any upstream duplicates
+    const uniqueDeals: Deal[] = [];
+    const seenIds = new Set<string>();
+    for (const deal of deals) {
+      if (!seenIds.has(deal.id)) {
+        seenIds.add(deal.id);
+        uniqueDeals.push(deal);
+      }
+    }
+
+    let result = uniqueDeals;
     if (search) {
       const s = search.toLowerCase();
       result = result.filter(
@@ -58,18 +66,21 @@ export function KanbanBoard() {
   const dealsByStage = useMemo(() => {
     const map: Record<string, Deal[]> = {};
     for (const stage of visibleStages) map[stage.id] = [];
-    const placed = new Set<string>();
+    const placedDealIds = new Set<string>();
     for (const deal of filteredDeals) {
-      if (placed.has(deal.id)) continue;
+      // Skip deals already placed (prevents any duplicate by deal ID)
+      if (placedDealIds.has(deal.id)) continue;
+      placedDealIds.add(deal.id);
+
+      // Match stage by pipeline_stage_id first, then by name as fallback
       const matchedStage =
         visibleStages.find((s) => s.id === deal.pipeline_stage_id) ||
         visibleStages.find((s) => s.name === deal.stage);
       if (matchedStage) {
         map[matchedStage.id].push(deal);
-      } else if (visibleStages.length > 0) {
-        map[visibleStages[0].id].push(deal);
       }
-      placed.add(deal.id);
+      // Deals without a matching visible stage are intentionally excluded
+      // to avoid cluttering the first column with orphaned deals
     }
     return map;
   }, [filteredDeals, visibleStages]);
