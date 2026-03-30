@@ -369,10 +369,12 @@ const Team = () => {
         <Tabs defaultValue="all" onValueChange={setRoleFilter}>
           <TabsList>
             <TabsTrigger value="all">Todos</TabsTrigger>
+            <TabsTrigger value="gerente">Gerentes</TabsTrigger>
             <TabsTrigger value="gestor">Gestores</TabsTrigger>
             <TabsTrigger value="sucesso_cliente">Sucesso do Cliente</TabsTrigger>
           </TabsList>
           <TabsContent value="all" className="mt-4">{renderMembers()}</TabsContent>
+          <TabsContent value="gerente" className="mt-4">{renderMembers("gerente")}</TabsContent>
           <TabsContent value="gestor" className="mt-4">{renderMembers("gestor")}</TabsContent>
           <TabsContent value="sucesso_cliente" className="mt-4">{renderMembers("sucesso_cliente")}</TabsContent>
         </Tabs>

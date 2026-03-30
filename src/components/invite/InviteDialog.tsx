@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth, type UserRole } from "@/components/auth/AuthProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -10,6 +10,12 @@ import { useToast } from "@/hooks/use-toast";
 import { UserPlus, Copy, Loader2, CheckCircle2 } from "lucide-react";
 
 import { CREATION_PERMISSIONS } from "@/lib/role-permissions";
+
+interface StaffOption {
+  id: string;
+  full_name: string;
+  role: string;
+}
 
 interface InviteDialogProps {
   defaultRole?: UserRole;
@@ -25,10 +31,42 @@ export function InviteDialog({ defaultRole, trigger }: InviteDialogProps) {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Gestor/CS pre-assignment (only shown when roleToAssign === "cliente")
+  const [gestorId, setGestorId] = useState<string>("");
+  const [csId, setCsId] = useState<string>("");
+  const [gestores, setGestores] = useState<StaffOption[]>([]);
+  const [csUsers, setCsUsers] = useState<StaffOption[]>([]);
+  const [loadingStaff, setLoadingStaff] = useState(false);
+
   const userRole = profile?.role ?? "cliente";
   const allowedRoles = CREATION_PERMISSIONS[userRole] ?? [];
 
   if (allowedRoles.length === 0) return null;
+
+  // Load gestores and CS when the role changes to "cliente"
+  useEffect(() => {
+    if (roleToAssign !== "cliente") {
+      setGestores([]);
+      setCsUsers([]);
+      setGestorId("");
+      setCsId("");
+      return;
+    }
+
+    setLoadingStaff(true);
+    supabase
+      .from("profiles")
+      .select("id, full_name, role")
+      .in("role", ["gestor", "sucesso_cliente"])
+      .eq("is_active", true)
+      .order("full_name")
+      .then(({ data }) => {
+        const all = data ?? [];
+        setGestores(all.filter((p) => p.role === "gestor"));
+        setCsUsers(all.filter((p) => p.role === "sucesso_cliente"));
+      })
+      .finally(() => setLoadingStaff(false));
+  }, [roleToAssign]);
 
   const handleGenerate = async () => {
     if (!roleToAssign) {
@@ -41,9 +79,13 @@ export function InviteDialog({ defaultRole, trigger }: InviteDialogProps) {
     setCopied(false);
 
     try {
-      const { data, error } = await supabase.functions.invoke("generate-invite-link", {
-        body: { role_to_assign: roleToAssign },
-      });
+      const body: Record<string, unknown> = { role_to_assign: roleToAssign };
+      if (roleToAssign === "cliente") {
+        if (gestorId) body.gestor_id = gestorId;
+        if (csId) body.cs_id = csId;
+      }
+
+      const { data, error } = await supabase.functions.invoke("generate-invite-link", { body });
 
       if (error || !data?.success) {
         toast({ title: "Erro", description: data?.error ?? "Erro ao gerar convite.", variant: "destructive" });
@@ -71,6 +113,8 @@ export function InviteDialog({ defaultRole, trigger }: InviteDialogProps) {
     if (!open) {
       setInviteUrl(null);
       setCopied(false);
+      setGestorId("");
+      setCsId("");
       if (!defaultRole) setRoleToAssign("");
     }
   };
@@ -102,6 +146,59 @@ export function InviteDialog({ defaultRole, trigger }: InviteDialogProps) {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Gestor and CS assignment — only for cliente invites */}
+          {roleToAssign === "cliente" && (
+            <>
+              <div className="space-y-1.5">
+                <Label>
+                  Gestor responsável
+                  <span className="ml-1 text-xs text-muted-foreground">(opcional)</span>
+                </Label>
+                <Select
+                  value={gestorId}
+                  onValueChange={setGestorId}
+                  disabled={loadingStaff}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingStaff ? "Carregando..." : "Selecione um Gestor"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {gestores.length === 0 && !loadingStaff && (
+                      <SelectItem value="_none" disabled>Nenhum gestor disponível</SelectItem>
+                    )}
+                    {gestores.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>{g.full_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>
+                  Sucesso do Cliente (CS)
+                  <span className="ml-1 text-xs text-muted-foreground">(opcional)</span>
+                </Label>
+                <Select
+                  value={csId}
+                  onValueChange={setCsId}
+                  disabled={loadingStaff}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingStaff ? "Carregando..." : "Selecione um CS"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {csUsers.length === 0 && !loadingStaff && (
+                      <SelectItem value="_none" disabled>Nenhum CS disponível</SelectItem>
+                    )}
+                    {csUsers.map((cs) => (
+                      <SelectItem key={cs.id} value={cs.id}>{cs.full_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
 
           {!inviteUrl ? (
             <Button onClick={handleGenerate} disabled={loading || !roleToAssign} className="w-full">

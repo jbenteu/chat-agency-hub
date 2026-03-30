@@ -36,7 +36,7 @@ Deno.serve(async (req: Request) => {
     // Validate invite token
     const { data: invite, error: inviteError } = await supabaseAdmin
       .from("invite_links")
-      .select("id, token, role_to_assign, used, expires_at, created_by")
+      .select("id, token, role_to_assign, used, expires_at, created_by, gestor_id, cs_id")
       .eq("token", token)
       .single();
 
@@ -112,7 +112,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Create hierarchy relationship
+    // Create hierarchy relationship with invite creator
     const { error: relationError } = await supabaseAdmin
       .from("user_relationships")
       .insert({
@@ -121,7 +121,71 @@ Deno.serve(async (req: Request) => {
       });
 
     if (relationError) {
-      console.error("Aviso: Erro ao criar user_relationship:", relationError);
+      console.error("Aviso: Erro ao criar user_relationship (criador):", relationError);
+    }
+
+    // If this is a cliente invite with pre-assigned gestor/cs, wire up the relationships
+    if (invite.role_to_assign === "cliente" && (invite.gestor_id || invite.cs_id)) {
+      // Get the new user's tenant (created by the handle_new_user trigger)
+      const { data: userRoleRow } = await supabaseAdmin
+        .from("user_roles")
+        .select("tenant_id")
+        .eq("user_id", newUserId)
+        .maybeSingle();
+
+      const clientTenantId = userRoleRow?.tenant_id ?? null;
+
+      // Create user_relationship and tenant_assignment for gestor
+      if (invite.gestor_id) {
+        const { error: gestorRelErr } = await supabaseAdmin
+          .from("user_relationships")
+          .insert({ superior_id: invite.gestor_id, subordinate_id: newUserId })
+          .select()
+          .maybeSingle();
+        if (gestorRelErr) {
+          console.error("Aviso: Erro ao criar user_relationship (gestor):", gestorRelErr);
+        }
+
+        if (clientTenantId) {
+          const { error: gestorAssignErr } = await supabaseAdmin
+            .from("tenant_assignments")
+            .insert({
+              manager_id: invite.gestor_id,
+              tenant_id: clientTenantId,
+              assigned_by: invite.created_by,
+              notes: "Atribuído automaticamente via link de convite",
+            });
+          if (gestorAssignErr && gestorAssignErr.code !== "23505") {
+            console.error("Aviso: Erro ao criar tenant_assignment (gestor):", gestorAssignErr);
+          }
+        }
+      }
+
+      // Create user_relationship and tenant_assignment for CS
+      if (invite.cs_id) {
+        const { error: csRelErr } = await supabaseAdmin
+          .from("user_relationships")
+          .insert({ superior_id: invite.cs_id, subordinate_id: newUserId })
+          .select()
+          .maybeSingle();
+        if (csRelErr) {
+          console.error("Aviso: Erro ao criar user_relationship (cs):", csRelErr);
+        }
+
+        if (clientTenantId) {
+          const { error: csAssignErr } = await supabaseAdmin
+            .from("tenant_assignments")
+            .insert({
+              manager_id: invite.cs_id,
+              tenant_id: clientTenantId,
+              assigned_by: invite.created_by,
+              notes: "Atribuído automaticamente via link de convite",
+            });
+          if (csAssignErr && csAssignErr.code !== "23505") {
+            console.error("Aviso: Erro ao criar tenant_assignment (cs):", csAssignErr);
+          }
+        }
+      }
     }
 
     // Mark invite as used
