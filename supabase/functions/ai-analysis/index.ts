@@ -618,8 +618,33 @@ Se o usuário pedir scripts, crie scripts realistas para joalherias premium.`;
     return jsonResponse({ reply });
   }
 
+  // ─── list_tenants ─────────────────────────────────────────────────────────────
+  if (action === "list_tenants") {
+    if (!userId && !isServiceRole) return jsonResponse({ error: "Unauthorized" }, 401);
+
+    // Admins see all tenants; others see only their own
+    const isAdminRole = ["admin", "super_admin"].includes(userRole || "");
+    if (isAdminRole || isServiceRole) {
+      const { data: tenants } = await supabaseAdmin
+        .from("tenants")
+        .select("id, name")
+        .order("name");
+      return jsonResponse({ tenants: tenants || [] });
+    }
+
+    // Non-admin: return only own tenant
+    if (tenantId) {
+      const { data: tenant } = await supabaseAdmin
+        .from("tenants")
+        .select("id, name")
+        .eq("id", tenantId)
+        .maybeSingle();
+      return jsonResponse({ tenants: tenant ? [tenant] : [] });
+    }
+    return jsonResponse({ tenants: [] });
+  }
+
   // ─── Legacy actions (backward compat) ────────────────────────────────────────
-  // Keep these for any existing UI code that still calls them
   if (action === "get_system_settings" || action === "update_system_settings" ||
     action === "get_dashboard" || action === "get_insights" || action === "ask_ai" ||
     action === "get_temporal_patterns" || action === "get_pipeline" || action === "get_analysis_status" ||
@@ -627,7 +652,6 @@ Se o usuário pedir scripts, crie scripts realistas para joalherias premium.`;
     action === "list_accessible_tenants" || action === "get_analysis_runs" ||
     action === "trigger_manual_run" || action === "check_scheduled_run" ||
     action === "delete_run" || action === "get_run_scores") {
-    // Return empty/default responses for legacy actions
     if (action === "get_system_settings") return jsonResponse({ settings: {} });
     if (action === "list_accessible_tenants") return jsonResponse({ tenants: [], team_members: [] });
     if (action === "get_analysis_runs") return jsonResponse({ runs: [] });

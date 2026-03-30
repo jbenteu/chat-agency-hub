@@ -2,12 +2,13 @@ import React, { lazy, Suspense, useState, useEffect, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAIAnalysis, type AIAnalysisRun, type AIAnalysisConversation, type AIAnalysisImprovement, type AnalysisSummary } from "@/hooks/use-ai-analysis";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { BrainCircuit, RefreshCw, Calendar, AlertCircle, Loader2, Play } from "lucide-react";
+import { BrainCircuit, Building2, Calendar, Loader2, Play } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -30,7 +31,7 @@ function TabSkeleton() {
 }
 
 export default function AIAnalysis() {
-  const { getLatestAnalysis, runAnalysis } = useAIAnalysis();
+  const { getLatestAnalysis, runAnalysis, listTenants } = useAIAnalysis();
   const { profile } = useAuth();
   const { toast } = useToast();
   const userRole = profile?.role ?? "cliente";
@@ -45,15 +46,25 @@ export default function AIAnalysis() {
   const [runningAnalysis, setRunningAnalysis] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [showSchedule, setShowSchedule] = useState(false);
+  const [tenants, setTenants] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(undefined);
+
+  // Load tenant list for admins
+  useEffect(() => {
+    if (!isAdmin) return;
+    listTenants().then(({ tenants: list }) => {
+      setTenants(list);
+      if (list.length > 0 && !selectedTenantId) setSelectedTenantId(list[0].id);
+    }).catch(console.error);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   const loadAnalysis = useCallback(async () => {
     try {
-      const result = await getLatestAnalysis();
+      const result = await getLatestAnalysis(selectedTenantId);
       setRun(result.run);
       setConversations(result.conversations || []);
       setImprovements(result.improvements || []);
-
-      // If processing, start polling
       if (result.run?.status === "processing") {
         setPollingActive(true);
       } else {
@@ -64,11 +75,14 @@ export default function AIAnalysis() {
     } finally {
       setLoading(false);
     }
-  }, [getLatestAnalysis]);
+  }, [getLatestAnalysis, selectedTenantId]);
 
   useEffect(() => {
+    // For admins, wait until tenant is selected
+    if (isAdmin && !selectedTenantId) return;
+    setLoading(true);
     loadAnalysis();
-  }, [loadAnalysis]);
+  }, [loadAnalysis, isAdmin, selectedTenantId]);
 
   // Polling when processing
   useEffect(() => {
@@ -82,7 +96,7 @@ export default function AIAnalysis() {
   const handleRunAnalysis = async () => {
     setRunningAnalysis(true);
     try {
-      await runAnalysis();
+      await runAnalysis(selectedTenantId);
       toast({ title: "Análise iniciada", description: "A análise está sendo processada..." });
       setPollingActive(true);
       await loadAnalysis();
@@ -118,6 +132,23 @@ export default function AIAnalysis() {
               )}
             </div>
           </div>
+
+          {/* Tenant selector for admins */}
+          {isAdmin && tenants.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
+                <SelectTrigger className="h-8 w-52 text-sm">
+                  <SelectValue placeholder="Selecionar cliente..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {tenants.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             {isProcessing && (

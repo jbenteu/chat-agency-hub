@@ -204,6 +204,7 @@ export function useAIAnalysis() {
   const updateSystemSettings = async (settings: Partial<AISystemSettings> & { api_key?: string }): Promise<AISystemSettings> => {
     const { data, error } = await supabase
       .from("ai_system_settings")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .update(settings as any)
       .select()
       .single();
@@ -218,6 +219,7 @@ export function useAIAnalysis() {
       .order("created_at", { ascending: false })
       .range(page * 20, (page + 1) * 20 - 1);
     if (error) throw error;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (data ?? []).map((r: any) => ({
       id: r.id,
       tenant_id: r.tenant_id,
@@ -249,6 +251,10 @@ export function useAIAnalysis() {
     return await invokeAI({ action: "analyze_conversation", conversation_id: conversationId, tenant_id: tenantId });
   };
 
+  const listTenants = async (): Promise<{ tenants: Array<{ id: string; name: string }> }> => {
+    return await invokeAI({ action: "list_tenants" });
+  };
+
   return {
     getLatestAnalysis,
     getAnalysisHistory,
@@ -257,6 +263,7 @@ export function useAIAnalysis() {
     updateSchedule,
     runAnalysis,
     chatConsultant,
+    listTenants,
     getSystemSettings,
     updateSystemSettings,
     getAnalysisRuns,
