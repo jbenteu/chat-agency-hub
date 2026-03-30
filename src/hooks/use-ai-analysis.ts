@@ -15,6 +15,9 @@ export interface AIAnalysisRun {
   created_at: string;
   completed_at: string | null;
   created_by: string | null;
+  run_at?: string;
+  triggered_by?: string;
+  conversations_total?: number;
 }
 
 export interface AnalysisSummary {
