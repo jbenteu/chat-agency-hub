@@ -126,6 +126,8 @@ const WhatsAppInbox = () => {
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [showNewConvDialog, setShowNewConvDialog] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const deepLinkHandledRef = useRef(false);
   const isMobile = useIsMobile();
   // (Contact details, editing, invite link now managed by InfoPanel)
   // Setup flow state (no instances)
@@ -351,6 +353,34 @@ const WhatsAppInbox = () => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, selectedConv?.id]);
+
+  // ── Deep link: handle ?conversationId=xxx&messageId=yyy ──
+  useEffect(() => {
+    if (deepLinkHandledRef.current || conversations.length === 0) return;
+    const params = new URLSearchParams(location.search);
+    const convId = params.get("conversationId");
+    const msgId = params.get("messageId");
+    if (!convId) return;
+    const conv = conversations.find((c) => c.id === convId);
+    if (!conv) return;
+    deepLinkHandledRef.current = true;
+    setSelectedConv(conv);
+    if (msgId) setHighlightedMessageId(msgId);
+  }, [conversations, location.search]);
+
+  // ── Deep link: scroll to and highlight message after load ──
+  useEffect(() => {
+    if (!highlightedMessageId || messages.length === 0) return;
+    const el = document.querySelector(`[data-message-id="${highlightedMessageId}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-yellow-400", "ring-offset-1", "rounded-lg");
+    const timer = setTimeout(() => {
+      el.classList.remove("ring-2", "ring-yellow-400", "ring-offset-1", "rounded-lg");
+      setHighlightedMessageId(null);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [highlightedMessageId, messages]);
 
   const scheduleSilentConversationsRefresh = useCallback(() => {
     if (conversationsRefreshTimerRef.current) return;
