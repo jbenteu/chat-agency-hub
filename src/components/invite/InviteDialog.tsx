@@ -9,21 +9,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { UserPlus, Copy, Loader2, CheckCircle2 } from "lucide-react";
 
-const CREATION_PERMISSIONS: Record<string, { value: UserRole; label: string }[]> = {
-  admin: [
-    { value: "gerente", label: "Gerente" },
-    { value: "gestor", label: "Gestor" },
-    { value: "sucesso_cliente", label: "Sucesso do Cliente" },
-    { value: "cliente", label: "Cliente" },
-  ],
-  gerente: [
-    { value: "gestor", label: "Gestor" },
-    { value: "sucesso_cliente", label: "Sucesso do Cliente" },
-    { value: "cliente", label: "Cliente" },
-  ],
-  gestor: [{ value: "cliente", label: "Cliente" }],
-  sucesso_cliente: [{ value: "cliente", label: "Cliente" }],
-};
+import { CREATION_PERMISSIONS } from "@/lib/role-permissions";
 
 interface InviteDialogProps {
   defaultRole?: UserRole;

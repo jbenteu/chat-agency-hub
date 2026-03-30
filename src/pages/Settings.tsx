@@ -111,7 +111,12 @@ const SettingsPage = () => {
       if (!item.roles) return true;
       return item.roles.includes(userRole);
     }),
-  })).filter((group) => group.items.length > 0);
+  })).filter((group) => {
+    if (group.items.length === 0) return false;
+    // Ocultar grupo CRM para gestor e sucesso_cliente
+    if (group.title === "CRM" && (userRole === "gestor" || userRole === "sucesso_cliente")) return false;
+    return true;
+  });
 
   const allItems = visibleGroups.flatMap((g) => g.items);
   const ActiveComponent = SECTION_COMPONENTS[activeSection];

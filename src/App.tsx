@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { ImportProgressBanner } from "@/components/whatsapp/ImportProgressBanner";
+import { ROUTE_PERMISSIONS } from "@/lib/role-permissions";
 import LoginPage from "@/components/auth/LoginPage";
 import InvitePage from "@/pages/InvitePage";
 import Index from "./pages/Index";
@@ -34,16 +35,16 @@ const App = () => (
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/convite/:token" element={<InvitePage />} />
-            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-            <Route path="/crm" element={<ProtectedRoute><CRM /></ProtectedRoute>} />
-            <Route path="/whatsapp" element={<ProtectedRoute><WhatsAppInbox /></ProtectedRoute>} />
-            <Route path="/whatsapp/settings" element={<ProtectedRoute><WhatsApp /></ProtectedRoute>} />
-            <Route path="/configuracoes" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-            <Route path="/clientes" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
-            <Route path="/equipe" element={<ProtectedRoute><Team /></ProtectedRoute>} />
-            <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
-            <Route path="/monitoramento" element={<ProtectedRoute><Monitoring /></ProtectedRoute>} />
-            <Route path="/ai-analysis" element={<ProtectedRoute allowedRoles={["cliente", "gestor", "sucesso_cliente", "gerente", "admin"]}><Suspense fallback={<div className="flex items-center justify-center h-screen">Carregando...</div>}><AIAnalysis /></Suspense></ProtectedRoute>} />
+            <Route path="/" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS["/"]}><Index /></ProtectedRoute>} />
+            <Route path="/crm" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS["/crm"]}><CRM /></ProtectedRoute>} />
+            <Route path="/whatsapp" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS["/whatsapp"]}><WhatsAppInbox /></ProtectedRoute>} />
+            <Route path="/whatsapp/settings" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS["/whatsapp/settings"]}><WhatsApp /></ProtectedRoute>} />
+            <Route path="/configuracoes" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS["/configuracoes"]}><SettingsPage /></ProtectedRoute>} />
+            <Route path="/clientes" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS["/clientes"]}><Clients /></ProtectedRoute>} />
+            <Route path="/equipe" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS["/equipe"]}><Team /></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS["/admin"]}><Admin /></ProtectedRoute>} />
+            <Route path="/monitoramento" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS["/monitoramento"]}><Monitoring /></ProtectedRoute>} />
+            <Route path="/ai-analysis" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS["/ai-analysis"]}><Suspense fallback={<div className="flex items-center justify-center h-screen">Carregando...</div>}><AIAnalysis /></Suspense></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           <ImportProgressBanner />
