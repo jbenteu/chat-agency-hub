@@ -65,10 +65,14 @@ CREATE INDEX IF NOT EXISTS ai_analysis_runs_tenant_run_at_idx
 
 ALTER TABLE ai_analysis_runs ENABLE ROW LEVEL SECURITY;
 
--- Users can see runs for their accessible tenants
+-- Users can see runs for their tenant (or accessible tenants via user_roles)
 CREATE POLICY "ai_runs_select" ON ai_analysis_runs
   FOR SELECT USING (
-    tenant_id IN (SELECT unnest(user_accessible_tenant_ids()))
+    EXISTS (
+      SELECT 1 FROM user_roles
+      WHERE user_id = auth.uid()
+        AND tenant_id = ai_analysis_runs.tenant_id
+    )
   );
 
 
