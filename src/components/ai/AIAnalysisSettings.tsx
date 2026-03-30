@@ -64,6 +64,10 @@ const DEFAULT_SETTINGS: AIAnalysisSettings = {
   schedule_timezone: "America/Sao_Paulo",
   last_run_at: null,
   next_run_at: null,
+  max_history_runs: 10,
+  allow_manual_triggers: true,
+  max_triggers_per_period: 0,
+  trigger_period_days: 30,
 };
 
 function formatDateBR(dateStr: string | null): string {
