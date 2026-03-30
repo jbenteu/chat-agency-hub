@@ -50,21 +50,15 @@ export function SettingsIntegrations() {
                     <CardDescription className="text-xs">{int.description}</CardDescription>
                   </div>
                 </div>
-                <Badge variant={int.status === "connected" ? "default" : "secondary"} className="text-[10px]">
-                  {int.status === "connected" ? "Conectado" : "Em breve"}
+                <Badge variant="secondary" className="text-[10px]">
+                  Em breve
                 </Badge>
               </div>
             </CardHeader>
             <CardContent>
-              {int.status === "connected" ? (
-                <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                  <ExternalLink className="h-3 w-3" /> Configurar
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled className="text-xs">
-                  Disponível em breve
-                </Button>
-              )}
+              <Button variant="outline" size="sm" disabled className="text-xs">
+                Disponível em breve
+              </Button>
             </CardContent>
           </Card>
         ))}
