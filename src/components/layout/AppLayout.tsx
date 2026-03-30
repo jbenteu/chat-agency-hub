@@ -10,6 +10,7 @@ import {
   LayoutDashboard, Users, MessageCircle, Settings, Shield, LogOut, Sparkles, UserCheck, UsersRound, Eye,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
+import { ROUTE_PERMISSIONS } from "@/lib/role-permissions";
 
 interface NavItem {
   title: string;
@@ -19,15 +20,15 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { title: "Dashboard", icon: LayoutDashboard, path: "/", roles: ["admin", "gerente", "gestor", "sucesso_cliente", "cliente"] },
-  { title: "CRM", icon: Users, path: "/crm", roles: ["admin", "gerente", "gestor", "sucesso_cliente", "cliente"] },
-  { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp", roles: ["admin", "gerente", "gestor", "sucesso_cliente", "cliente"] },
-  { title: "Equipe", icon: UsersRound, path: "/equipe", roles: ["admin", "gerente"] },
-  { title: "Clientes", icon: UserCheck, path: "/clientes", roles: ["admin", "gerente", "gestor", "sucesso_cliente"] },
-  { title: "Monitoramento", icon: Eye, path: "/monitoramento", roles: ["admin", "gerente", "gestor", "sucesso_cliente"] },
-  { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis", roles: ["admin", "gerente", "gestor", "sucesso_cliente", "cliente"] },
-  { title: "Painel Admin", icon: Shield, path: "/admin", roles: ["admin"] },
-  { title: "Configurações", icon: Settings, path: "/configuracoes", roles: ["admin", "gerente", "gestor", "sucesso_cliente", "cliente"] },
+  { title: "Dashboard", icon: LayoutDashboard, path: "/", roles: ROUTE_PERMISSIONS["/"] },
+  { title: "CRM", icon: Users, path: "/crm", roles: ROUTE_PERMISSIONS["/crm"] },
+  { title: "WhatsApp", icon: MessageCircle, path: "/whatsapp", roles: ROUTE_PERMISSIONS["/whatsapp"] },
+  { title: "Equipe", icon: UsersRound, path: "/equipe", roles: ROUTE_PERMISSIONS["/equipe"] },
+  { title: "Clientes", icon: UserCheck, path: "/clientes", roles: ROUTE_PERMISSIONS["/clientes"] },
+  { title: "Monitoramento", icon: Eye, path: "/monitoramento", roles: ROUTE_PERMISSIONS["/monitoramento"] },
+  { title: "Análise de IA", icon: Sparkles, path: "/ai-analysis", roles: ROUTE_PERMISSIONS["/ai-analysis"] },
+  { title: "Painel Admin", icon: Shield, path: "/admin", roles: ROUTE_PERMISSIONS["/admin"] },
+  { title: "Configurações", icon: Settings, path: "/configuracoes", roles: ROUTE_PERMISSIONS["/configuracoes"] },
 ];
 
 const ROLE_LABELS: Record<UserRole, string> = {

@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth, type UserRole } from "./AuthProvider";
+import { DEFAULT_ROUTE } from "@/lib/role-permissions";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -18,9 +19,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
       return;
     }
     if (allowedRoles && profile) {
-      const role = profile.role ?? "cliente";
+      const role = (profile.role ?? "cliente") as UserRole;
       if (!allowedRoles.includes(role)) {
-        navigate("/", { replace: true });
+        navigate(DEFAULT_ROUTE[role] ?? "/", { replace: true });
       }
     }
   }, [loading, session, profile, allowedRoles, navigate]);
@@ -36,7 +37,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   if (!session) return null;
 
   if (allowedRoles && profile) {
-    const role = profile.role ?? "cliente";
+    const role = (profile.role ?? "cliente") as UserRole;
     if (!allowedRoles.includes(role)) return null;
   }
 
