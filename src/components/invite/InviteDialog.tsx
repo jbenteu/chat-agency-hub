@@ -64,8 +64,8 @@ export function InviteDialog({ defaultRole, trigger }: InviteDialogProps) {
         const all = data ?? [];
         setGestores(all.filter((p) => p.role === "gestor"));
         setCsUsers(all.filter((p) => p.role === "sucesso_cliente"));
-      })
-      .finally(() => setLoadingStaff(false));
+        setLoadingStaff(false);
+      });
   }, [roleToAssign]);
 
   const handleGenerate = async () => {

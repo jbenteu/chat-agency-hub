@@ -28,6 +28,11 @@ export interface StageCount {
   value: number;
 }
 
+export interface SourceCount {
+  name: string;
+  value: number;
+}
+
 export interface DayCount {
   date: string;
   leads: number;
