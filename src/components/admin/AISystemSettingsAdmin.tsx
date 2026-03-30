@@ -126,7 +126,7 @@ export function AISystemSettingsAdmin() {
     setRunsLoading(true);
     try {
       const result = await getAnalysisRuns();
-      setRuns(result.runs || []);
+      setRuns(Array.isArray(result) ? result : (result as any).runs || []);
     } catch {
       // silent
     } finally {

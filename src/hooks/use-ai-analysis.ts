@@ -15,6 +15,9 @@ export interface AIAnalysisRun {
   created_at: string;
   completed_at: string | null;
   created_by: string | null;
+  run_at?: string;
+  triggered_by?: string;
+  conversations_total?: number;
 }
 
 export interface AnalysisSummary {
@@ -102,6 +105,27 @@ export interface AIAnalysisSchedule {
   updated_at: string;
 }
 
+export interface AISystemSettings {
+  provider: string;
+  analysis_model: string;
+  insights_model: string;
+  avg_ticket_brl: number;
+  schedule_enabled: boolean;
+  schedule_hour: number;
+  schedule_minute: number;
+  schedule_days: number[];
+  schedule_timezone: string;
+  max_history_runs: number;
+  allow_manual_triggers: boolean;
+  max_triggers_per_period: number;
+  trigger_period_days: number;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  api_key_configured?: boolean;
+}
+
+export type AIAnalysisSettings = AISystemSettings;
+
 export interface LatestAnalysisResult {
   run: AIAnalysisRun | null;
   conversations: AIAnalysisConversation[];
@@ -167,6 +191,64 @@ export function useAIAnalysis() {
     return await invokeAI({ action: "chat_consultant", ...params });
   };
 
+  const getSystemSettings = async (): Promise<AISystemSettings> => {
+    const { data, error } = await supabase
+      .from("ai_system_settings")
+      .select("*")
+      .limit(1)
+      .single();
+    if (error) throw error;
+    return data as unknown as AISystemSettings;
+  };
+
+  const updateSystemSettings = async (settings: Partial<AISystemSettings> & { api_key?: string }): Promise<AISystemSettings> => {
+    const { data, error } = await supabase
+      .from("ai_system_settings")
+      .update(settings as any)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as unknown as AISystemSettings;
+  };
+
+  const getAnalysisRuns = async (page = 0): Promise<AIAnalysisRun[]> => {
+    const { data, error } = await supabase
+      .from("ai_analysis_runs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .range(page * 20, (page + 1) * 20 - 1);
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({
+      id: r.id,
+      tenant_id: r.tenant_id,
+      status: r.status,
+      period_start: null,
+      period_end: null,
+      messages_analyzed: 0,
+      conversations_analyzed: r.conversations_analyzed ?? 0,
+      summary: null,
+      error_message: r.error_message,
+      created_at: r.created_at,
+      completed_at: r.completed_at,
+      created_by: r.triggered_by_user_id,
+      run_at: r.run_at,
+      triggered_by: r.triggered_by,
+      conversations_total: r.conversations_total ?? 0,
+    }));
+  };
+
+  const deleteRun = async (runId: string): Promise<void> => {
+    const { error } = await supabase
+      .from("ai_analysis_runs")
+      .delete()
+      .eq("id", runId);
+    if (error) throw error;
+  };
+
+  const analyzeConversation = async (conversationId: string, tenantId: string) => {
+    return await invokeAI({ action: "analyze_conversation", conversation_id: conversationId, tenant_id: tenantId });
+  };
+
   return {
     getLatestAnalysis,
     getAnalysisHistory,
@@ -175,5 +257,10 @@ export function useAIAnalysis() {
     updateSchedule,
     runAnalysis,
     chatConsultant,
+    getSystemSettings,
+    updateSystemSettings,
+    getAnalysisRuns,
+    deleteRun,
+    analyzeConversation,
   };
 }

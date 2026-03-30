@@ -1031,7 +1031,7 @@ const WhatsAppInbox = () => {
     if (!selectedConv) return;
     try {
       setAnalyzing(true);
-      await analyzeConversation(selectedConv.id);
+      await analyzeConversation(selectedConv.id, selectedConv.tenant_id);
       toast({ title: "Análise concluída", description: "A conversa foi analisada pela IA com sucesso." });
     } catch (err) {
       toast({ title: "Erro na análise", description: err instanceof Error ? err.message : "Falha ao analisar", variant: "destructive" });
