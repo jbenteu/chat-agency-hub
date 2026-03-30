@@ -7,8 +7,8 @@ const INTEGRATIONS = [
   {
     name: "Evolution API",
     description: "Integração WhatsApp via Evolution API",
-    status: "connected" as const,
-    icon: "🟢",
+    status: "soon" as const,
+    icon: "💬",
   },
   {
     name: "Meta Ads",
