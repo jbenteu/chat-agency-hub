@@ -16,8 +16,7 @@ export interface DashboardKPIs {
 
 export interface DashboardFinancials {
   wonValue: number;
-  openValue: number;
-  pipelineTotal: number;
+  wonCount: number;
   conversionRate: number;
 }
 
@@ -26,11 +25,6 @@ export interface StageCount {
   name: string;
   color: string | null;
   count: number;
-  value: number;
-}
-
-export interface SourceCount {
-  name: string;
   value: number;
 }
 
@@ -67,7 +61,11 @@ export function useDashboardData(range: DateRange) {
     queryFn: async () => {
       const tenantId = await getTenantId();
 
-      const [leadsRes, convsRes, msgsRes, unansweredRes] = await Promise.all([
+      // "Sem Resposta": conversations where the last message is from the client
+      // (inbound) and was sent within the last 30 days.
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      const [leadsRes, convsRes, msgsRes, recentConvsRes] = await Promise.all([
         supabase
           .from("contacts")
           .select("id", { count: "exact", head: true })
@@ -86,19 +84,39 @@ export function useDashboardData(range: DateRange) {
           .eq("direction", "inbound")
           .gte("created_at", fromISO)
           .lte("created_at", toISO),
+        // Fetch conversations with activity in last 30 days for "sem resposta" calc
         supabase
           .from("whatsapp_conversations")
-          .select("id", { count: "exact", head: true })
+          .select("id")
           .eq("tenant_id", tenantId)
-          .eq("status", "open")
-          .gt("unread_count", 0),
+          .gte("last_message_at", thirtyDaysAgo),
       ]);
+
+      // Calculate "Sem Resposta": conversations where the last message is inbound
+      const recentConvIds = (recentConvsRes.data || []).map((c) => c.id);
+      let unanswered = 0;
+      if (recentConvIds.length > 0) {
+        const { data: msgs } = await supabase
+          .from("whatsapp_messages")
+          .select("conversation_id, direction, created_at")
+          .in("conversation_id", recentConvIds)
+          .order("created_at", { ascending: false });
+
+        // Find the direction of the last message per conversation
+        const lastDir: Record<string, string> = {};
+        for (const msg of msgs || []) {
+          if (!(msg.conversation_id in lastDir)) {
+            lastDir[msg.conversation_id] = msg.direction as string;
+          }
+        }
+        unanswered = Object.values(lastDir).filter((d) => d === "inbound").length;
+      }
 
       return {
         newLeads: leadsRes.count ?? 0,
         activeConversations: convsRes.count ?? 0,
         inboundMessages: msgsRes.count ?? 0,
-        unanswered: unansweredRes.count ?? 0,
+        unanswered,
       };
     },
     staleTime: 30_000,
@@ -109,32 +127,34 @@ export function useDashboardData(range: DateRange) {
     queryFn: async () => {
       const tenantId = await getTenantId();
 
-      const { data: deals } = await supabase
-        .from("deals")
-        .select("value, status, pipeline_stage_id")
-        .eq("tenant_id", tenantId);
+      // Won deals in the period (vendas realizadas)
+      const [wonInPeriodRes, contactsInPeriodRes] = await Promise.all([
+        supabase
+          .from("deals")
+          .select("value")
+          .eq("tenant_id", tenantId)
+          .eq("status", "won")
+          .gte("closed_at", fromISO)
+          .lte("closed_at", toISO),
+        supabase
+          .from("contacts")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId)
+          .gte("created_at", fromISO)
+          .lte("created_at", toISO),
+      ]);
 
-      const allDeals = deals || [];
-      const wonDeals = allDeals.filter((d) => d.status === "won");
-      const lostDeals = allDeals.filter((d) => d.status === "lost");
-      const openDeals = allDeals.filter((d) => d.status === "open" || d.status === "active");
-      const closedTotal = wonDeals.length + lostDeals.length;
+      const wonDeals = wonInPeriodRes.data || [];
+      const wonValue = wonDeals.reduce((s, d) => s + (d.value || 0), 0);
+      const wonCount = wonDeals.length;
 
-      // Won value filtered by period
-      const { data: wonInPeriod } = await supabase
-        .from("deals")
-        .select("value")
-        .eq("tenant_id", tenantId)
-        .eq("status", "won")
-        .gte("closed_at", fromISO)
-        .lte("closed_at", toISO);
+      // Conversion rate = (conversões / visitantes) * 100
+      // conversões = won deals in period
+      // visitantes = new contacts/leads in period
+      const totalLeads = contactsInPeriodRes.count ?? 0;
+      const conversionRate = totalLeads > 0 ? Math.round((wonCount / totalLeads) * 100) : 0;
 
-      const wonValue = (wonInPeriod || []).reduce((s, d) => s + (d.value || 0), 0);
-      const openValue = openDeals.reduce((s, d) => s + (d.value || 0), 0);
-      const pipelineTotal = allDeals.reduce((s, d) => s + (d.value || 0), 0);
-      const conversionRate = closedTotal > 0 ? Math.round((wonDeals.length / closedTotal) * 100) : 0;
-
-      return { wonValue, openValue, pipelineTotal, conversionRate };
+      return { wonValue, wonCount, conversionRate };
     },
     staleTime: 30_000,
   });
@@ -170,29 +190,6 @@ export function useDashboardData(range: DateRange) {
           value: stageDeals.reduce((sum, d) => sum + (d.value || 0), 0),
         };
       });
-    },
-    staleTime: 30_000,
-  });
-
-  const sources = useQuery<SourceCount[]>({
-    queryKey: ["dashboard-sources", fromISO, toISO],
-    queryFn: async () => {
-      const tenantId = await getTenantId();
-      const { data } = await supabase
-        .from("contacts")
-        .select("source")
-        .eq("tenant_id", tenantId)
-        .gte("created_at", fromISO)
-        .lte("created_at", toISO);
-
-      const counts: Record<string, number> = {};
-      for (const c of data || []) {
-        const src = (c.source as string | null) || "manual";
-        counts[src] = (counts[src] || 0) + 1;
-      }
-      return Object.entries(counts)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value);
     },
     staleTime: 30_000,
   });
@@ -261,5 +258,5 @@ export function useDashboardData(range: DateRange) {
     staleTime: 30_000,
   });
 
-  return { kpis, financials, funnel, sources, evolution, activities, tasks };
+  return { kpis, financials, funnel, evolution, activities, tasks };
 }

@@ -1730,7 +1730,6 @@ Deno.serve(async (req) => {
               tenant_id: tenantId,
               phone,
               name: name && !/^\d+$/.test(name) ? name : phone,
-              tags: ["whatsapp", "importado"],
               origin: "whatsapp_import",
               notes: "Importado automaticamente do WhatsApp",
             });

@@ -572,7 +572,6 @@ Deno.serve(async (req) => {
                 name: evoContactName || pushName,
                 phone: conversationPhone,
                 origin: "whatsapp",
-                tags: ["whatsapp", "lead"],
                 notes: "Contato criado automaticamente via WhatsApp",
               })
               .select("id, name")
@@ -581,23 +580,6 @@ Deno.serve(async (req) => {
             if (newContact?.id) {
               contactRecord = newContact;
               contactId = newContact.id;
-              // Deal em background — não bloqueia
-              (async () => {
-                const { data: firstStage } = await supabase
-                  .from("pipeline_stages")
-                  .select("name")
-                  .eq("tenant_id", tenantId)
-                  .order("order", { ascending: true })
-                  .limit(1)
-                  .single();
-                await supabase.from("deals").insert({
-                  tenant_id: tenantId,
-                  contact_id: newContact.id,
-                  title: `Lead WhatsApp - ${newContact.name || pushName}`,
-                  stage: firstStage?.name ?? "Novo Lead",
-                  status: "open",
-                });
-              })().catch(console.error);
             }
           }
 
@@ -874,7 +856,6 @@ Deno.serve(async (req) => {
                 tenant_id: tenantId,
                 phone,
                 name: name && !/^\d+$/.test(name) ? name : phone,
-                tags: ["whatsapp", "importado"],
                 origin: "whatsapp_import",
                 notes: "Importado automaticamente do WhatsApp",
               });

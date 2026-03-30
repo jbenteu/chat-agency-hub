@@ -1,4 +1,4 @@
-import { DollarSign, TrendingUp, BarChart2, Percent } from "lucide-react";
+import { DollarSign, ShoppingBag, Percent } from "lucide-react";
 import { DashboardKPICard } from "./DashboardKPICard";
 import { formatBRL } from "@/lib/dashboard-utils";
 import type { DashboardFinancials } from "@/hooks/useDashboardData";
@@ -10,35 +10,28 @@ interface DashboardFinancialCardsProps {
 
 export function DashboardFinancialCards({ data, loading }: DashboardFinancialCardsProps) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <DashboardKPICard
-        title="Ganhos (período)"
+        title="Vendas Realizadas"
         value={data ? formatBRL(data.wonValue) : "—"}
         icon={DollarSign}
         loading={loading}
-        description="negócios fechados"
+        description="vendas no período"
         highlight="success"
       />
       <DashboardKPICard
-        title="Deals Ativos"
-        value={data ? formatBRL(data.openValue) : "—"}
-        icon={TrendingUp}
+        title="Qtd. de Vendas"
+        value={data?.wonCount ?? "—"}
+        icon={ShoppingBag}
         loading={loading}
-        description="em aberto"
+        description="negócios fechados"
       />
       <DashboardKPICard
-        title="Pipeline Total"
-        value={data ? formatBRL(data.pipelineTotal) : "—"}
-        icon={BarChart2}
-        loading={loading}
-        description="todos os deals"
-      />
-      <DashboardKPICard
-        title="Taxa Conversão"
+        title="Taxa de Conversão"
         value={data ? `${data.conversionRate}%` : "—"}
         icon={Percent}
         loading={loading}
-        description="ganhos / fechados"
+        description="vendas / leads no período"
         highlight={
           data && data.conversionRate >= 50
             ? "success"
