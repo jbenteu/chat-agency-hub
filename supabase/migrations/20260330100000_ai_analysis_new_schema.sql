@@ -57,7 +57,7 @@ CREATE POLICY "ai_analysis_conversations_admin_write" ON public.ai_analysis_conv
       SELECT 1 FROM public.user_roles
       WHERE user_id = auth.uid()
         AND tenant_id = ai_analysis_conversations.tenant_id
-        AND role IN ('admin', 'super_admin', 'gerente')
+        AND role IN ('admin', 'super_admin')
     )
   );
 
@@ -90,7 +90,7 @@ CREATE POLICY "ai_analysis_improvements_admin_write" ON public.ai_analysis_impro
       SELECT 1 FROM public.user_roles
       WHERE user_id = auth.uid()
         AND tenant_id = ai_analysis_improvements.tenant_id
-        AND role IN ('admin', 'super_admin', 'gerente')
+        AND role IN ('admin', 'super_admin')
     )
   );
 
