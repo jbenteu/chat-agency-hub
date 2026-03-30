@@ -162,6 +162,56 @@ export type Database = {
           },
         ]
       }
+      ai_analysis_runs: {
+        Row: {
+          completed_at: string | null
+          conversations_analyzed: number
+          conversations_total: number
+          created_at: string
+          error_message: string | null
+          id: string
+          run_at: string
+          status: string
+          tenant_id: string
+          triggered_by: string
+          triggered_by_user_id: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          conversations_analyzed?: number
+          conversations_total?: number
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          run_at?: string
+          status?: string
+          tenant_id: string
+          triggered_by?: string
+          triggered_by_user_id?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          conversations_analyzed?: number
+          conversations_total?: number
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          run_at?: string
+          status?: string
+          tenant_id?: string
+          triggered_by?: string
+          triggered_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_analysis_runs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_conversation_analysis: {
         Row: {
           analyzed_at: string | null
@@ -171,6 +221,7 @@ export type Database = {
           objecao_detectada: string | null
           produto_interesse: string | null
           resumo: string | null
+          run_id: string | null
           score_clareza: number | null
           score_contorno_objecao: number | null
           score_cta: number | null
@@ -191,6 +242,7 @@ export type Database = {
           objecao_detectada?: string | null
           produto_interesse?: string | null
           resumo?: string | null
+          run_id?: string | null
           score_clareza?: number | null
           score_contorno_objecao?: number | null
           score_cta?: number | null
@@ -211,6 +263,7 @@ export type Database = {
           objecao_detectada?: string | null
           produto_interesse?: string | null
           resumo?: string | null
+          run_id?: string | null
           score_clareza?: number | null
           score_contorno_objecao?: number | null
           score_cta?: number | null
@@ -236,6 +289,13 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: true
             referencedRelation: "whatsapp_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_conversation_analysis_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_analysis_runs"
             referencedColumns: ["id"]
           },
           {
@@ -275,6 +335,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ai_system_settings: {
+        Row: {
+          allow_manual_triggers: boolean
+          analysis_model: string
+          api_key: string | null
+          avg_ticket_brl: number
+          created_at: string
+          id: string
+          insights_model: string
+          last_run_at: string | null
+          max_history_runs: number
+          max_triggers_per_period: number
+          next_run_at: string | null
+          provider: string
+          schedule_days: number[]
+          schedule_enabled: boolean
+          schedule_hour: number
+          schedule_minute: number
+          schedule_timezone: string
+          trigger_period_days: number
+          updated_at: string
+        }
+        Insert: {
+          allow_manual_triggers?: boolean
+          analysis_model?: string
+          api_key?: string | null
+          avg_ticket_brl?: number
+          created_at?: string
+          id?: string
+          insights_model?: string
+          last_run_at?: string | null
+          max_history_runs?: number
+          max_triggers_per_period?: number
+          next_run_at?: string | null
+          provider?: string
+          schedule_days?: number[]
+          schedule_enabled?: boolean
+          schedule_hour?: number
+          schedule_minute?: number
+          schedule_timezone?: string
+          trigger_period_days?: number
+          updated_at?: string
+        }
+        Update: {
+          allow_manual_triggers?: boolean
+          analysis_model?: string
+          api_key?: string | null
+          avg_ticket_brl?: number
+          created_at?: string
+          id?: string
+          insights_model?: string
+          last_run_at?: string | null
+          max_history_runs?: number
+          max_triggers_per_period?: number
+          next_run_at?: string | null
+          provider?: string
+          schedule_days?: number[]
+          schedule_enabled?: boolean
+          schedule_hour?: number
+          schedule_minute?: number
+          schedule_timezone?: string
+          trigger_period_days?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       contacts: {
         Row: {
