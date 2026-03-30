@@ -322,8 +322,11 @@ Deno.serve(async (req) => {
     const periodStart = lastRun?.period_end || tenant?.created_at || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const periodEnd = new Date().toISOString();
 
-    // Create run record
-    const { data: run, error: runError } = await supabaseAdmin
+    // Create run record — try with new columns first, fallback to legacy schema
+    let run: Record<string, unknown> | null = null;
+    let runError: { message: string } | null = null;
+
+    const newInsertResult = await supabaseAdmin
       .from("ai_analysis_runs")
       .insert({
         tenant_id: tid,
@@ -338,18 +341,52 @@ Deno.serve(async (req) => {
       .select()
       .single();
 
-    if (runError || !run) return jsonResponse({ error: "Falha ao criar run de análise" }, 500);
+    if (newInsertResult.error) {
+      // Fallback: legacy schema without new columns
+      console.warn("New schema insert failed, trying legacy:", newInsertResult.error.message);
+      const legacyResult = await supabaseAdmin
+        .from("ai_analysis_runs")
+        .insert({
+          tenant_id: tid,
+          status: "processing",
+          triggered_by: userId ? "manual" : "scheduled",
+          triggered_by_user_id: userId || null,
+          conversations_analyzed: 0,
+          conversations_total: 0,
+        })
+        .select()
+        .single();
+      run = legacyResult.data;
+      runError = legacyResult.error;
+    } else {
+      run = newInsertResult.data;
+    }
 
-    // Fetch new messages not yet analyzed
-    const { data: messages } = await supabaseAdmin
+    if (runError || !run) {
+      console.error("run insert error:", runError);
+      return jsonResponse({ error: "Falha ao criar run de análise", detail: runError?.message }, 500);
+    }
+
+    // Fetch already-analyzed message IDs to deduplicate
+    const { data: analyzedLog } = await supabaseAdmin
+      .from("ai_analysis_message_log")
+      .select("message_id")
+      .eq("tenant_id", tid)
+      .limit(10000);
+    const analyzedIds = new Set((analyzedLog || []).map((r: { message_id: string }) => r.message_id));
+
+    // Fetch new messages in the analysis period
+    const { data: allMessages } = await supabaseAdmin
       .from("whatsapp_messages")
       .select("id, conversation_id, content, message_type, from_me, created_at, contact_name")
       .eq("tenant_id", tid)
       .gte("created_at", periodStart)
       .lt("created_at", periodEnd)
-      .not("id", "in", `(SELECT message_id FROM ai_analysis_message_log WHERE tenant_id = '${tid}')`)
       .order("created_at", { ascending: true })
       .limit(2000);
+
+    // Filter out messages already analyzed
+    const messages = (allMessages || []).filter((m) => !analyzedIds.has(m.id));
 
     if (!messages || messages.length === 0) {
       await supabaseAdmin
@@ -421,13 +458,15 @@ Deno.serve(async (req) => {
         improvement_points: c.improvement_points || [],
         positive_points: c.positive_points || [],
       }));
-      await supabaseAdmin.from("ai_analysis_conversations").insert(convRows);
+      const convInsert = await supabaseAdmin.from("ai_analysis_conversations").insert(convRows);
+      if (convInsert.error) console.warn("ai_analysis_conversations insert failed (migration pending?):", convInsert.error.message);
     }
 
     // Consolidate improvements across all conversations
     const improvements = consolidateImprovements(allConvResults, run.id, tid);
     if (improvements.length > 0) {
-      await supabaseAdmin.from("ai_analysis_improvements").insert(improvements);
+      const impInsert = await supabaseAdmin.from("ai_analysis_improvements").insert(improvements);
+      if (impInsert.error) console.warn("ai_analysis_improvements insert failed (migration pending?):", impInsert.error.message);
     }
 
     // Log analyzed messages
@@ -437,11 +476,12 @@ Deno.serve(async (req) => {
         run_id: run.id,
         message_id: msgId,
       }));
-      // Insert in batches to avoid conflicts
+      // Insert in batches to avoid conflicts (silently ignore if table doesn't exist yet)
       for (let i = 0; i < messageLogRows.length; i += 500) {
         await supabaseAdmin
           .from("ai_analysis_message_log")
-          .upsert(messageLogRows.slice(i, i + 500), { onConflict: "tenant_id,message_id", ignoreDuplicates: true });
+          .upsert(messageLogRows.slice(i, i + 500), { onConflict: "tenant_id,message_id", ignoreDuplicates: true })
+          .then(({ error }) => { if (error) console.warn("message_log upsert:", error.message); });
       }
     }
 
@@ -461,7 +501,8 @@ Deno.serve(async (req) => {
       total_messages: allMessageIds.length,
     };
 
-    await supabaseAdmin
+    // Try to update with new columns, fallback to legacy columns
+    const updateResult = await supabaseAdmin
       .from("ai_analysis_runs")
       .update({
         status: "completed",
@@ -471,6 +512,19 @@ Deno.serve(async (req) => {
         summary,
       })
       .eq("id", run.id);
+
+    if (updateResult.error) {
+      // Legacy schema fallback
+      await supabaseAdmin
+        .from("ai_analysis_runs")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          conversations_analyzed: allConvResults.length,
+          conversations_total: allConvResults.length,
+        })
+        .eq("id", run.id);
+    }
 
     // Update schedule
     await supabaseAdmin
