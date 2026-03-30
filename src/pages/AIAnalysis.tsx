@@ -26,13 +26,13 @@ import {
 } from "recharts";
 import {
   RefreshCw, Copy, Sparkles, Check,
-  LayoutDashboard, AlertCircle, BarChart2, Star,
-  MessageSquareWarning, MessageSquare, Flame,
-  ArrowUpRight, MessageSquarePlus, Loader2, Tag, AlertTriangle,
+  LayoutDashboard, AlertCircle, Star,
+  MessageSquareWarning, MessageSquare,
+  ArrowUpRight, MessageSquarePlus, Loader2, AlertTriangle,
   ChevronDown, Wand2, Send, User, Clock, TrendingUp,
   Zap, Target, ShieldAlert, TrendingDown, Gem, Users,
-  ChevronRight, Eye, Wifi, WifiOff, PlayCircle, CheckCircle2,
-  Building2, UserCircle, Play, History, Trash2, XCircle,
+  ChevronRight, Eye, Wifi, WifiOff, CheckCircle2,
+  Building2, UserCircle, History, Tag,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -100,13 +100,9 @@ const quickQuestions = [
 
 const TABS = [
   { value: "painel", label: "Painel", icon: LayoutDashboard },
-  { value: "insights", label: "Insights IA", icon: Sparkles },
-  { value: "pipeline", label: "Pipeline", icon: Flame },
   { value: "padroes", label: "Padrões", icon: Clock },
   { value: "objecoes", label: "Produtos & Objeções", icon: MessageSquareWarning },
-  { value: "scores", label: "Scores", icon: BarChart2 },
   { value: "consultor", label: "Consultor IA", icon: MessageSquare },
-  { value: "historico", label: "Histórico", icon: History },
 ];
 
 interface ScoresRow {
@@ -138,7 +134,7 @@ interface ChatMessage {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const AIAnalysis: React.FC = () => {
-  const { getDashboard, generateScript, askAI, getInsightsEnhanced, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, listAccessibleTenants, triggerManualRun, checkScheduledRun, getAnalysisRuns, deleteRun } = useAIAnalysis();
+  const { getDashboard, generateScript, askAI, getInsightsEnhanced, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, listAccessibleTenants, triggerManualRun, checkScheduledRun, getAnalysisRuns, deleteRun, getSystemSettings } = useAIAnalysis();
   const { profile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -202,6 +198,11 @@ const AIAnalysis: React.FC = () => {
   const [runsLoading, setRunsLoading] = useState(false);
   const [triggeringRun, setTriggeringRun] = useState(false);
   const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [runSelectorOpen, setRunSelectorOpen] = useState(false);
+
+  // System settings (for allow_manual_triggers check)
+  const [systemSettings, setSystemSettings] = useState<{ allow_manual_triggers: boolean } | null>(null);
 
   // Chat
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -381,23 +382,25 @@ const AIAnalysis: React.FC = () => {
     // Load existing dashboard data first (fast, from cache)
     await loadDashboard(true, selectedClientTenantId);
     await loadAnalysisStatus(null, selectedClientTenantId);
+    await loadAnalysisRuns(selectedClientTenantId);
     setDataLoaded(true);
   };
 
   useEffect(() => {
+    // Load system settings for allow_manual_triggers check
+    getSystemSettings().then((s) => setSystemSettings(s)).catch(() => {});
+
     if (isOnDemandRole) {
-      // Managers: load accessible tenants/team members
       loadAccessibleTenants();
-      // Check if a scheduled run is due (only once, silently)
       checkScheduledRun().catch(() => {});
       return;
     }
-    // Cliente: load data and check schedule — no more real-time processing
+    // Cliente: load data and check schedule
     setInstancesLoading(true);
     loadInstances();
     loadDashboard();
     loadAnalysisStatus(null);
-    // Check if a scheduled analysis run is due
+    loadAnalysisRuns(null);
     checkScheduledRun().then((res) => {
       if (res.triggered) {
         loadDashboard(true);
@@ -423,11 +426,7 @@ const AIAnalysis: React.FC = () => {
   const handleTabChange = (value: string) => {
     setActiveTab(value);
     const tgt = isOnDemandRole ? selectedClientTenantId : null;
-    if (value === "insights" && !insightsLoaded && !insightsLoading) loadInsights(tgt);
-    if (value === "pipeline" && hotLeads.length === 0 && warmLeads.length === 0) loadPipeline(tgt);
     if (value === "padroes" && !patterns) loadPatterns(tgt);
-    if (value === "scores" && scoresData.length === 0) loadScores();
-    if (value === "historico" && analysisRuns.length === 0) loadAnalysisRuns(tgt);
   };
 
   // ── Chat ───────────────────────────────────────────────────────────────────
@@ -498,6 +497,17 @@ const AIAnalysis: React.FC = () => {
 
   const leadsCount = dashboardData?.leads_sem_resposta ?? 0;
   const isEmpty = !dashboardData || (dashboardData.total_conversas_mes === 0 && dashboardData.leads_sem_resposta_lista.length === 0);
+  const allowManualTriggers = systemSettings?.allow_manual_triggers !== false;
+
+  const formatRunLabel = (run: AIAnalysisRun) =>
+    new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+      timeZone: "America/Sao_Paulo",
+    }).format(new Date(run.run_at)).replace(".", "");
+
+  const latestRun = analysisRuns.length > 0 ? analysisRuns[0] : null;
+  const displayRunId = selectedRunId ?? latestRun?.id ?? null;
 
   const radarData = dashboardData?.media_scores
     ? Object.entries(scoreLabels).map(([key, label]) => ({
@@ -531,20 +541,52 @@ const AIAnalysis: React.FC = () => {
             <p className="text-sm text-muted-foreground mt-1">Análise IA para joalheria — dados dos últimos 30 dias</p>
           </div>
           {!isOnDemandRole && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleTriggerManualRun}
-                disabled={triggeringRun || loading}
-                className="border-violet-300 text-violet-700 hover:bg-violet-50 transition-all gap-1.5"
-              >
-                {triggeringRun ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" />Analisando...</>
-                ) : (
-                  <><Sparkles className="h-4 w-4" />Analisar agora</>
-                )}
-              </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Run selector dropdown */}
+              {analysisRuns.length > 0 && (
+                <div className="relative">
+                  <button
+                    onClick={() => setRunSelectorOpen((v) => !v)}
+                    className="flex items-center gap-2 h-9 px-3 text-sm border border-zinc-200 rounded-lg bg-white hover:border-violet-300 transition-colors min-w-[200px] justify-between"
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <History size={13} className="text-muted-foreground shrink-0" />
+                      <span className="truncate text-foreground">
+                        {displayRunId
+                          ? (() => { const r = analysisRuns.find(x => x.id === displayRunId); return r ? `Análise de ${formatRunLabel(r)}` : "Selecionar análise"; })()
+                          : "Selecionar análise"}
+                      </span>
+                    </div>
+                    <ChevronDown size={13} className={`text-zinc-400 shrink-0 transition-transform ${runSelectorOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {runSelectorOpen && (
+                    <div className="absolute right-0 top-full mt-1 z-50 w-72 bg-white border border-zinc-200 rounded-xl shadow-lg overflow-hidden">
+                      <div className="p-1">
+                        {analysisRuns.map((run) => (
+                          <button
+                            key={run.id}
+                            onClick={() => { setSelectedRunId(run.id); setRunSelectorOpen(false); }}
+                            className={`flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg transition-colors hover:bg-zinc-50 ${
+                              (displayRunId === run.id) ? "bg-violet-50 text-violet-700" : "text-foreground"
+                            }`}
+                          >
+                            <div className={`size-2 rounded-full shrink-0 ${
+                              run.status === "completed" ? "bg-emerald-500" :
+                              run.status === "error" ? "bg-red-500" : "bg-violet-400 animate-pulse"
+                            }`} />
+                            <span className="truncate">Análise de {formatRunLabel(run)}</span>
+                            <span className={`ml-auto text-xs shrink-0 ${
+                              run.triggered_by === "manual" ? "text-violet-500" : "text-zinc-400"
+                            }`}>{run.triggered_by === "manual" ? "Manual" : "Auto"}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Atualizar — always shown */}
               <Button
                 variant="outline"
                 size="sm"
@@ -555,6 +597,23 @@ const AIAnalysis: React.FC = () => {
                 <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
                 Atualizar
               </Button>
+
+              {/* Regenerar — only if admin allows manual triggers */}
+              {allowManualTriggers && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTriggerManualRun}
+                  disabled={triggeringRun || loading}
+                  className="border-violet-300 text-violet-700 hover:bg-violet-50 transition-all gap-1.5"
+                >
+                  {triggeringRun ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" />Analisando...</>
+                  ) : (
+                    <><Sparkles className="h-4 w-4" />Regenerar</>
+                  )}
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -791,12 +850,7 @@ const AIAnalysis: React.FC = () => {
                       <Loader2 size={12} className="animate-spin" />
                       Analisando...
                     </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0">
-                      <Sparkles size={12} />
-                      IA ativa
-                    </span>
-                  )
+                  ) : null
                 ) : (
                   <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium shrink-0">
                     <CheckCircle2 size={12} />
@@ -919,15 +973,23 @@ const AIAnalysis: React.FC = () => {
                         <p className="text-xs text-muted-foreground mt-1">nos últimos 30 dias</p>
                       </div>
 
-                      <div className="bg-white rounded-xl border border-zinc-200 p-5 border-l-4 border-l-emerald-500">
+                      <div className={`bg-white rounded-xl border border-zinc-200 p-5 border-l-4 ${
+                        estimatedLoss !== null && estimatedLoss > 0 ? "border-l-red-500" : "border-l-zinc-300"
+                      }`}>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Leads Quentes</span>
-                          <Flame size={14} className="text-zinc-300" />
+                          <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Prejuízo Estimado</span>
+                          <TrendingDown size={14} className="text-zinc-300" />
                         </div>
-                        <p className={`text-3xl font-bold ${(dashboardData?.leads_por_status?.quente ?? 0) > 0 ? "text-emerald-600" : "text-zinc-400"}`}>
-                          {dashboardData?.leads_por_status?.quente ?? 0}
+                        <p className={`text-2xl font-bold leading-tight ${
+                          estimatedLoss !== null && estimatedLoss > 0 ? "text-red-600" : "text-zinc-400"
+                        }`}>
+                          {estimatedLoss !== null && estimatedLoss > 0
+                            ? estimatedLoss.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })
+                            : "—"}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">prontos para fechar</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {estimatedLoss !== null && estimatedLoss > 0 ? "perdas estimadas no mês" : "gere insights para calcular"}
+                        </p>
                       </div>
                     </>
                   )}
@@ -1118,276 +1180,173 @@ const AIAnalysis: React.FC = () => {
                     </div>
                   </div>
                 )}
-              </div>
-            )}
 
-            {/* ════════════════════════════════════════════════════════════ */}
-            {/* TAB: INSIGHTS IA                                             */}
-            {/* ════════════════════════════════════════════════════════════ */}
-            {activeTab === "insights" && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-semibold text-foreground">Insights Estratégicos</h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">Gerados em tempo real pela IA com base nos dados do seu negócio</p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => loadInsights()}
-                    disabled={insightsLoading}
-                    className="border-violet-200 text-violet-600 hover:bg-violet-50"
-                  >
-                    {insightsLoading ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Sparkles size={14} className="mr-1.5" />}
-                    {insightsLoaded ? "Regenerar" : "Gerar insights"}
-                  </Button>
-                </div>
-
-                {insightsLoading && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <div key={i} className="bg-white rounded-xl border border-zinc-200 p-5 animate-pulse">
-                        <div className="h-4 w-20 bg-zinc-100 rounded mb-3" />
-                        <div className="h-5 w-3/4 bg-zinc-100 rounded mb-2" />
-                        <div className="h-3 w-full bg-zinc-100 rounded mb-1" />
-                        <div className="h-3 w-5/6 bg-zinc-100 rounded mb-3" />
-                        <div className="h-3 w-2/3 bg-zinc-100 rounded" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {!insightsLoading && insights.length === 0 && !insightsLoaded && (
-                  <div className="flex flex-col items-center justify-center py-20 gap-4">
-                    <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center">
-                      <Sparkles size={28} className="text-violet-500" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-foreground font-medium">Gere insights personalizados</p>
-                      <p className="text-muted-foreground text-sm mt-1 max-w-sm">
-                        A IA vai analisar seus dados e gerar recomendações específicas para sua joalheria — oportunidades, riscos e ações concretas.
-                      </p>
-                    </div>
-                    <Button onClick={() => loadInsights()} className="bg-violet-600 hover:bg-violet-500 text-white">
-                      <Sparkles size={16} className="mr-2" />
-                      Gerar insights agora
-                    </Button>
-                  </div>
-                )}
-
-                {!insightsLoading && insights.length > 0 && (
+                {/* ── Orientações para melhorar o atendimento (merged insights) ── */}
+                {!loading && !isEmpty && (
                   <div className="space-y-4">
-                    {/* Total loss summary */}
-                    {estimatedLoss !== null && estimatedLoss > 0 && (
-                      <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-                        <TrendingDown size={16} className="text-red-500 shrink-0" />
-                        <p className="text-sm text-red-700">
-                          Perda total estimada:{" "}
-                          <strong className="font-bold">
-                            {estimatedLoss.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
-                          </strong>
-                          <span className="text-red-400 text-xs ml-2">no mês corrente</span>
-                        </p>
+                    <div className="flex items-center justify-between pt-2">
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground">Orientações para Melhorar o Atendimento</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">Análise de conversas reais com pontos de melhoria identificados pela IA</p>
+                      </div>
+                      {!insightsLoaded && !insightsLoading && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => loadInsights(isOnDemandRole ? selectedClientTenantId : null)}
+                          className="border-violet-200 text-violet-600 hover:bg-violet-50"
+                        >
+                          <Sparkles size={14} className="mr-1.5" />
+                          Carregar
+                        </Button>
+                      )}
+                    </div>
+
+                    {insightsLoading && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <div key={i} className="bg-white rounded-xl border border-zinc-200 p-5 animate-pulse">
+                            <div className="h-4 w-20 bg-zinc-100 rounded mb-3" />
+                            <div className="h-5 w-3/4 bg-zinc-100 rounded mb-2" />
+                            <div className="h-3 w-full bg-zinc-100 rounded" />
+                          </div>
+                        ))}
                       </div>
                     )}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {insights.map((insight, i) => {
-                        const cfg = insightConfig[insight.tipo] || insightConfig.alerta;
-                        const Icon = cfg.icon;
-                        const isExpanded = expandedInsight === i;
-                        const hasExamples = (insight.exemplos?.length ?? 0) > 0;
-                        return (
-                          <div
-                            key={i}
-                            className={`bg-white rounded-xl border p-5 hover:shadow-sm transition-all ${cfg.border}`}
-                          >
-                            <div className="flex items-center justify-between gap-2 mb-3">
-                              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.border} ${cfg.color}`}>
-                                <Icon size={11} />
-                                {cfg.label}
-                              </span>
-                              {insight.valor_estimado_perdido_brl != null && insight.valor_estimado_perdido_brl > 0 && (
-                                <span className="text-xs text-red-600 font-semibold flex items-center gap-1">
-                                  <TrendingDown size={11} />
-                                  {insight.valor_estimado_perdido_brl.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
-                                </span>
-                              )}
-                            </div>
-                            <h3 className="text-sm font-semibold text-foreground leading-snug mb-2">{insight.titulo}</h3>
-                            <p className="text-sm text-muted-foreground leading-relaxed mb-3">{insight.descricao}</p>
-                            <div className={`flex items-start gap-2 p-3 rounded-lg ${cfg.bg} border ${cfg.border}`}>
-                              <ChevronRight size={14} className={`${cfg.color} mt-0.5 shrink-0`} />
-                              <p className={`text-xs font-medium ${cfg.color}`}>{insight.acao}</p>
-                            </div>
 
-                            {/* Real conversation examples */}
-                            {hasExamples && (
-                              <div className="mt-3">
-                                <button
-                                  onClick={() => setExpandedInsight(isExpanded ? null : i)}
-                                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                >
-                                  <Eye size={12} />
-                                  {isExpanded ? "Ocultar exemplos" : `Ver ${insight.exemplos!.length} exemplo${insight.exemplos!.length > 1 ? "s" : ""} real`}
-                                  <ChevronDown size={12} className={`transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                                </button>
-                                {isExpanded && (
-                                  <div className="mt-2 space-y-3">
-                                    {insight.exemplos!.map((ex, j) => (
-                                      <div key={j} className="border border-zinc-200 rounded-lg overflow-hidden text-xs">
-                                        <div className="flex items-center justify-between px-3 py-2 bg-zinc-50 border-b border-zinc-200">
-                                          <span className="font-medium text-foreground">{ex.contact_name || "Cliente"}</span>
-                                          {ex.horas_sem_resposta != null && ex.horas_sem_resposta > 0 && (
-                                            <span className="text-red-500 flex items-center gap-1">
-                                              <Clock size={10} />
-                                              {formatHours(ex.horas_sem_resposta)} sem resposta
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div className="p-3 space-y-2">
-                                          {ex.mensagem_cliente && (
-                                            <div className="flex gap-2">
-                                              <div className="w-5 h-5 rounded-full bg-zinc-200 flex items-center justify-center shrink-0 mt-0.5">
-                                                <User size={10} className="text-zinc-500" />
-                                              </div>
-                                              <div className="bg-zinc-100 rounded-lg px-2.5 py-1.5 flex-1">
-                                                <p className="text-foreground">{ex.mensagem_cliente}</p>
-                                              </div>
-                                            </div>
-                                          )}
-                                          {ex.resposta_atendente === null ? (
-                                            <div className="flex items-center gap-2 text-red-500 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
-                                              <AlertTriangle size={11} />
-                                              <span>Sem resposta da atendente</span>
-                                            </div>
-                                          ) : ex.resposta_atendente ? (
-                                            <div className="flex gap-2 justify-end">
-                                              <div className="bg-violet-100 rounded-lg px-2.5 py-1.5 max-w-[85%]">
-                                                <p className="text-foreground">{ex.resposta_atendente}</p>
-                                              </div>
-                                            </div>
-                                          ) : null}
-                                          {ex.problema && (
-                                            <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                                              <p className="text-[10px] text-amber-600 font-semibold uppercase tracking-wide mb-0.5">Problema</p>
-                                              <p className="text-amber-700">{ex.problema}</p>
-                                            </div>
-                                          )}
-                                          {ex.script_sugerido && (
-                                            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
-                                              <div className="flex items-center justify-between mb-0.5">
-                                                <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wide">Script sugerido</p>
-                                                <button
-                                                  onClick={() => handleCopy(ex.script_sugerido)}
-                                                  className="text-[10px] text-emerald-600 hover:text-emerald-800 flex items-center gap-1"
-                                                >
-                                                  <Copy size={10} />
-                                                  Copiar
-                                                </button>
-                                              </div>
-                                              <p className="text-emerald-700">{ex.script_sugerido}</p>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                    {!insightsLoading && insightsLoaded && insights.length === 0 && (
+                      <div className="bg-zinc-50 rounded-xl border border-dashed border-zinc-300 p-8 text-center">
+                        <p className="text-sm text-muted-foreground">Sem orientações disponíveis para o período analisado.</p>
+                      </div>
+                    )}
+
+                    {!insightsLoading && insights.length > 0 && (
+                      <>
+                        {/* Até 2 dicas estratégicas */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {insights.slice(0, 2).map((insight, i) => {
+                            const cfg = insightConfig[insight.tipo] || insightConfig.alerta;
+                            const Icon = cfg.icon;
+                            return (
+                              <div key={i} className={`bg-white rounded-xl border p-5 ${cfg.border}`}>
+                                <div className="flex items-center justify-between gap-2 mb-3">
+                                  <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.border} ${cfg.color}`}>
+                                    <Icon size={11} />
+                                    {cfg.label}
+                                  </span>
+                                  {insight.valor_estimado_perdido_brl != null && insight.valor_estimado_perdido_brl > 0 && (
+                                    <span className="text-xs text-red-600 font-semibold flex items-center gap-1">
+                                      <TrendingDown size={11} />
+                                      {insight.valor_estimado_perdido_brl.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+                                    </span>
+                                  )}
+                                </div>
+                                <h3 className="text-sm font-semibold text-foreground leading-snug mb-2">{insight.titulo}</h3>
+                                <p className="text-sm text-muted-foreground leading-relaxed mb-3">{insight.descricao}</p>
+                                <div className={`flex items-start gap-2 p-3 rounded-lg ${cfg.bg} border ${cfg.border}`}>
+                                  <ChevronRight size={14} className={`${cfg.color} mt-0.5 shrink-0`} />
+                                  <p className={`text-xs font-medium ${cfg.color}`}>{insight.acao}</p>
+                                </div>
                               </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Exemplos reais de conversas (de todos os insights que têm exemplos) */}
+                        {insights.some((ins) => (ins.exemplos?.length ?? 0) > 0) && (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2 pt-1">
+                              <div className="h-px flex-1 bg-zinc-200" />
+                              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2">Exemplos reais de conversas</span>
+                              <div className="h-px flex-1 bg-zinc-200" />
+                            </div>
+                            <p className="text-xs text-muted-foreground">Situações identificadas pela IA que precisam de atenção. Use esses casos para treinar sua equipe.</p>
+                            {insights.flatMap((ins, insIdx) =>
+                              (ins.exemplos || []).map((ex, exIdx) => {
+                                const cfg = insightConfig[ins.tipo] || insightConfig.alerta;
+                                return (
+                                  <div key={`${insIdx}-${exIdx}`} className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+                                    {/* Context header */}
+                                    <div className={`px-4 py-3 border-b ${cfg.bg} ${cfg.border} border-b-0`} style={{ borderBottomWidth: 1 }}>
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                          <div className="flex items-center gap-2 mb-0.5">
+                                            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.border} ${cfg.color}`}>
+                                              <cfg.icon size={10} />
+                                              {cfg.label}
+                                            </span>
+                                            <span className="text-xs font-medium text-foreground">{ins.titulo}</span>
+                                          </div>
+                                          <p className="text-xs text-muted-foreground">{ex.contact_name || "Cliente"}</p>
+                                        </div>
+                                        {ex.horas_sem_resposta != null && ex.horas_sem_resposta > 0 && (
+                                          <span className="text-xs text-red-500 flex items-center gap-1 shrink-0">
+                                            <Clock size={11} />
+                                            {formatHours(ex.horas_sem_resposta)} sem resposta
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Conversation */}
+                                    <div className="p-4 space-y-2">
+                                      {ex.mensagem_cliente && (
+                                        <div className="flex gap-2">
+                                          <div className="w-6 h-6 rounded-full bg-zinc-200 flex items-center justify-center shrink-0 mt-0.5">
+                                            <User size={11} className="text-zinc-500" />
+                                          </div>
+                                          <div className="bg-zinc-100 rounded-lg rounded-tl-none px-3 py-2 flex-1">
+                                            <p className="text-xs text-foreground">{ex.mensagem_cliente}</p>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {ex.resposta_atendente === null ? (
+                                        <div className="flex items-center gap-2 ml-8 text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs">
+                                          <AlertTriangle size={12} />
+                                          <span>Sem resposta da atendente</span>
+                                        </div>
+                                      ) : ex.resposta_atendente ? (
+                                        <div className="flex gap-2 justify-end">
+                                          <div className="bg-violet-100 rounded-lg rounded-tr-none px-3 py-2 max-w-[80%]">
+                                            <p className="text-xs text-foreground">{ex.resposta_atendente}</p>
+                                          </div>
+                                        </div>
+                                      ) : null}
+
+                                      {/* Why it's wrong */}
+                                      {ex.problema && (
+                                        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 mt-1">
+                                          <p className="text-[10px] text-amber-600 font-bold uppercase tracking-wide mb-1">Por que está errado</p>
+                                          <p className="text-xs text-amber-800">{ex.problema}</p>
+                                        </div>
+                                      )}
+
+                                      {/* Suggested improvement */}
+                                      {ex.script_sugerido && (
+                                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wide">Como deveria ser</p>
+                                            <button
+                                              onClick={() => handleCopy(ex.script_sugerido)}
+                                              className="text-[10px] text-emerald-600 hover:text-emerald-800 flex items-center gap-1"
+                                            >
+                                              <Copy size={10} />
+                                              Copiar
+                                            </button>
+                                          </div>
+                                          <p className="text-xs text-emerald-800">{ex.script_sugerido}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })
                             )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ════════════════════════════════════════════════════════════ */}
-            {/* TAB: PIPELINE                                                */}
-            {/* ════════════════════════════════════════════════════════════ */}
-            {activeTab === "pipeline" && (
-              <div className="space-y-6">
-                {pipelineLoading ? (
-                  <div className="space-y-3">
-                    {Array.from({ length: 4 }).map((_, i) => (
-                      <div key={i} className="bg-white rounded-xl border border-zinc-200 p-5 animate-pulse">
-                        <div className="h-4 w-40 bg-zinc-100 rounded mb-2" />
-                        <div className="h-3 w-64 bg-zinc-100 rounded" />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <>
-                    {/* Hot Leads */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <Flame size={16} className="text-emerald-600" />
-                        <h2 className="text-sm font-semibold text-foreground">Leads Quentes — Agir Agora</h2>
-                        <span className="bg-emerald-100 text-emerald-700 text-xs rounded-full px-2 py-0.5 font-medium">
-                          {hotLeads.length}
-                        </span>
-                      </div>
-
-                      {hotLeads.length === 0 ? (
-                        <div className="bg-zinc-50 rounded-xl border border-zinc-200 p-8 text-center">
-                          <p className="text-muted-foreground text-sm">Nenhum lead quente no momento</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {hotLeads.map((lead) => (
-                            <LeadCard
-                              key={lead.conversation_id}
-                              lead={lead}
-                              onNavigate={() => navigate("/whatsapp")}
-                              onGenerateScript={handleGenerateScript}
-                              generatingScript={generatingScript}
-                              variant="hot"
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Warm Leads */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <TrendingDown size={16} className="text-amber-600" />
-                        <h2 className="text-sm font-semibold text-foreground">Leads Mornos — Risco de Esfriamento</h2>
-                        <span className="bg-amber-100 text-amber-700 text-xs rounded-full px-2 py-0.5 font-medium">
-                          {warmLeads.length}
-                        </span>
-                      </div>
-
-                      {warmLeads.length === 0 ? (
-                        <div className="bg-zinc-50 rounded-xl border border-zinc-200 p-8 text-center">
-                          <p className="text-muted-foreground text-sm">Nenhum lead morno no momento</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {warmLeads.map((lead) => (
-                            <LeadCard
-                              key={lead.conversation_id}
-                              lead={lead}
-                              onNavigate={() => navigate("/whatsapp")}
-                              onGenerateScript={handleGenerateScript}
-                              generatingScript={generatingScript}
-                              variant="warm"
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {hotLeads.length === 0 && warmLeads.length === 0 && (
-                      <div className="flex flex-col items-center justify-center py-16 gap-3">
-                        <Users className="text-zinc-400" size={40} />
-                        <p className="text-foreground font-medium">Pipeline vazio</p>
-                        <p className="text-muted-foreground text-sm">Leads quentes e mornos aparecerão aqui após análise das conversas</p>
-                      </div>
+                        )}
+                      </>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
             )}
@@ -1650,104 +1609,6 @@ const AIAnalysis: React.FC = () => {
               </div>
             )}
 
-            {/* ════════════════════════════════════════════════════════════ */}
-            {/* TAB: SCORES                                                  */}
-            {/* ════════════════════════════════════════════════════════════ */}
-            {activeTab === "scores" && (
-              <div className="space-y-3">
-                {scoresLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="bg-white rounded-xl border border-zinc-200 p-4 animate-pulse">
-                      <div className="h-5 w-40 bg-zinc-100 rounded mb-2" />
-                      <div className="h-3 w-64 bg-zinc-100 rounded" />
-                    </div>
-                  ))
-                ) : scoresData.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 gap-3">
-                    <BarChart2 className="text-zinc-400" size={40} />
-                    <p className="text-foreground font-medium">Nenhuma análise disponível</p>
-                    <p className="text-muted-foreground text-sm">Os scores aparecem aqui após a análise das conversas</p>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-xs text-muted-foreground">{scoresData.length} conversas analisadas — clique em uma linha para ver detalhes</p>
-                    {scoresData.map((row) => (
-                      <div key={row.id}>
-                        <div
-                          className="bg-white rounded-xl border border-zinc-200 px-4 py-3 hover:border-zinc-300 cursor-pointer transition-all flex items-center gap-3"
-                          onClick={() => setExpandedRow(expandedRow === row.id ? null : row.id)}
-                        >
-                          <div className="w-8 h-8 bg-zinc-100 border border-zinc-200 rounded-full flex items-center justify-center text-xs font-semibold text-zinc-600 shrink-0">
-                            {getInitials(row.contact_name)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-foreground truncate">{row.contact_name || "—"}</p>
-                            <p className="text-xs text-muted-foreground truncate">{row.contact_phone || ""}</p>
-                          </div>
-                          {row.sentimento && (
-                            <span className={`text-xs rounded-full px-2 py-0.5 border font-medium shrink-0 ${
-                              row.sentimento === "positivo" ? "bg-emerald-50 border-emerald-200 text-emerald-700" :
-                              row.sentimento === "frustrado" ? "bg-red-50 border-red-200 text-red-700" :
-                              "bg-zinc-100 border-zinc-200 text-zinc-500"
-                            }`}>
-                              {row.sentimento}
-                            </span>
-                          )}
-                          {row.status_lead && (
-                            <span className={`text-xs rounded-full px-2 py-0.5 border font-medium shrink-0 ${statusColors[row.status_lead] || ""}`}>
-                              {row.status_lead}
-                            </span>
-                          )}
-                          <span className="text-xs text-muted-foreground hidden md:block shrink-0 max-w-28 truncate">{row.produto_interesse || "—"}</span>
-                          <span className={`text-xl font-bold shrink-0 ${scoreColor(row.score_qualidade)}`}>
-                            {row.score_qualidade ?? "—"}
-                          </span>
-                          <span className="text-xs text-muted-foreground shrink-0 hidden sm:block">
-                            {new Date(row.analyzed_at).toLocaleDateString("pt-BR")}
-                          </span>
-                          <ChevronDown size={15} className={`text-zinc-400 shrink-0 transition-transform duration-200 ${expandedRow === row.id ? "rotate-180" : ""}`} />
-                        </div>
-                        {expandedRow === row.id && (
-                          <div className="bg-zinc-50 border border-zinc-200 border-t-0 rounded-b-xl p-4">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                              {Object.entries(scoreLabels).map(([key, label]) => {
-                                const val = row[`score_${key}` as keyof typeof row] as number | null;
-                                return (
-                                  <div key={key} className="bg-white rounded-lg p-3 text-center border border-zinc-200">
-                                    <p className={`text-xl font-bold ${scoreColor(val)}`}>{val ?? "—"}</p>
-                                    <p className="text-xs text-muted-foreground mt-1">{label}</p>
-                                    <div className="mt-2 h-1 bg-zinc-100 rounded-full overflow-hidden">
-                                      <div className="h-full rounded-full" style={{ width: val ? `${(val / 10) * 100}%` : "0%", backgroundColor: scoreBarColor(val) }} />
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <div className="mt-3 flex items-center gap-3">
-                              <button
-                                onClick={() => navigate("/whatsapp")}
-                                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-white transition-all border border-transparent hover:border-zinc-200"
-                              >
-                                <Eye size={13} />
-                                Ver conversa
-                              </button>
-                              <button
-                                onClick={() => handleGenerateScript(row.id, row.contact_name || "Cliente", row.produto_interesse || "produto", 0, "")}
-                                disabled={generatingScript[row.id]}
-                                className="flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-700 px-3 py-1.5 rounded-lg hover:bg-violet-50 transition-all border border-transparent hover:border-violet-200"
-                              >
-                                {generatingScript[row.id] ? <Loader2 size={13} className="animate-spin" /> : <MessageSquarePlus size={13} />}
-                                Gerar script de reengajamento
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
 
             {/* ════════════════════════════════════════════════════════════ */}
             {/* TAB: CONSULTOR IA                                            */}
@@ -1855,120 +1716,6 @@ const AIAnalysis: React.FC = () => {
                     {askLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                   </button>
                 </div>
-              </div>
-            )}
-            {/* ════════════════════════════════════════════════════════════ */}
-            {/* TAB: HISTÓRICO                                               */}
-            {/* ════════════════════════════════════════════════════════════ */}
-            {activeTab === "historico" && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold text-foreground">Histórico de Análises</h3>
-                    <p className="text-sm text-muted-foreground mt-0.5">
-                      Registro de todas as análises realizadas. Os dados são pré-computados, sem custo de tokens.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => loadAnalysisRuns(isOnDemandRole ? selectedClientTenantId : null)}
-                      disabled={runsLoading}
-                      className="gap-1.5"
-                    >
-                      <RefreshCw className={`h-4 w-4 ${runsLoading ? "animate-spin" : ""}`} />
-                      Atualizar
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleTriggerManualRun}
-                      disabled={triggeringRun || (isOnDemandRole && !selectedClientTenantId)}
-                      className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
-                    >
-                      {triggeringRun ? (
-                        <><Loader2 className="h-4 w-4 animate-spin" />Analisando...</>
-                      ) : (
-                        <><Sparkles className="h-4 w-4" />Analisar agora</>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                {runsLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
-                ) : analysisRuns.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-                    <History className="h-12 w-12 text-muted-foreground/30" />
-                    <p className="text-foreground font-medium">Nenhuma análise registrada</p>
-                    <p className="text-sm text-muted-foreground max-w-xs">
-                      Clique em "Analisar agora" para criar a primeira análise, ou aguarde o próximo horário agendado.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {analysisRuns.map((run) => (
-                      <div
-                        key={run.id}
-                        className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center gap-4"
-                      >
-                        <div className={`size-9 rounded-full flex items-center justify-center shrink-0 ${
-                          run.status === "completed" ? "bg-emerald-50" :
-                          run.status === "error" ? "bg-red-50" : "bg-violet-50"
-                        }`}>
-                          {run.status === "completed" ? (
-                            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                          ) : run.status === "error" ? (
-                            <XCircle className="h-5 w-5 text-red-500" />
-                          ) : (
-                            <Loader2 className="h-5 w-5 text-violet-600 animate-spin" />
-                          )}
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-medium text-foreground">
-                              {new Intl.DateTimeFormat("pt-BR", {
-                                day: "2-digit", month: "2-digit", year: "numeric",
-                                hour: "2-digit", minute: "2-digit",
-                                timeZone: "America/Sao_Paulo",
-                              }).format(new Date(run.run_at))}
-                            </p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
-                              run.triggered_by === "manual"
-                                ? "bg-violet-50 border-violet-200 text-violet-700"
-                                : "bg-zinc-50 border-zinc-200 text-zinc-600"
-                            }`}>
-                              {run.triggered_by === "manual" ? "Manual" : "Agendado"}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {run.status === "completed"
-                              ? `${run.conversations_analyzed} conversas analisadas${run.conversations_total > 0 ? ` de ${run.conversations_total} novas` : ""}`
-                              : run.status === "error"
-                              ? `Erro: ${run.error_message || "Erro desconhecido"}`
-                              : "Em execução..."}
-                          </p>
-                        </div>
-
-                        {(isOnDemandRole || isGerenteRole) && (
-                          <button
-                            onClick={() => handleDeleteRun(run.id)}
-                            disabled={deletingRunId === run.id}
-                            className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                            title="Remover análise"
-                          >
-                            {deletingRunId === run.id
-                              ? <Loader2 className="h-4 w-4 animate-spin" />
-                              : <Trash2 className="h-4 w-4" />}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
           </>

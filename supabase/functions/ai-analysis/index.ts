@@ -388,6 +388,9 @@ Deno.serve(async (req) => {
         max_history_runs: Number(s.max_history_runs) || 10,
         last_run_at: s.last_run_at || null,
         next_run_at: s.next_run_at || null,
+        allow_manual_triggers: s.allow_manual_triggers !== false,
+        max_triggers_per_period: Number(s.max_triggers_per_period) || 0,
+        trigger_period_days: Number(s.trigger_period_days) || 30,
       });
     }
 
@@ -408,6 +411,9 @@ Deno.serve(async (req) => {
         max_history_runs: Number(s.max_history_runs) || 10,
         last_run_at: s.last_run_at || null,
         next_run_at: s.next_run_at || null,
+        allow_manual_triggers: s.allow_manual_triggers !== false,
+        max_triggers_per_period: Number(s.max_triggers_per_period) || 0,
+        trigger_period_days: Number(s.trigger_period_days) || 30,
       });
     }
 
@@ -1726,6 +1732,29 @@ Conversa (${messages.length} msgs):\n${transcript}`,
       const callerRole = (roleCheck as Record<string, unknown>)?.role as string | undefined;
       if (!callerRole || !["admin", "super_admin", "gerente", "gestor", "sucesso_cliente"].includes(callerRole)) {
         return jsonResponse({ error: "Sem permissão para iniciar análise manual." }, 403);
+      }
+
+      // Check if manual triggers are allowed by admin settings
+      const sysForTrigger = await loadSystemSettings();
+      if (!sysForTrigger.allow_manual_triggers) {
+        return jsonResponse({ error: "Análise manual desativada pelo administrador." }, 403);
+      }
+
+      // Check usage limit if configured
+      const maxTriggers = Number(sysForTrigger.max_triggers_per_period) || 0;
+      const periodDays = Number(sysForTrigger.trigger_period_days) || 30;
+      if (maxTriggers > 0) {
+        const since = new Date(Date.now() - periodDays * 86400_000).toISOString();
+        const { count } = await supabaseAdmin
+          // deno-lint-ignore no-explicit-any
+          .from("ai_analysis_runs" as any)
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId!)
+          .eq("triggered_by", "manual")
+          .gte("created_at", since);
+        if ((count ?? 0) >= maxTriggers) {
+          return jsonResponse({ error: `Limite de ${maxTriggers} análises manuais por ${periodDays} dias atingido.` }, 429);
+        }
       }
 
       // Create run record

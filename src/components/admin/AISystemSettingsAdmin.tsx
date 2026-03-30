@@ -73,6 +73,9 @@ const DEFAULT_SETTINGS: AISystemSettings = {
   max_history_runs: 10,
   last_run_at: null,
   next_run_at: null,
+  allow_manual_triggers: true,
+  max_triggers_per_period: 0,
+  trigger_period_days: 30,
 };
 
 function formatDateBR(dateStr: string | null): string {
@@ -430,6 +433,61 @@ export function AISystemSettingsAdmin() {
               Recomendado: entre 5 e 20 análises.
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Controle de análises manuais */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5 text-primary" />
+            Análises Manuais pelos Clientes
+          </CardTitle>
+          <CardDescription>
+            Controle se os clientes podem solicitar análises manuais e com que frequência.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Permitir análise manual</Label>
+              <p className="text-xs text-muted-foreground">Gestores e CS podem clicar em "Regenerar" para iniciar uma análise.</p>
+            </div>
+            <Switch
+              checked={settings.allow_manual_triggers}
+              onCheckedChange={(checked) => setSettings((prev) => ({ ...prev, allow_manual_triggers: checked }))}
+            />
+          </div>
+
+          {settings.allow_manual_triggers && (
+            <>
+              <Separator />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Limite de usos por período</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={settings.max_triggers_per_period}
+                    onChange={(e) => setSettings((prev) => ({ ...prev, max_triggers_per_period: Number(e.target.value) || 0 }))}
+                  />
+                  <p className="text-xs text-muted-foreground">0 = sem limite.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Período (dias)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={settings.trigger_period_days}
+                    onChange={(e) => setSettings((prev) => ({ ...prev, trigger_period_days: Number(e.target.value) || 30 }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Janela de tempo para contar usos.</p>
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

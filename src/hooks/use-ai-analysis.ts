@@ -103,6 +103,9 @@ export interface AIAnalysisSettings {
   max_history_runs: number;
   last_run_at: string | null;
   next_run_at: string | null;
+  allow_manual_triggers: boolean;
+  max_triggers_per_period: number;
+  trigger_period_days: number;
 }
 
 // Alias — system settings are the same shape as AIAnalysisSettings
