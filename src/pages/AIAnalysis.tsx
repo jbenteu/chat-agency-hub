@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useState, useEffect, useCallback } from "react";
+import React, { lazy, Suspense, useState, useEffect, useCallback, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,7 +31,10 @@ function TabSkeleton() {
 }
 
 export default function AIAnalysis() {
-  const { getLatestAnalysis, runAnalysis, listTenants } = useAIAnalysis();
+  const aiAnalysis = useAIAnalysis();
+  const aiAnalysisRef = useRef(aiAnalysis);
+  aiAnalysisRef.current = aiAnalysis;
+
   const { profile } = useAuth();
   const { toast } = useToast();
   const userRole = profile?.role ?? "cliente";
@@ -49,54 +52,48 @@ export default function AIAnalysis() {
   const [tenants, setTenants] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(undefined);
 
-  // Load tenant list for admins
+  // Load tenant list for admins (runs once)
   useEffect(() => {
     if (!isAdmin) return;
-    listTenants().then(({ tenants: list }) => {
+    aiAnalysisRef.current.listTenants().then(({ tenants: list }) => {
       setTenants(list);
-      if (list.length > 0 && !selectedTenantId) setSelectedTenantId(list[0].id);
+      if (list.length > 0) setSelectedTenantId(list[0].id);
     }).catch(console.error);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
-  const loadAnalysis = useCallback(async () => {
+  const loadAnalysis = useCallback(async (tenantId?: string) => {
     try {
-      const result = await getLatestAnalysis(selectedTenantId);
+      const result = await aiAnalysisRef.current.getLatestAnalysis(tenantId);
       setRun(result.run);
       setConversations(result.conversations || []);
       setImprovements(result.improvements || []);
-      if (result.run?.status === "processing") {
-        setPollingActive(true);
-      } else {
-        setPollingActive(false);
-      }
+      setPollingActive(result.run?.status === "processing");
     } catch (err) {
       console.error("Error loading analysis:", err);
     } finally {
       setLoading(false);
     }
-  }, [getLatestAnalysis, selectedTenantId]);
+  }, []); // stable — uses ref internally
 
+  // Load when selectedTenantId changes (or on first mount for non-admins)
   useEffect(() => {
-    // For admins, wait until tenant is selected
     if (isAdmin && !selectedTenantId) return;
     setLoading(true);
-    loadAnalysis();
-  }, [loadAnalysis, isAdmin, selectedTenantId]);
+    loadAnalysis(selectedTenantId);
+  }, [selectedTenantId, isAdmin, loadAnalysis]);
 
   // Polling when processing
   useEffect(() => {
     if (!pollingActive) return;
-    const interval = setInterval(async () => {
-      await loadAnalysis();
-    }, 10000);
+    const interval = setInterval(() => loadAnalysis(selectedTenantId), 10000);
     return () => clearInterval(interval);
-  }, [pollingActive, loadAnalysis]);
+  }, [pollingActive, selectedTenantId, loadAnalysis]);
 
   const handleRunAnalysis = async () => {
     setRunningAnalysis(true);
     try {
-      await runAnalysis(selectedTenantId);
+      await aiAnalysisRef.current.runAnalysis(selectedTenantId);
       toast({ title: "Análise iniciada", description: "A análise está sendo processada..." });
       setPollingActive(true);
       await loadAnalysis();
