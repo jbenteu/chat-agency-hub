@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const body = await req.json();
-    const { role_to_assign } = body;
+    const { role_to_assign, gestor_id, cs_id } = body;
 
     if (!role_to_assign) {
       return Response.json({ error: "O campo role_to_assign é obrigatório." }, { status: 400, headers: corsHeaders });
@@ -64,21 +64,51 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Validate gestor_id/cs_id if provided (only relevant for cliente invites)
+    if (gestor_id) {
+      const { data: gestorProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("id, role")
+        .eq("id", gestor_id)
+        .single();
+      if (!gestorProfile || gestorProfile.role !== "gestor") {
+        return Response.json({ error: "O gestor informado é inválido." }, { status: 400, headers: corsHeaders });
+      }
+    }
+
+    if (cs_id) {
+      const { data: csProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("id, role")
+        .eq("id", cs_id)
+        .single();
+      if (!csProfile || csProfile.role !== "sucesso_cliente") {
+        return Response.json({ error: "O CS informado é inválido." }, { status: 400, headers: corsHeaders });
+      }
+    }
+
     const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
+    const insertPayload: Record<string, unknown> = {
+      token,
+      created_by: user.id,
+      role_to_assign,
+      used: false,
+      expires_at: expiresAt.toISOString(),
+    };
+
+    if (role_to_assign === "cliente") {
+      if (gestor_id) insertPayload.gestor_id = gestor_id;
+      if (cs_id) insertPayload.cs_id = cs_id;
+    }
+
     const { data: invite, error: insertError } = await supabaseAdmin
       .from("invite_links")
-      .insert({
-        token,
-        created_by: user.id,
-        role_to_assign,
-        used: false,
-        expires_at: expiresAt.toISOString(),
-      })
-      .select("id, token, role_to_assign, expires_at")
+      .insert(insertPayload)
+      .select("id, token, role_to_assign, expires_at, gestor_id, cs_id")
       .single();
 
     if (insertError) {
@@ -97,6 +127,8 @@ Deno.serve(async (req: Request) => {
           url: inviteUrl,
           role_to_assign: invite.role_to_assign,
           expires_at: invite.expires_at,
+          gestor_id: invite.gestor_id ?? null,
+          cs_id: invite.cs_id ?? null,
         },
       },
       { status: 201, headers: corsHeaders }

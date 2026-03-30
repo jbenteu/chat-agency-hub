@@ -56,8 +56,9 @@ Deno.serve(async (req: Request) => {
     let teamMemberIds: string[] = [];
 
     if (callerProfile.role === "admin") {
+      // Admin sees gestores, sucesso_cliente AND gerentes
       const roles = filterRole === "all"
-        ? ["gestor", "sucesso_cliente"]
+        ? ["gestor", "sucesso_cliente", "gerente"]
         : [filterRole];
       const { data: allTeam } = await supabaseAdmin
         .from("profiles")
@@ -65,6 +66,7 @@ Deno.serve(async (req: Request) => {
         .in("role", roles);
       teamMemberIds = (allTeam ?? []).map((p: any) => p.id);
     } else {
+      // Gerente sees their direct subordinates (gestores, sucesso_cliente)
       const { data: relations } = await supabaseAdmin
         .from("user_relationships")
         .select("subordinate_id")
@@ -75,12 +77,12 @@ Deno.serve(async (req: Request) => {
         return Response.json({ team_members: [], total: 0, page, limit, total_pages: 0 }, { status: 200, headers: corsHeaders });
       }
 
-      const roleFilter = filterRole === "all" ? ["gestor", "sucesso_cliente"] : [filterRole];
+      const staffRoles = filterRole === "all" ? ["gestor", "sucesso_cliente"] : [filterRole];
       const { data: teamProfiles } = await supabaseAdmin
         .from("profiles")
         .select("id")
         .in("id", subordinateIds)
-        .in("role", roleFilter);
+        .in("role", staffRoles);
       teamMemberIds = (teamProfiles ?? []).map((p: any) => p.id);
     }
 
