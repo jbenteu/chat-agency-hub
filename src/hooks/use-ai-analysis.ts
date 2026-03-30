@@ -121,6 +121,7 @@ export interface AISystemSettings {
   trigger_period_days: number;
   last_run_at: string | null;
   next_run_at: string | null;
+  api_key_configured?: boolean;
 }
 
 export type AIAnalysisSettings = AISystemSettings;
