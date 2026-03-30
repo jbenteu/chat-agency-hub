@@ -102,6 +102,26 @@ export interface AIAnalysisSchedule {
   updated_at: string;
 }
 
+export interface AISystemSettings {
+  provider: string;
+  analysis_model: string;
+  insights_model: string;
+  avg_ticket_brl: number;
+  schedule_enabled: boolean;
+  schedule_hour: number;
+  schedule_minute: number;
+  schedule_days: number[];
+  schedule_timezone: string;
+  max_history_runs: number;
+  allow_manual_triggers: boolean;
+  max_triggers_per_period: number;
+  trigger_period_days: number;
+  last_run_at: string | null;
+  next_run_at: string | null;
+}
+
+export type AIAnalysisSettings = AISystemSettings;
+
 export interface LatestAnalysisResult {
   run: AIAnalysisRun | null;
   conversations: AIAnalysisConversation[];
