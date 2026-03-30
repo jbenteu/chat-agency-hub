@@ -320,20 +320,33 @@ Deno.serve(async (req) => {
     avg_ticket_brl: number;
   }
 
-  const loadTenantSettings = async (tid: string): Promise<TenantSettings> => {
+  // Load global settings from ai_system_settings (admin-controlled singleton)
+  const loadTenantSettings = async (_tid: string): Promise<TenantSettings> => {
     const { data } = await supabaseAdmin
       // deno-lint-ignore no-explicit-any
-      .from("ai_analysis_settings" as any)
+      .from("ai_system_settings" as any)
       .select("provider, analysis_model, insights_model, api_key, avg_ticket_brl")
-      .eq("tenant_id", tid)
+      .limit(1)
       .maybeSingle();
+    const g = (data as Record<string, unknown>) || {};
     return {
-      provider: ((data as Record<string, unknown>)?.provider as "anthropic" | "openai") || "anthropic",
-      analysis_model: (data as Record<string, unknown>)?.analysis_model as string || "claude-haiku-4-5-20251001",
-      insights_model: (data as Record<string, unknown>)?.insights_model as string || "claude-sonnet-4-6",
-      api_key: (data as Record<string, unknown>)?.api_key as string | null || null,
-      avg_ticket_brl: Number((data as Record<string, unknown>)?.avg_ticket_brl) || 2500,
+      provider: (g.provider as "anthropic" | "openai") || "anthropic",
+      analysis_model: (g.analysis_model as string) || "claude-haiku-4-5-20251001",
+      insights_model: (g.insights_model as string) || "claude-sonnet-4-6",
+      api_key: (g.api_key as string | null) || null,
+      avg_ticket_brl: Number(g.avg_ticket_brl) || 2500,
     };
+  };
+
+  // Load global system settings (for admin panel)
+  const loadSystemSettings = async () => {
+    const { data } = await supabaseAdmin
+      // deno-lint-ignore no-explicit-any
+      .from("ai_system_settings" as any)
+      .select("*")
+      .limit(1)
+      .maybeSingle();
+    return (data as Record<string, unknown>) || {};
   };
 
   // Unified AI caller — dispatches to correct provider using tenant settings
@@ -358,15 +371,9 @@ Deno.serve(async (req) => {
       ? await loadTenantSettings(tenantId)
       : { provider: "anthropic", analysis_model: "claude-haiku-4-5-20251001", insights_model: "claude-sonnet-4-6", api_key: null, avg_ticket_brl: 2500 };
 
-    // ─── get_ai_settings ──────────────────────────────────────────────────
+    // ─── get_ai_settings (legacy — redirects to global system settings) ──────
     if (action === "get_ai_settings") {
-      const { data: settings } = await supabaseAdmin
-        // deno-lint-ignore no-explicit-any
-        .from("ai_analysis_settings" as any)
-        .select("provider, analysis_model, insights_model, api_key, avg_ticket_brl, schedule_enabled, schedule_days, schedule_hour, schedule_minute, schedule_timezone, last_run_at, next_run_at")
-        .eq("tenant_id", tenantId!)
-        .maybeSingle();
-      const s = (settings as Record<string, unknown>) || {};
+      const s = await loadSystemSettings();
       return jsonResponse({
         provider: s.provider || "anthropic",
         analysis_model: s.analysis_model || "claude-haiku-4-5-20251001",
@@ -375,17 +382,37 @@ Deno.serve(async (req) => {
         avg_ticket_brl: Number(s.avg_ticket_brl) || 2500,
         schedule_enabled: s.schedule_enabled || false,
         schedule_days: s.schedule_days || [1, 2, 3, 4, 5],
-        schedule_hour: s.schedule_hour ?? 9,
+        schedule_hour: s.schedule_hour ?? 8,
         schedule_minute: s.schedule_minute ?? 0,
         schedule_timezone: s.schedule_timezone || "America/Sao_Paulo",
+        max_history_runs: Number(s.max_history_runs) || 10,
         last_run_at: s.last_run_at || null,
         next_run_at: s.next_run_at || null,
       });
     }
 
-    // ─── update_ai_settings ───────────────────────────────────────────────
-    if (action === "update_ai_settings") {
-      // Only admin/super_admin can update settings
+    // ─── get_system_settings (admin panel) ───────────────────────────────────
+    if (action === "get_system_settings") {
+      const s = await loadSystemSettings();
+      return jsonResponse({
+        provider: s.provider || "anthropic",
+        analysis_model: s.analysis_model || "claude-haiku-4-5-20251001",
+        insights_model: s.insights_model || "claude-sonnet-4-6",
+        api_key_configured: !!(s.api_key),
+        avg_ticket_brl: Number(s.avg_ticket_brl) || 2500,
+        schedule_enabled: s.schedule_enabled || false,
+        schedule_days: s.schedule_days || [1, 2, 3, 4, 5],
+        schedule_hour: s.schedule_hour ?? 8,
+        schedule_minute: s.schedule_minute ?? 0,
+        schedule_timezone: s.schedule_timezone || "America/Sao_Paulo",
+        max_history_runs: Number(s.max_history_runs) || 10,
+        last_run_at: s.last_run_at || null,
+        next_run_at: s.next_run_at || null,
+      });
+    }
+
+    // ─── update_system_settings (admin only) ─────────────────────────────────
+    if (action === "update_system_settings" || action === "update_ai_settings") {
       const { data: roleCheck } = await supabaseAdmin
         .from("user_roles")
         .select("role")
@@ -397,10 +424,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "Apenas administradores podem alterar as configurações de IA." }, 403);
       }
 
-      const updates: Record<string, unknown> = {
-        tenant_id: tenantId,
-        updated_at: new Date().toISOString(),
-      };
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (payload.provider !== undefined) updates.provider = payload.provider;
       if (payload.analysis_model !== undefined) updates.analysis_model = payload.analysis_model;
       if (payload.insights_model !== undefined) updates.insights_model = payload.insights_model;
@@ -411,25 +435,27 @@ Deno.serve(async (req) => {
       if (payload.schedule_hour !== undefined) updates.schedule_hour = Number(payload.schedule_hour);
       if (payload.schedule_minute !== undefined) updates.schedule_minute = Number(payload.schedule_minute);
       if (payload.schedule_timezone !== undefined) updates.schedule_timezone = payload.schedule_timezone;
+      if (payload.max_history_runs !== undefined) updates.max_history_runs = Number(payload.max_history_runs);
 
-      // Compute next_run_at when schedule is enabled
       if (updates.schedule_enabled) {
         const { data: nextRun } = await supabaseAdmin.rpc("compute_next_ai_run", {
-          p_days: (updates.schedule_days || payload.schedule_days || [1, 2, 3, 4, 5]) as number[],
-          p_hour: Number(updates.schedule_hour ?? payload.schedule_hour ?? 9),
-          p_minute: Number(updates.schedule_minute ?? payload.schedule_minute ?? 0),
-          p_timezone: (updates.schedule_timezone || payload.schedule_timezone || "America/Sao_Paulo") as string,
+          p_days: (updates.schedule_days || [1, 2, 3, 4, 5]) as number[],
+          p_hour: Number(updates.schedule_hour ?? 8),
+          p_minute: Number(updates.schedule_minute ?? 0),
+          p_timezone: (updates.schedule_timezone || "America/Sao_Paulo") as string,
         });
         if (nextRun) updates.next_run_at = nextRun;
       } else if (updates.schedule_enabled === false) {
         updates.next_run_at = null;
       }
 
-      const { error: upsertErr } = await supabaseAdmin
+      // Update the singleton row (no WHERE needed since there's only one)
+      const { error: updateErr } = await supabaseAdmin
         // deno-lint-ignore no-explicit-any
-        .from("ai_analysis_settings" as any)
-        .upsert(updates, { onConflict: "tenant_id" });
-      if (upsertErr) throw upsertErr;
+        .from("ai_system_settings" as any)
+        .update(updates)
+        .neq("id", "00000000-0000-0000-0000-000000000000"); // matches all rows
+      if (updateErr) throw updateErr;
       return jsonResponse({ success: true });
     }
 
@@ -1505,6 +1531,356 @@ Priorize: risco de receita, oportunidades de conversão, eficiência operacional
           (b.horas_sem_resposta as number) - (a.horas_sem_resposta as number));
 
       return jsonResponse({ hot_leads: hotLeads, warm_leads: warmLeads });
+    }
+
+    // ─── get_analysis_runs ────────────────────────────────────────────────
+    if (action === "get_analysis_runs") {
+      const { data: runs } = await supabaseAdmin
+        // deno-lint-ignore no-explicit-any
+        .from("ai_analysis_runs" as any)
+        .select("*")
+        .eq("tenant_id", tenantId!)
+        .order("run_at", { ascending: false })
+        .limit(50);
+      return jsonResponse({ runs: runs || [] });
+    }
+
+    // ─── delete_run ───────────────────────────────────────────────────────
+    if (action === "delete_run") {
+      const runId = payload.run_id as string;
+      if (!runId) return jsonResponse({ error: "run_id is required" }, 400);
+
+      const { data: roleCheck } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId!)
+        .limit(1)
+        .maybeSingle();
+      const callerRole = (roleCheck as Record<string, unknown>)?.role as string | undefined;
+      if (!callerRole || !["admin", "super_admin", "gerente", "gestor", "sucesso_cliente"].includes(callerRole)) {
+        return jsonResponse({ error: "Sem permissão para deletar análises." }, 403);
+      }
+
+      // Unlink conversation analyses from the run (ON DELETE SET NULL handles this via FK)
+      const { error: delErr } = await supabaseAdmin
+        // deno-lint-ignore no-explicit-any
+        .from("ai_analysis_runs" as any)
+        .delete()
+        .eq("id", runId)
+        .eq("tenant_id", tenantId!);
+      if (delErr) throw delErr;
+      return jsonResponse({ success: true });
+    }
+
+    // ─── Helper: run analysis for a tenant and return counts ─────────────
+    const runAnalysisForTenant = async (
+      tid: string,
+      runId: string,
+      settings: TenantSettings,
+      limitConvs = 200,
+    ): Promise<{ analyzed: number; total: number; errors: number }> => {
+      // Find conversations not yet analyzed (no entry in ai_conversation_analysis)
+      const { data: allConvs } = await supabaseAdmin
+        .from("whatsapp_conversations")
+        .select("id")
+        .eq("tenant_id", tid)
+        .order("last_message_at", { ascending: false })
+        .limit(limitConvs);
+
+      if (!allConvs || allConvs.length === 0) return { analyzed: 0, total: 0, errors: 0 };
+
+      const { data: existingAnalyses } = await supabaseAdmin
+        // deno-lint-ignore no-explicit-any
+        .from("ai_conversation_analysis" as any)
+        .select("conversation_id")
+        .eq("tenant_id", tid)
+        .in("conversation_id", allConvs.map((c: { id: string }) => c.id));
+
+      const analyzedSet = new Set(
+        (existingAnalyses || []).map((a: { conversation_id: string }) => a.conversation_id)
+      );
+      const toAnalyze = allConvs.filter((c: { id: string }) => !analyzedSet.has(c.id));
+      const total = toAnalyze.length;
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const conv of toAnalyze) {
+        try {
+          const { data: messages } = await supabaseAdmin
+            .from("whatsapp_messages")
+            .select("direction, content, created_at")
+            .eq("tenant_id", tid)
+            .eq("conversation_id", conv.id)
+            .order("created_at", { ascending: true })
+            .limit(60);
+
+          if (!messages || messages.length === 0) continue;
+
+          const lastInbound = [...messages].reverse().find((m: { direction: string }) => m.direction === "inbound");
+          const horasSemResposta = lastInbound
+            ? (Date.now() - new Date((lastInbound as { created_at: string }).created_at).getTime()) / 3600000
+            : 0;
+
+          const transcript = messages
+            .map((m: { direction: string; content: string | null }) =>
+              `${m.direction === "outbound" ? "Atendente" : "Cliente"}: ${m.content || "[mídia]"}`)
+            .join("\n");
+
+          const aiData = await callAI(
+            settings,
+            settings.analysis_model,
+            600,
+            "Você analisa conversas de WhatsApp de joalherias. Responda APENAS com JSON válido, sem texto extra, sem markdown.",
+            `Analise esta conversa de joalheria e retorne JSON com exatamente estas chaves:
+{"sentimento":"positivo"|"neutro"|"frustrado","produto_interesse":string|null,"objecao_detectada":string|null,"score_qualidade":1-10,"score_empatia":1-10,"score_clareza":1-10,"score_velocidade":1-10,"score_followup":1-10,"score_contorno_objecao":1-10,"score_cta":1-10,"score_personalizacao":1-10,"status_lead":"quente"|"morno"|"frio"|"perdido","resumo":string}
+Velocidade baseada em ${horasSemResposta.toFixed(1)}h sem resposta.
+Conversa (${messages.length} msgs):\n${transcript}`,
+          );
+
+          const analysis = extractJson(aiData.content[0].text);
+
+          // deno-lint-ignore no-explicit-any
+          await (supabaseAdmin.from("ai_conversation_analysis" as any) as any)
+            .upsert({
+              conversation_id: conv.id,
+              tenant_id: tid,
+              run_id: runId,
+              sentimento: analysis.sentimento,
+              produto_interesse: analysis.produto_interesse,
+              objecao_detectada: analysis.objecao_detectada,
+              score_qualidade: analysis.score_qualidade,
+              score_empatia: analysis.score_empatia,
+              score_clareza: analysis.score_clareza,
+              score_velocidade: analysis.score_velocidade,
+              score_followup: analysis.score_followup,
+              score_contorno_objecao: analysis.score_contorno_objecao,
+              score_cta: analysis.score_cta,
+              score_personalizacao: analysis.score_personalizacao,
+              status_lead: analysis.status_lead,
+              resumo: analysis.resumo,
+              horas_sem_resposta: Math.round(horasSemResposta * 10) / 10,
+              analyzed_at: new Date().toISOString(),
+            }, { onConflict: "conversation_id" });
+
+          successCount++;
+        } catch {
+          errorCount++;
+        }
+      }
+
+      // Invalidate dashboard cache
+      if (successCount > 0) {
+        await supabaseAdmin.from("ai_dashboard_cache").delete().eq("tenant_id", tid);
+      }
+
+      return { analyzed: successCount, total, errors: errorCount };
+    };
+
+    // ─── Helper: enforce max_history_runs limit ───────────────────────────
+    const enforceHistoryLimit = async (tid: string, maxRuns: number) => {
+      if (maxRuns <= 0) return;
+      const { data: runs } = await supabaseAdmin
+        // deno-lint-ignore no-explicit-any
+        .from("ai_analysis_runs" as any)
+        .select("id")
+        .eq("tenant_id", tid)
+        .order("run_at", { ascending: true });
+
+      if (!runs || runs.length <= maxRuns) return;
+
+      const toDelete = runs.slice(0, runs.length - maxRuns);
+      await supabaseAdmin
+        // deno-lint-ignore no-explicit-any
+        .from("ai_analysis_runs" as any)
+        .delete()
+        .in("id", toDelete.map((r: { id: string }) => r.id));
+    };
+
+    // ─── trigger_manual_run ───────────────────────────────────────────────
+    if (action === "trigger_manual_run") {
+      const { data: roleCheck } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId!)
+        .limit(1)
+        .maybeSingle();
+      const callerRole = (roleCheck as Record<string, unknown>)?.role as string | undefined;
+      if (!callerRole || !["admin", "super_admin", "gerente", "gestor", "sucesso_cliente"].includes(callerRole)) {
+        return jsonResponse({ error: "Sem permissão para iniciar análise manual." }, 403);
+      }
+
+      // Create run record
+      const { data: newRun, error: runErr } = await supabaseAdmin
+        // deno-lint-ignore no-explicit-any
+        .from("ai_analysis_runs" as any)
+        .insert({
+          tenant_id: tenantId!,
+          triggered_by: "manual",
+          triggered_by_user_id: userId,
+          status: "running",
+        })
+        .select("id")
+        .single();
+
+      if (runErr || !newRun) return jsonResponse({ error: "Erro ao criar registro de análise." }, 500);
+      const runId = (newRun as { id: string }).id;
+
+      try {
+        const result = await runAnalysisForTenant(tenantId!, runId, tenantSettings);
+
+        // Mark run as completed
+        await supabaseAdmin
+          // deno-lint-ignore no-explicit-any
+          .from("ai_analysis_runs" as any)
+          .update({
+            status: "completed",
+            conversations_analyzed: result.analyzed,
+            conversations_total: result.total,
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", runId);
+
+        // Enforce history limit
+        const sysSettings = await loadSystemSettings();
+        const maxRuns = Number(sysSettings.max_history_runs) || 10;
+        await enforceHistoryLimit(tenantId!, maxRuns);
+
+        return jsonResponse({
+          run_id: runId,
+          analyzed: result.analyzed,
+          total: result.total,
+          errors: result.errors,
+          message: `${result.analyzed} conversas analisadas com sucesso.`,
+        });
+      } catch (err) {
+        await supabaseAdmin
+          // deno-lint-ignore no-explicit-any
+          .from("ai_analysis_runs" as any)
+          .update({
+            status: "error",
+            error_message: err instanceof Error ? err.message : "Erro desconhecido",
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", runId);
+        throw err;
+      }
+    }
+
+    // ─── check_scheduled_run ──────────────────────────────────────────────
+    if (action === "check_scheduled_run") {
+      const sysSettings = await loadSystemSettings();
+      const schedEnabled = sysSettings.schedule_enabled as boolean;
+      const nextRunAt = sysSettings.next_run_at as string | null;
+
+      if (!schedEnabled || !nextRunAt) {
+        return jsonResponse({ triggered: false, reason: "schedule_disabled" });
+      }
+
+      const isDue = new Date(nextRunAt) <= new Date();
+      if (!isDue) {
+        return jsonResponse({ triggered: false, reason: "not_due_yet", next_run_at: nextRunAt });
+      }
+
+      // Atomically advance next_run_at to prevent duplicate runs
+      const scheduleDays = (sysSettings.schedule_days as number[]) || [1, 2, 3, 4, 5];
+      const scheduleHour = Number(sysSettings.schedule_hour ?? 8);
+      const scheduleMinute = Number(sysSettings.schedule_minute ?? 0);
+      const scheduleTimezone = (sysSettings.schedule_timezone as string) || "America/Sao_Paulo";
+      const maxRuns = Number(sysSettings.max_history_runs) || 10;
+
+      const { data: nextRunData } = await supabaseAdmin.rpc("compute_next_ai_run", {
+        p_days: scheduleDays,
+        p_hour: scheduleHour,
+        p_minute: scheduleMinute,
+        p_timezone: scheduleTimezone,
+      });
+
+      // deno-lint-ignore no-explicit-any
+      const { data: updated } = await (supabaseAdmin.from("ai_system_settings" as any) as any)
+        .update({
+          last_run_at: new Date().toISOString(),
+          next_run_at: nextRunData || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("next_run_at", nextRunAt) // optimistic lock — only update if unchanged
+        .select("id");
+
+      if (!updated || (Array.isArray(updated) && updated.length === 0)) {
+        return jsonResponse({ triggered: false, reason: "already_triggered" });
+      }
+
+      // Determine which tenants to analyze
+      const { data: roleCheck } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId!)
+        .limit(1)
+        .maybeSingle();
+      const callerRole = (roleCheck as Record<string, unknown>)?.role as string | undefined;
+
+      let tenantsToAnalyze: string[] = [tenantId!];
+
+      if (callerRole === "admin" || callerRole === "super_admin") {
+        // Analyze ALL tenants
+        const { data: allTenants } = await supabaseAdmin.from("tenants").select("id");
+        tenantsToAnalyze = (allTenants || []).map((t: { id: string }) => t.id);
+      } else if (callerRole === "gerente" || callerRole === "gestor" || callerRole === "sucesso_cliente") {
+        // Analyze assigned tenants
+        const { data: assignments } = await supabaseAdmin
+          .from("tenant_assignments")
+          .select("tenant_id")
+          .eq("manager_id", userId!);
+        tenantsToAnalyze = (assignments || []).map((a: { tenant_id: string }) => a.tenant_id);
+        if (!tenantsToAnalyze.includes(tenantId!)) tenantsToAnalyze.push(tenantId!);
+      }
+
+      const runResults: Array<{ tenant_id: string; run_id: string; analyzed: number }> = [];
+
+      for (const tid of tenantsToAnalyze) {
+        try {
+          const tidSettings = await loadTenantSettings(tid);
+
+          const { data: newRun } = await supabaseAdmin
+            // deno-lint-ignore no-explicit-any
+            .from("ai_analysis_runs" as any)
+            .insert({
+              tenant_id: tid,
+              triggered_by: "scheduled",
+              triggered_by_user_id: userId,
+              status: "running",
+            })
+            .select("id")
+            .single();
+
+          if (!newRun) continue;
+          const runId = (newRun as { id: string }).id;
+
+          const result = await runAnalysisForTenant(tid, runId, tidSettings);
+
+          await supabaseAdmin
+            // deno-lint-ignore no-explicit-any
+            .from("ai_analysis_runs" as any)
+            .update({
+              status: "completed",
+              conversations_analyzed: result.analyzed,
+              conversations_total: result.total,
+              completed_at: new Date().toISOString(),
+            })
+            .eq("id", runId);
+
+          await enforceHistoryLimit(tid, maxRuns);
+          runResults.push({ tenant_id: tid, run_id: runId, analyzed: result.analyzed });
+        } catch (e) {
+          console.error(`[check_scheduled_run] Error for tenant ${tid}:`, e);
+        }
+      }
+
+      return jsonResponse({
+        triggered: true,
+        tenants_analyzed: runResults.length,
+        results: runResults,
+      });
     }
 
     return jsonResponse({ error: `Unknown action: ${action}` }, 400);

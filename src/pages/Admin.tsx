@@ -10,7 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Slider } from "@/components/ui/slider";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Shield, Users, Building2, Smartphone, Wifi, WifiOff, Loader2, Save, RefreshCw, ChevronDown, ChevronRight, Mail } from "lucide-react";
+import { Shield, Users, Building2, Smartphone, Wifi, WifiOff, Loader2, Save, RefreshCw, ChevronDown, ChevronRight, Mail, Bot } from "lucide-react";
+import { AISystemSettingsAdmin } from "@/components/admin/AISystemSettingsAdmin";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -263,6 +264,10 @@ const Admin = () => {
                 <TabsTrigger value="tenants">Tenants & Limites</TabsTrigger>
                 <TabsTrigger value="instances">Instâncias WhatsApp</TabsTrigger>
                 <TabsTrigger value="users">Usuários</TabsTrigger>
+                <TabsTrigger value="ia" className="flex items-center gap-1.5">
+                  <Bot className="h-4 w-4" />
+                  Inteligência Artificial
+                </TabsTrigger>
               </TabsList>
 
               {/* TENANTS TAB */}
@@ -480,6 +485,10 @@ const Admin = () => {
                     )}
                   </CardContent>
                 </Card>
+              </TabsContent>
+              {/* IA TAB */}
+              <TabsContent value="ia" className="space-y-4">
+                <AISystemSettingsAdmin />
               </TabsContent>
             </Tabs>
           </>

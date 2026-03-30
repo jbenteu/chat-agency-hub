@@ -100,8 +100,26 @@ export interface AIAnalysisSettings {
   schedule_hour: number;
   schedule_minute: number;
   schedule_timezone: string;
+  max_history_runs: number;
   last_run_at: string | null;
   next_run_at: string | null;
+}
+
+// Alias — system settings are the same shape as AIAnalysisSettings
+export type AISystemSettings = AIAnalysisSettings;
+
+export interface AIAnalysisRun {
+  id: string;
+  tenant_id: string;
+  run_at: string;
+  triggered_by: 'scheduled' | 'manual';
+  triggered_by_user_id: string | null;
+  status: 'running' | 'completed' | 'error';
+  conversations_analyzed: number;
+  conversations_total: number;
+  error_message: string | null;
+  completed_at: string | null;
+  created_at: string;
 }
 
 export interface TemporalPattern {
@@ -222,6 +240,40 @@ export function useAIAnalysis() {
   const updateAISettings = (settings: Partial<AIAnalysisSettings> & { api_key?: string }): Promise<{ success: boolean }> =>
     invokeAI("update_ai_settings", settings);
 
+  // ── New: global system settings (admin panel) ──────────────────────────────
+  const getSystemSettings = (): Promise<AISystemSettings> =>
+    invokeAI("get_system_settings", {});
+
+  const updateSystemSettings = (settings: Partial<AISystemSettings> & { api_key?: string }): Promise<{ success: boolean }> =>
+    invokeAI("update_system_settings", settings);
+
+  // ── Analysis run history ───────────────────────────────────────────────────
+  const getAnalysisRuns = (targetTenantId?: string | null): Promise<{ runs: AIAnalysisRun[] }> =>
+    invokeAI("get_analysis_runs", { target_tenant_id: targetTenantId ?? undefined });
+
+  const triggerManualRun = (targetTenantId?: string | null): Promise<{ run_id: string; analyzed: number; total: number; errors: number; message: string }> =>
+    invokeAI("trigger_manual_run", { target_tenant_id: targetTenantId ?? undefined });
+
+  const checkScheduledRun = (): Promise<{ triggered: boolean; reason?: string; tenants_analyzed?: number }> =>
+    invokeAI("check_scheduled_run", {});
+
+  const deleteRun = (runId: string, targetTenantId?: string | null): Promise<{ success: boolean }> =>
+    invokeAI("delete_run", { run_id: runId, target_tenant_id: targetTenantId ?? undefined });
+
+  // ── Run-specific scores ────────────────────────────────────────────────────
+  const getRunScores = async (runId: string, targetTenantId?: string | null): Promise<{ data: AIConversationAnalysis[] }> => {
+    // Direct Supabase query filtered by run_id
+    const { data: userRoles } = await supabase.from("user_roles").select("tenant_id").limit(1).single();
+    if (!userRoles) return { data: [] };
+    const { data } = await supabase
+      .from("ai_conversation_analysis" as any)
+      .select("*")
+      .eq("run_id", runId)
+      .order("analyzed_at", { ascending: false })
+      .limit(200);
+    return { data: (data || []) as AIConversationAnalysis[] };
+  };
+
   return {
     analyzeConversation,
     askAI,
@@ -239,5 +291,12 @@ export function useAIAnalysis() {
     listAccessibleTenants,
     getAISettings,
     updateAISettings,
+    getSystemSettings,
+    updateSystemSettings,
+    getAnalysisRuns,
+    triggerManualRun,
+    checkScheduledRun,
+    deleteRun,
+    getRunScores,
   };
 }

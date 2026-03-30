@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   User, Lock, GitBranch, LayoutList, Tag, XCircle, Zap,
   Activity, LayoutDashboard, MessageSquare, Clock,
-  Palette, Plug, ArrowUpDown, FileText, Bot,
+  Palette, Plug, ArrowUpDown, FileText,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -27,7 +27,6 @@ import { SettingsAppearance } from "@/components/settings/SettingsAppearance";
 import { SettingsIntegrations } from "@/components/settings/SettingsIntegrations";
 import { SettingsImportExport } from "@/components/settings/SettingsImportExport";
 import { SettingsAudit } from "@/components/settings/SettingsAudit";
-import { AIAnalysisSettings } from "@/components/ai/AIAnalysisSettings";
 
 interface NavItem {
   id: string;
@@ -75,7 +74,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "integrations", label: "Integrações", icon: Plug },
       { id: "import-export", label: "Importar/Exportar", icon: ArrowUpDown },
       { id: "audit", label: "Auditoria", icon: FileText, roles: ["admin", "gerente", "gestor", "sucesso_cliente"] },
-      { id: "ia", label: "Inteligência Artificial", icon: Bot, roles: ["admin", "gerente", "gestor", "sucesso_cliente"] },
     ],
   },
 ];
@@ -96,7 +94,6 @@ const SECTION_COMPONENTS: Record<string, React.ComponentType> = {
   "integrations": SettingsIntegrations,
   "import-export": SettingsImportExport,
   "audit": SettingsAudit,
-  "ia": AIAnalysisSettings,
 };
 
 const SettingsPage = () => {

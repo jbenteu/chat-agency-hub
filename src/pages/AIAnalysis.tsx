@@ -11,6 +11,7 @@ import {
   type AnalysisStatus,
   type AccessibleTenant,
   type TeamMember,
+  type AIAnalysisRun,
 } from "@/hooks/use-ai-analysis";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ import {
   ChevronDown, Wand2, Send, User, Clock, TrendingUp,
   Zap, Target, ShieldAlert, TrendingDown, Gem, Users,
   ChevronRight, Eye, Wifi, WifiOff, PlayCircle, CheckCircle2,
-  Building2, UserCircle, Play,
+  Building2, UserCircle, Play, History, Trash2, XCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -105,6 +106,7 @@ const TABS = [
   { value: "objecoes", label: "Produtos & Objeções", icon: MessageSquareWarning },
   { value: "scores", label: "Scores", icon: BarChart2 },
   { value: "consultor", label: "Consultor IA", icon: MessageSquare },
+  { value: "historico", label: "Histórico", icon: History },
 ];
 
 interface ScoresRow {
@@ -136,7 +138,7 @@ interface ChatMessage {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const AIAnalysis: React.FC = () => {
-  const { getDashboard, generateScript, askAI, getInsightsEnhanced, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, analyzeAllConversations, processQueue, listAccessibleTenants } = useAIAnalysis();
+  const { getDashboard, generateScript, askAI, getInsightsEnhanced, getTemporalPatterns, getPipeline, listInstances, getAnalysisStatus, listAccessibleTenants, triggerManualRun, checkScheduledRun, getAnalysisRuns, deleteRun } = useAIAnalysis();
   const { profile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -166,9 +168,6 @@ const AIAnalysis: React.FC = () => {
 
   // Analysis coverage monitor
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [bgProcessing, setBgProcessing] = useState(false);
-  const processIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Insights
   const [insights, setInsights] = useState<AIInsight[]>([]);
@@ -197,6 +196,12 @@ const AIAnalysis: React.FC = () => {
   const [selectedScript, setSelectedScript] = useState<string | null>(null);
   const [objectionScripts, setObjectionScripts] = useState<string[]>([]);
   const [objectionLoading, setObjectionLoading] = useState(false);
+
+  // Histórico de análises
+  const [analysisRuns, setAnalysisRuns] = useState<AIAnalysisRun[]>([]);
+  const [runsLoading, setRunsLoading] = useState(false);
+  const [triggeringRun, setTriggeringRun] = useState(false);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
 
   // Chat
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -287,6 +292,49 @@ const AIAnalysis: React.FC = () => {
     }
   };
 
+  const loadAnalysisRuns = async (targetTenantId?: string | null) => {
+    try {
+      setRunsLoading(true);
+      const result = await getAnalysisRuns(targetTenantId);
+      setAnalysisRuns(result.runs || []);
+    } catch { /* silent */ } finally {
+      setRunsLoading(false);
+    }
+  };
+
+  const handleTriggerManualRun = async () => {
+    const tgt = isOnDemandRole ? selectedClientTenantId : null;
+    if (isOnDemandRole && !tgt) return;
+    setTriggeringRun(true);
+    try {
+      const result = await triggerManualRun(tgt);
+      toast({ title: "Análise concluída", description: result.message });
+      loadDashboard(true, tgt);
+      loadAnalysisStatus(null, tgt);
+      loadAnalysisRuns(tgt);
+      if (!isOnDemandRole) setDataLoaded(true);
+      if (isOnDemandRole) setDataLoaded(true);
+    } catch (err) {
+      toast({ title: "Erro ao analisar", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
+    } finally {
+      setTriggeringRun(false);
+    }
+  };
+
+  const handleDeleteRun = async (runId: string) => {
+    const tgt = isOnDemandRole ? selectedClientTenantId : null;
+    setDeletingRunId(runId);
+    try {
+      await deleteRun(runId, tgt);
+      setAnalysisRuns((prev) => prev.filter((r) => r.id !== runId));
+      toast({ title: "Análise removida" });
+    } catch (err) {
+      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro ao remover", variant: "destructive" });
+    } finally {
+      setDeletingRunId(null);
+    }
+  };
+
   const loadScores = async () => {
     try {
       setScoresLoading(true);
@@ -316,28 +364,6 @@ const AIAnalysis: React.FC = () => {
     }
   };
 
-  // ── Background queue processor ───────────────────────────────────────────
-  const runProcessQueue = useRef<(instId: string | null, targetTenantId?: string | null) => Promise<void>>();
-  runProcessQueue.current = async (instId: string | null, targetTenantId?: string | null) => {
-    if (bgProcessing) return;
-    setBgProcessing(true);
-    try {
-      let remaining = Infinity;
-      let rounds = 0;
-      while (remaining > 0 && rounds < 10) {
-        const result = await processQueue(instId, 4, targetTenantId);
-        remaining = result.remaining ?? 0;
-        rounds++;
-        if (result.processed > 0) {
-          loadAnalysisStatus(instId, targetTenantId);
-          if (rounds === 1 || remaining === 0) loadDashboard(true, targetTenantId);
-        }
-        if (remaining > 0) await new Promise((r) => setTimeout(r, 2000));
-      }
-    } catch { /* silent */ }
-    finally { setBgProcessing(false); }
-  };
-
   // ── "Gerar análise" handler for on-demand roles ────────────────────────────
   const handleGerarAnalise = async () => {
     if (!selectedClientTenantId) return;
@@ -352,46 +378,32 @@ const AIAnalysis: React.FC = () => {
     setActiveTab("painel");
     // Load instances for this tenant
     await loadInstances(selectedClientTenantId);
-    // Run queue then load dashboard
-    await runProcessQueue.current?.(null, selectedClientTenantId);
+    // Load existing dashboard data first (fast, from cache)
     await loadDashboard(true, selectedClientTenantId);
     await loadAnalysisStatus(null, selectedClientTenantId);
     setDataLoaded(true);
-    toast({ title: "Análise gerada", description: "Os dados do cliente foram analisados." });
   };
 
   useEffect(() => {
     if (isOnDemandRole) {
-      // Managers: load accessible tenants/team members, don't auto-process
+      // Managers: load accessible tenants/team members
       loadAccessibleTenants();
+      // Check if a scheduled run is due (only once, silently)
+      checkScheduledRun().catch(() => {});
       return;
     }
-    // Cliente: existing auto-processing behavior
+    // Cliente: load data and check schedule — no more real-time processing
     setInstancesLoading(true);
     loadInstances();
     loadDashboard();
     loadAnalysisStatus(null);
-    runProcessQueue.current?.(null);
-    processIntervalRef.current = setInterval(() => {
-      runProcessQueue.current?.(null);
-    }, 5 * 60 * 1000);
-
-    const channel = supabase
-      .channel("ai_analysis_rt")
-      .on(
-        "postgres_changes" as any,
-        { event: "*", schema: "public", table: "ai_conversation_analysis" },
-        () => {
-          loadAnalysisStatus(null);
-          loadDashboard(true);
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-      if (processIntervalRef.current) clearInterval(processIntervalRef.current);
-    };
+    // Check if a scheduled analysis run is due
+    checkScheduledRun().then((res) => {
+      if (res.triggered) {
+        loadDashboard(true);
+        loadAnalysisStatus(null);
+      }
+    }).catch(() => {});
   }, [userRole]);
 
   // Reload everything when instance changes (cliente mode only)
@@ -406,7 +418,6 @@ const AIAnalysis: React.FC = () => {
     setScoresData([]);
     loadDashboard();
     loadAnalysisStatus(selectedInstanceId);
-    runProcessQueue.current?.(selectedInstanceId);
   }, [selectedInstanceId]);
 
   const handleTabChange = (value: string) => {
@@ -416,6 +427,7 @@ const AIAnalysis: React.FC = () => {
     if (value === "pipeline" && hotLeads.length === 0 && warmLeads.length === 0) loadPipeline(tgt);
     if (value === "padroes" && !patterns) loadPatterns(tgt);
     if (value === "scores" && scoresData.length === 0) loadScores();
+    if (value === "historico" && analysisRuns.length === 0) loadAnalysisRuns(tgt);
   };
 
   // ── Chat ───────────────────────────────────────────────────────────────────
@@ -519,16 +531,31 @@ const AIAnalysis: React.FC = () => {
             <p className="text-sm text-muted-foreground mt-1">Análise IA para joalheria — dados dos últimos 30 dias</p>
           </div>
           {!isOnDemandRole && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => loadDashboard(true)}
-              disabled={loading}
-              className="border-zinc-200 text-muted-foreground hover:border-violet-400 transition-all"
-            >
-              <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-              Atualizar
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTriggerManualRun}
+                disabled={triggeringRun || loading}
+                className="border-violet-300 text-violet-700 hover:bg-violet-50 transition-all gap-1.5"
+              >
+                {triggeringRun ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Analisando...</>
+                ) : (
+                  <><Sparkles className="h-4 w-4" />Analisar agora</>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => loadDashboard(true)}
+                disabled={loading}
+                className="border-zinc-200 text-muted-foreground hover:border-violet-400 transition-all"
+              >
+                <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+                Atualizar
+              </Button>
+            </div>
           )}
         </div>
 
@@ -612,19 +639,36 @@ const AIAnalysis: React.FC = () => {
                 )}
               </div>
 
-              {/* Generate button */}
+              {/* Load data button */}
               <Button
                 onClick={handleGerarAnalise}
-                disabled={!selectedClientTenantId || bgProcessing || loading}
+                disabled={!selectedClientTenantId || triggeringRun || loading}
                 className="bg-violet-600 hover:bg-violet-700 text-white h-9 gap-1.5"
                 size="sm"
               >
-                {bgProcessing || loading ? (
-                  <><Loader2 size={14} className="animate-spin" /> Analisando...</>
+                {loading ? (
+                  <><Loader2 size={14} className="animate-spin" /> Carregando...</>
                 ) : (
-                  <><Play size={14} /> Gerar análise</>
+                  <><Eye size={14} /> Ver análise</>
                 )}
               </Button>
+
+              {/* Trigger new analysis */}
+              {dataLoaded && selectedClientTenantId && (
+                <Button
+                  onClick={handleTriggerManualRun}
+                  disabled={triggeringRun || loading}
+                  variant="outline"
+                  className="h-9 gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
+                  size="sm"
+                >
+                  {triggeringRun ? (
+                    <><Loader2 size={14} className="animate-spin" /> Analisando...</>
+                  ) : (
+                    <><Sparkles size={14} /> Analisar agora</>
+                  )}
+                </Button>
+              )}
 
               {/* Refresh after data loaded */}
               {dataLoaded && selectedClientTenantId && (
@@ -665,7 +709,7 @@ const AIAnalysis: React.FC = () => {
                     style={{ width: `${analysisStatus.coverage_pct}%` }}
                   />
                 </div>
-                {bgProcessing ? (
+                {triggeringRun ? (
                   <span className="flex items-center gap-1 text-[11px] text-violet-600 font-medium shrink-0">
                     <Loader2 size={12} className="animate-spin" /> Analisando...
                   </span>
@@ -742,7 +786,7 @@ const AIAnalysis: React.FC = () => {
                   />
                 </div>
                 {analysisStatus.coverage_pct < 100 ? (
-                  bgProcessing ? (
+                  triggeringRun ? (
                     <span className="flex items-center gap-1 text-[11px] text-violet-600 font-medium shrink-0">
                       <Loader2 size={12} className="animate-spin" />
                       Analisando...
@@ -765,7 +809,7 @@ const AIAnalysis: React.FC = () => {
         )}
 
         {/* On-demand mode: prompt to select client if no data loaded yet */}
-        {isOnDemandRole && !dataLoaded && !bgProcessing && !loading ? (
+        {isOnDemandRole && !dataLoaded && !triggeringRun && !loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <Building2 className="text-violet-300" size={40} />
             <p className="text-foreground font-medium">Selecione um cliente para gerar a análise</p>
@@ -1811,6 +1855,120 @@ const AIAnalysis: React.FC = () => {
                     {askLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                   </button>
                 </div>
+              </div>
+            )}
+            {/* ════════════════════════════════════════════════════════════ */}
+            {/* TAB: HISTÓRICO                                               */}
+            {/* ════════════════════════════════════════════════════════════ */}
+            {activeTab === "historico" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-foreground">Histórico de Análises</h3>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Registro de todas as análises realizadas. Os dados são pré-computados, sem custo de tokens.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => loadAnalysisRuns(isOnDemandRole ? selectedClientTenantId : null)}
+                      disabled={runsLoading}
+                      className="gap-1.5"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${runsLoading ? "animate-spin" : ""}`} />
+                      Atualizar
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleTriggerManualRun}
+                      disabled={triggeringRun || (isOnDemandRole && !selectedClientTenantId)}
+                      className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
+                    >
+                      {triggeringRun ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" />Analisando...</>
+                      ) : (
+                        <><Sparkles className="h-4 w-4" />Analisar agora</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {runsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : analysisRuns.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                    <History className="h-12 w-12 text-muted-foreground/30" />
+                    <p className="text-foreground font-medium">Nenhuma análise registrada</p>
+                    <p className="text-sm text-muted-foreground max-w-xs">
+                      Clique em "Analisar agora" para criar a primeira análise, ou aguarde o próximo horário agendado.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {analysisRuns.map((run) => (
+                      <div
+                        key={run.id}
+                        className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center gap-4"
+                      >
+                        <div className={`size-9 rounded-full flex items-center justify-center shrink-0 ${
+                          run.status === "completed" ? "bg-emerald-50" :
+                          run.status === "error" ? "bg-red-50" : "bg-violet-50"
+                        }`}>
+                          {run.status === "completed" ? (
+                            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                          ) : run.status === "error" ? (
+                            <XCircle className="h-5 w-5 text-red-500" />
+                          ) : (
+                            <Loader2 className="h-5 w-5 text-violet-600 animate-spin" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium text-foreground">
+                              {new Intl.DateTimeFormat("pt-BR", {
+                                day: "2-digit", month: "2-digit", year: "numeric",
+                                hour: "2-digit", minute: "2-digit",
+                                timeZone: "America/Sao_Paulo",
+                              }).format(new Date(run.run_at))}
+                            </p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
+                              run.triggered_by === "manual"
+                                ? "bg-violet-50 border-violet-200 text-violet-700"
+                                : "bg-zinc-50 border-zinc-200 text-zinc-600"
+                            }`}>
+                              {run.triggered_by === "manual" ? "Manual" : "Agendado"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {run.status === "completed"
+                              ? `${run.conversations_analyzed} conversas analisadas${run.conversations_total > 0 ? ` de ${run.conversations_total} novas` : ""}`
+                              : run.status === "error"
+                              ? `Erro: ${run.error_message || "Erro desconhecido"}`
+                              : "Em execução..."}
+                          </p>
+                        </div>
+
+                        {(isOnDemandRole || isGerenteRole) && (
+                          <button
+                            onClick={() => handleDeleteRun(run.id)}
+                            disabled={deletingRunId === run.id}
+                            className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            title="Remover análise"
+                          >
+                            {deletingRunId === run.id
+                              ? <Loader2 className="h-4 w-4 animate-spin" />
+                              : <Trash2 className="h-4 w-4" />}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>
