@@ -449,13 +449,31 @@ Deno.serve(async (req) => {
         updates.next_run_at = null;
       }
 
-      // Update the singleton row (no WHERE needed since there's only one)
-      const { error: updateErr } = await supabaseAdmin
-        // deno-lint-ignore no-explicit-any
-        .from("ai_system_settings" as any)
-        .update(updates)
-        .neq("id", "00000000-0000-0000-0000-000000000000"); // matches all rows
-      if (updateErr) throw updateErr;
+      // Upsert the singleton row (get existing ID or insert new row)
+      // deno-lint-ignore no-explicit-any
+      const { data: existingRow } = await (supabaseAdmin.from("ai_system_settings" as any) as any)
+        .select("id")
+        .limit(1)
+        .maybeSingle();
+
+      let upsertError;
+      if (existingRow?.id) {
+        // Row exists — update by known ID
+        const { error } = await supabaseAdmin
+          // deno-lint-ignore no-explicit-any
+          .from("ai_system_settings" as any)
+          .update(updates)
+          .eq("id", existingRow.id);
+        upsertError = error;
+      } else {
+        // No row yet — insert
+        const { error } = await supabaseAdmin
+          // deno-lint-ignore no-explicit-any
+          .from("ai_system_settings" as any)
+          .insert(updates);
+        upsertError = error;
+      }
+      if (upsertError) throw upsertError;
       return jsonResponse({ success: true });
     }
 
