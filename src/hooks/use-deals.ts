@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 export interface DealItem {
   id: string;
@@ -63,21 +63,43 @@ export function useDeals() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return (data || []) as Deal[];
+
+      // Deduplicate deals by ID to prevent duplicates from real-time race conditions
+      const seen = new Set<string>();
+      const deduplicated: Deal[] = [];
+      for (const deal of (data || []) as Deal[]) {
+        if (!seen.has(deal.id)) {
+          seen.add(deal.id);
+          deduplicated.push(deal);
+        }
+      }
+      return deduplicated;
     },
   });
+
+  // Debounced invalidation to prevent rapid-fire real-time events
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const invalidateDeals = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ["deals"] });
+    }, 300);
+  }, [queryClient]);
 
   useEffect(() => {
     const channel = supabase
       .channel("deals-changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "deals" }, () => {
         if (!mutatingRef.current) {
-          queryClient.invalidateQueries({ queryKey: ["deals"] });
+          invalidateDeals();
         }
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient, invalidateDeals]);
 
   const createDeal = useMutation({
     mutationFn: async (deal: {
