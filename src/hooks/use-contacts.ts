@@ -36,7 +36,7 @@ export interface Contact {
   created_by: string | null;
   // joined
   deals?: { id: string; title: string; value: number | null; stage: string; status: string; pipeline_stage_id: string | null }[];
-  whatsapp_conversations?: { id: string; last_message_at: string | null; remote_jid: string }[];
+  whatsapp_conversations?: { id: string }[];
 }
 
 export interface ContactFilters {
@@ -54,14 +54,15 @@ export function useContacts(filters?: ContactFilters) {
 
   const query = useQuery({
     queryKey: ["contacts", filters],
-    staleTime: 30_000,
+    staleTime: 60_000,
+    gcTime: 120_000,
     queryFn: async () => {
       let q = supabase
         .from("contacts")
         .select(`
           *,
           deals(id, title, value, stage, status, pipeline_stage_id),
-          whatsapp_conversations(id, last_message_at, remote_jid)
+          whatsapp_conversations(id)
         `)
         .order("created_at", { ascending: false });
 

@@ -51,6 +51,8 @@ export function useDeals() {
 
   const query = useQuery({
     queryKey: ["deals"],
+    staleTime: 60_000,
+    gcTime: 120_000,
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)

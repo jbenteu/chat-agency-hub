@@ -598,7 +598,9 @@ Deno.serve(async (req) => {
           } else if (conversation?.contact_name) {
             resolvedContactName = conversation.contact_name;
           } else {
-            resolvedContactName = bestName;
+            // Para mensagens enviadas pela própria instância (fromMe) sem contato no CRM,
+            // usar o telefone como nome — evita salvar o nome da conta Business como contato.
+            resolvedContactName = fromMe ? (conversationPhone || "Contato") : bestName;
           }
         } else {
           if (conversation?.contact_name && !isPlaceholderGroupName(conversation.contact_name)) {
