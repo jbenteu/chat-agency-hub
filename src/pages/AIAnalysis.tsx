@@ -39,7 +39,8 @@ export default function AIAnalysis() {
   const { toast } = useToast();
   const userRole = profile?.role ?? "cliente";
   const isAdmin = ["admin", "super_admin"].includes(userRole);
-  const canRunAnalysis = ["admin", "super_admin", "gerente"].includes(userRole);
+  const isStaff = ["admin", "super_admin", "gerente", "gestor", "sucesso_cliente"].includes(userRole);
+  const canRunAnalysis = ["admin", "super_admin", "gerente", "gestor"].includes(userRole);
 
   const [loading, setLoading] = useState(true);
   const [run, setRun] = useState<AIAnalysisRun | null>(null);
@@ -52,15 +53,15 @@ export default function AIAnalysis() {
   const [tenants, setTenants] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(undefined);
 
-  // Load tenant list for admins (runs once)
+  // Load tenant list for all staff (runs once)
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isStaff) return;
     aiAnalysisRef.current.listTenants().then(({ tenants: list }) => {
       setTenants(list);
       if (list.length > 0) setSelectedTenantId(list[0].id);
     }).catch(console.error);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
+  }, [isStaff]);
 
   const loadAnalysis = useCallback(async (tenantId?: string) => {
     try {
@@ -76,12 +77,12 @@ export default function AIAnalysis() {
     }
   }, []); // stable — uses ref internally
 
-  // Load when selectedTenantId changes (or on first mount for non-admins)
+  // Load when selectedTenantId changes (wait for tenant list if staff)
   useEffect(() => {
-    if (isAdmin && !selectedTenantId) return;
+    if (isStaff && !selectedTenantId) return;
     setLoading(true);
     loadAnalysis(selectedTenantId);
-  }, [selectedTenantId, isAdmin, loadAnalysis]);
+  }, [selectedTenantId, isStaff, loadAnalysis]);
 
   // Polling when processing
   useEffect(() => {
@@ -130,8 +131,8 @@ export default function AIAnalysis() {
             </div>
           </div>
 
-          {/* Tenant selector for admins */}
-          {isAdmin && tenants.length > 0 && (
+          {/* Tenant selector for all staff */}
+          {isStaff && tenants.length > 0 && (
             <div className="flex items-center gap-2">
               <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>

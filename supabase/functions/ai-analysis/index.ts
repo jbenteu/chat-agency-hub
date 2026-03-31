@@ -122,16 +122,14 @@ Deno.serve(async (req) => {
     }
 
     if (userId) {
-      const { data: roleData } = await supabaseAdmin
-        .from("user_roles")
-        .select("tenant_id, role")
-        .eq("user_id", userId)
-        .limit(1)
-        .maybeSingle();
-      if (roleData?.tenant_id) {
-        tenantId = roleData.tenant_id;
-        userRole = roleData.role;
-      }
+      // Read agency role from profiles (gestor/gerente/admin/etc.)
+      // and own tenant from user_roles in parallel
+      const [profileRes, roleRes] = await Promise.all([
+        supabaseAdmin.from("profiles").select("role").eq("id", userId).maybeSingle(),
+        supabaseAdmin.from("user_roles").select("tenant_id").eq("user_id", userId).limit(1).maybeSingle(),
+      ]);
+      if (profileRes.data?.role) userRole = profileRes.data.role;
+      if (roleRes.data?.tenant_id) tenantId = roleRes.data.tenant_id;
     }
   }
 
@@ -139,16 +137,16 @@ Deno.serve(async (req) => {
   const publicReadActions = ["get_latest_analysis", "get_analysis_history", "get_schedule", "chat_consultant"];
   const adminWriteActions = ["run_analysis", "update_schedule"];
 
-  if (publicReadActions.includes(action) && !tenantId && !isServiceRole) {
+  if (publicReadActions.includes(action) && !userId && !isServiceRole) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
   if (adminWriteActions.includes(action) && !isServiceRole) {
-    if (!tenantId || !["admin", "super_admin", "gerente"].includes(userRole || "")) {
+    if (!["admin", "super_admin", "gerente", "gestor", "sucesso_cliente"].includes(userRole || "")) {
       return jsonResponse({ error: "Permissão negada" }, 403);
     }
   }
 
-  // Allow target_tenant_id override for managers
+  // Allow target_tenant_id override for staff
   const targetTenantId = body.tenant_id as string | undefined;
   if (targetTenantId && targetTenantId !== tenantId && !isServiceRole) {
     if (!["admin", "super_admin", "gerente", "gestor", "sucesso_cliente"].includes(userRole || "")) {
@@ -633,25 +631,42 @@ Se o usuário pedir scripts, crie scripts realistas para joalherias premium.`;
   if (action === "list_tenants") {
     if (!userId && !isServiceRole) return jsonResponse({ error: "Unauthorized" }, 401);
 
-    // Admins see all tenants; others see only their own
-    const isAdminRole = ["admin", "super_admin"].includes(userRole || "");
-    if (isAdminRole || isServiceRole) {
-      const { data: tenants } = await supabaseAdmin
+    // Helper: fetch client tenants by their IDs, using profile full_name as display name
+    const fetchClientTenants = async (tenantIds?: string[]) => {
+      let query = supabaseAdmin
         .from("tenants")
-        .select("id, name")
-        .order("name");
-      return jsonResponse({ tenants: tenants || [] });
+        .select("id, name, user_roles!inner(user_id, profiles!inner(full_name, role))")
+        .eq("user_roles.profiles.role", "cliente");
+      if (tenantIds && tenantIds.length > 0) {
+        query = query.in("id", tenantIds);
+      }
+      const { data } = await query.order("name");
+      return (data || []).map((t: any) => {
+        const profileName = t.user_roles?.[0]?.profiles?.full_name;
+        return { id: t.id, name: profileName && profileName !== t.name ? profileName : t.name };
+      });
+    };
+
+    const isAdminRole = ["admin", "super_admin"].includes(userRole || "");
+
+    if (isAdminRole || isServiceRole) {
+      // Admin: all client tenants
+      const tenants = await fetchClientTenants();
+      return jsonResponse({ tenants });
     }
 
-    // Non-admin: return only own tenant
-    if (tenantId) {
-      const { data: tenant } = await supabaseAdmin
-        .from("tenants")
-        .select("id, name")
-        .eq("id", tenantId)
-        .maybeSingle();
-      return jsonResponse({ tenants: tenant ? [tenant] : [] });
+    if (["gerente", "gestor", "sucesso_cliente"].includes(userRole || "") && userId) {
+      // Staff: only tenants they're assigned to (via tenant_assignments)
+      const { data: assignments } = await supabaseAdmin
+        .from("tenant_assignments")
+        .select("tenant_id")
+        .eq("manager_id", userId);
+      const assignedIds = [...new Set((assignments || []).map((a: any) => a.tenant_id))];
+      if (assignedIds.length === 0) return jsonResponse({ tenants: [] });
+      const tenants = await fetchClientTenants(assignedIds);
+      return jsonResponse({ tenants });
     }
+
     return jsonResponse({ tenants: [] });
   }
 
