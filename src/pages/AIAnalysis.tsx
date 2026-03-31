@@ -43,6 +43,7 @@ export default function AIAnalysis() {
   const canRunAnalysis = ["admin", "super_admin", "gerente", "gestor"].includes(userRole);
 
   const [loading, setLoading] = useState(true);
+  const [tenantsLoading, setTenantsLoading] = useState(isStaff);
   const [run, setRun] = useState<AIAnalysisRun | null>(null);
   const [conversations, setConversations] = useState<AIAnalysisConversation[]>([]);
   const [improvements, setImprovements] = useState<AIAnalysisImprovement[]>([]);
@@ -56,10 +57,13 @@ export default function AIAnalysis() {
   // Load tenant list for all staff (runs once)
   useEffect(() => {
     if (!isStaff) return;
-    aiAnalysisRef.current.listTenants().then(({ tenants: list }) => {
-      setTenants(list);
-      if (list.length > 0) setSelectedTenantId(list[0].id);
-    }).catch(console.error);
+    aiAnalysisRef.current.listTenants()
+      .then(({ tenants: list }) => {
+        setTenants(list);
+        if (list.length > 0) setSelectedTenantId(list[0].id);
+      })
+      .catch(console.error)
+      .finally(() => setTenantsLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStaff]);
 
@@ -77,12 +81,17 @@ export default function AIAnalysis() {
     }
   }, []); // stable — uses ref internally
 
-  // Load when selectedTenantId changes (wait for tenant list if staff)
+  // Load when selectedTenantId changes (wait for tenant list to resolve first)
   useEffect(() => {
-    if (isStaff && !selectedTenantId) return;
+    if (isStaff && tenantsLoading) return; // wait for list_tenants to complete
+    if (isStaff && !selectedTenantId) {
+      // Staff with no tenant assigned — stop loading, show empty state
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     loadAnalysis(selectedTenantId);
-  }, [selectedTenantId, isStaff, loadAnalysis]);
+  }, [selectedTenantId, isStaff, tenantsLoading, loadAnalysis]);
 
   // Polling when processing
   useEffect(() => {
@@ -185,6 +194,18 @@ export default function AIAnalysis() {
         <div className="flex-1 overflow-auto">
           {loading ? (
             <TabSkeleton />
+          ) : isStaff && !selectedTenantId ? (
+            <div className="flex flex-col items-center justify-center h-64 gap-4 text-center p-8">
+              <div className="rounded-full bg-muted p-4">
+                <Building2 className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <div>
+                <h2 className="text-lg font-medium">Nenhum cliente atribuído</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Solicite ao administrador que atribua clientes à sua conta para visualizar as análises.
+                </p>
+              </div>
+            </div>
           ) : !run || run.status !== "completed" ? (
             <EmptyState isProcessing={isProcessing} canRun={canRunAnalysis} onRun={handleRunAnalysis} runningAnalysis={runningAnalysis} />
           ) : (

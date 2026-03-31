@@ -499,37 +499,66 @@ Se o usuário pedir scripts, crie scripts realistas para joalherias premium.`;
   if (action === "list_tenants") {
     if (!userId && !isServiceRole) return jsonResponse({ error: "Unauthorized" }, 401);
 
-    // Helper: fetch client tenants by their IDs, using profile full_name as display name
-    const fetchClientTenants = async (tenantIds?: string[]) => {
-      let query = supabaseAdmin
-        .from("tenants")
-        .select("id, name, user_roles!inner(user_id, profiles!inner(full_name, role))")
-        .eq("user_roles.profiles.role", "cliente");
-      if (tenantIds && tenantIds.length > 0) {
-        query = query.in("id", tenantIds);
+    // Fetch client tenants using 3 simple queries (avoids unreliable triple joins in PostgREST)
+    const fetchClientTenants = async (filterTenantIds?: string[]) => {
+      // Step 1: all profiles with role='cliente'
+      const { data: clientProfiles } = await supabaseAdmin
+        .from("profiles")
+        .select("id, full_name")
+        .eq("role", "cliente");
+      const clientIds = (clientProfiles || []).map((p: { id: string }) => p.id);
+      const profileNameMap = new Map((clientProfiles || []).map((p: { id: string; full_name: string | null }) => [p.id, p.full_name]));
+      if (clientIds.length === 0) return [];
+
+      // Step 2: get their tenant_ids from user_roles
+      // deno-lint-ignore no-explicit-any
+      let urQuery: any = supabaseAdmin
+        .from("user_roles")
+        .select("tenant_id, user_id")
+        .in("user_id", clientIds);
+      if (filterTenantIds && filterTenantIds.length > 0) {
+        urQuery = urQuery.in("tenant_id", filterTenantIds);
       }
-      const { data } = await query.order("name");
-      return (data || []).map((t: any) => {
-        const profileName = t.user_roles?.[0]?.profiles?.full_name;
-        return { id: t.id, name: profileName && profileName !== t.name ? profileName : t.name };
-      });
+      const { data: urRows } = await urQuery;
+
+      // Deduplicate: pick first profile name per tenant
+      const tenantNameMap = new Map<string, string>();
+      for (const row of (urRows || [])) {
+        if (!tenantNameMap.has(row.tenant_id)) {
+          tenantNameMap.set(row.tenant_id, profileNameMap.get(row.user_id) || "");
+        }
+      }
+      if (tenantNameMap.size === 0) return [];
+
+      // Step 3: get tenant rows for ordering and name fallback
+      const { data: tenantData } = await supabaseAdmin
+        .from("tenants")
+        .select("id, name")
+        .in("id", [...tenantNameMap.keys()])
+        .order("name");
+
+      // deno-lint-ignore no-explicit-any
+      return (tenantData || []).map((t: any) => ({
+        id: t.id,
+        name: tenantNameMap.get(t.id) || t.name,
+      }));
     };
 
-    const isAdminRole = ["admin", "super_admin"].includes(userRole || "");
+    const isAdminRole = ["admin", "super_admin", "gerente"].includes(userRole || "");
 
     if (isAdminRole || isServiceRole) {
-      // Admin: all client tenants
+      // Admin/Gerente: all client tenants
       const tenants = await fetchClientTenants();
       return jsonResponse({ tenants });
     }
 
-    if (["gerente", "gestor", "sucesso_cliente"].includes(userRole || "") && userId) {
-      // Staff: only tenants they're assigned to (via tenant_assignments)
+    if (["gestor", "sucesso_cliente"].includes(userRole || "") && userId) {
+      // Gestor/CS: only tenants they're assigned to (via tenant_assignments)
       const { data: assignments } = await supabaseAdmin
         .from("tenant_assignments")
         .select("tenant_id")
         .eq("manager_id", userId);
-      const assignedIds = [...new Set((assignments || []).map((a: any) => a.tenant_id))];
+      const assignedIds = [...new Set((assignments || []).map((a: { tenant_id: string }) => a.tenant_id))];
       if (assignedIds.length === 0) return jsonResponse({ tenants: [] });
       const tenants = await fetchClientTenants(assignedIds);
       return jsonResponse({ tenants });
