@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useEvolutionApi, type EvolutionInstance } from "@/hooks/use-evolution-api";
@@ -49,8 +48,6 @@ const WhatsApp = () => {
   // Create dialog
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState("");
-  const [newImportContacts, setNewImportContacts] = useState(true);
-  const [newIgnoreGroups, setNewIgnoreGroups] = useState(false);
 
   // Rename dialog
   const [renameInstance, setRenameInstance] = useState<EvolutionInstance | null>(null);
@@ -117,7 +114,7 @@ const WhatsApp = () => {
     const label = newDisplayName.trim() || undefined;
 
     try {
-      const data = await createInstance(internalName, label, { importContacts: newImportContacts, ignoreGroups: newIgnoreGroups });
+      const data = await createInstance(internalName, label, { importContacts: true, ignoreGroups: true });
       toast({ title: "Conexão criada!", description: "Escaneie o QR Code para conectar." });
 
       if (data.qrcode?.base64) {
@@ -439,29 +436,6 @@ const WhatsApp = () => {
               <p className="text-xs text-muted-foreground">
                 Um nome amigável para identificar esta conexão.
               </p>
-            </div>
-            <div className="space-y-3">
-              <p className="text-sm font-medium">Configurações</p>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="create-import-contacts"
-                  checked={newImportContacts}
-                  onCheckedChange={(v) => setNewImportContacts(Boolean(v))}
-                />
-                <label htmlFor="create-import-contacts" className="text-sm cursor-pointer">
-                  Importar contatos da agenda
-                </label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="create-ignore-groups"
-                  checked={newIgnoreGroups}
-                  onCheckedChange={(v) => setNewIgnoreGroups(Boolean(v))}
-                />
-                <label htmlFor="create-ignore-groups" className="text-sm cursor-pointer">
-                  Ignorar mensagens de grupos
-                </label>
-              </div>
             </div>
           </div>
           <DialogFooter>
