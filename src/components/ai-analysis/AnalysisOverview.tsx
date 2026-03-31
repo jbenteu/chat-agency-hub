@@ -3,16 +3,35 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { MessageSquare, BarChart3, Calendar, TrendingUp } from "lucide-react";
+import { MessageSquare, BarChart3, Calendar, TrendingUp, AlertTriangle, AlertCircle, Info, ThumbsUp } from "lucide-react";
 import { ScoreRadarChart, CRITERIA } from "./ScoreRadarChart";
 import { ScoreDetailPopover } from "./ScoreDetailPopover";
-import type { AIAnalysisRun, AIAnalysisConversation, AnalysisSummary } from "@/hooks/use-ai-analysis";
+import { ConversationLink } from "./ConversationLink";
+import type { AIAnalysisRun, AIAnalysisConversation, AIAnalysisImprovement, AnalysisSummary } from "@/hooks/use-ai-analysis";
 
 interface AnalysisOverviewProps {
   run: AIAnalysisRun;
   summary: AnalysisSummary | null;
   conversations: AIAnalysisConversation[];
+  improvements: AIAnalysisImprovement[];
 }
+
+const SEVERITY_CONFIG = {
+  critical: { icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-900", label: "Crítico" },
+  high: { icon: AlertCircle, color: "text-orange-600", bg: "bg-orange-50 border-orange-200 dark:bg-orange-950/30 dark:border-orange-900", label: "Alto" },
+  medium: { icon: Info, color: "text-amber-600", bg: "bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-900", label: "Médio" },
+  low: { icon: Info, color: "text-blue-600", bg: "bg-blue-50 border-blue-200 dark:bg-blue-950/30 dark:border-blue-900", label: "Baixo" },
+};
+
+const CATEGORY_LABELS: Record<string, string> = {
+  response_time: "Tempo de Resposta",
+  empathy: "Empatia",
+  product_knowledge: "Conhecimento",
+  objection_handling: "Objeções",
+  closing_technique: "Fechamento",
+  follow_up: "Follow-up",
+  geral: "Geral",
+};
 
 const scoreColor = (v: number | null) => {
   if (v === null) return "text-zinc-400";
@@ -29,8 +48,19 @@ const scoreLabel = (v: number | null) => {
   return "Crítico";
 };
 
-export default function AnalysisOverview({ run, summary, conversations }: AnalysisOverviewProps) {
+export default function AnalysisOverview({ run, summary, conversations, improvements }: AnalysisOverviewProps) {
   const [selectedCriterion, setSelectedCriterion] = useState<string | null>(null);
+
+  const severityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
+  const topIssues = [...improvements]
+    .sort((a, b) => (severityOrder[b.severity as keyof typeof severityOrder] || 0) - (severityOrder[a.severity as keyof typeof severityOrder] || 0))
+    .slice(0, 4);
+
+  // Top positive points from conversations
+  const allPositives = conversations.flatMap((c) =>
+    (c.positive_points || []).map((p) => ({ ...p, contact_name: c.contact_name, conversation_id: c.conversation_id }))
+  );
+  const topPositives = allPositives.slice(0, 3);
 
   const summaryCards = [
     {
@@ -176,6 +206,78 @@ export default function AnalysisOverview({ run, summary, conversations }: Analys
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Top Issues with real examples */}
+      {topIssues.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Principais Pontos de Atenção</CardTitle>
+            <p className="text-xs text-muted-foreground">Issues identificados com maior impacto no atendimento</p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {topIssues.map((imp, i) => {
+              const sev = SEVERITY_CONFIG[imp.severity as keyof typeof SEVERITY_CONFIG] || SEVERITY_CONFIG.medium;
+              const SevIcon = sev.icon;
+              return (
+                <div key={i} className={`border rounded-lg p-3 ${sev.bg}`}>
+                  <div className="flex items-start gap-2 mb-1.5">
+                    <SevIcon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${sev.color}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        <Badge variant="outline" className="text-xs py-0 h-5">{CATEGORY_LABELS[imp.category] || imp.category}</Badge>
+                        <Badge variant="outline" className={`text-xs py-0 h-5 ${sev.color}`}>{sev.label}</Badge>
+                        {imp.occurrence_count > 1 && (
+                          <span className="text-xs text-muted-foreground">{imp.occurrence_count}x observado</span>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium">{imp.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{imp.description}</p>
+                    </div>
+                  </div>
+                  {imp.example_refs && imp.example_refs.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2 pl-6">
+                      {imp.example_refs.slice(0, 2).map((ref, j) => (
+                        <div key={j} className="flex items-center gap-1 bg-background/70 rounded px-2 py-0.5 border text-xs">
+                          <span className="text-muted-foreground">Ex:</span>
+                          <span>{ref.contact_name || "Contato"}</span>
+                          <ConversationLink conversationId={ref.conversation_id} messageId={ref.message_id} variant="inline" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Top Positive Points */}
+      {topPositives.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <ThumbsUp className="h-4 w-4 text-emerald-600" />
+              Destaques Positivos
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {topPositives.map((p, i) => (
+              <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">{p.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{p.description}</p>
+                  <div className="flex items-center gap-1 mt-1">
+                    <span className="text-xs text-muted-foreground">Em:</span>
+                    <span className="text-xs">{p.contact_name}</span>
+                    <ConversationLink conversationId={p.conversation_id} variant="inline" />
+                  </div>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}

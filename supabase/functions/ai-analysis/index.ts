@@ -401,12 +401,13 @@ Deno.serve(async (req) => {
       periodEnd,
     );
 
-    // EdgeRuntime.waitUntil keeps the function alive after the response is sent
+    // EdgeRuntime.waitUntil keeps the Supabase Edge Function alive after response is sent
     try {
       // deno-lint-ignore no-explicit-any
-      (globalThis as any).EdgeRuntime?.waitUntil(backgroundWork);
+      (EdgeRuntime as any).waitUntil(backgroundWork);
     } catch {
-      backgroundWork.catch(console.error);
+      // Fallback: process synchronously if EdgeRuntime is not available
+      await backgroundWork;
     }
 
     return jsonResponse({ run_id: run.id, status: "processing" });
@@ -605,14 +606,17 @@ async function processAnalysisInBackground(supabaseAdmin: any, apiKey: string, r
     const analyzedIds = new Set((analyzedLog || []).map((r: { message_id: string }) => r.message_id));
 
     // Fetch new messages in the analysis period
-    const { data: allMessages } = await supabaseAdmin
+    // Note: table uses 'direction' (inbound/outbound) not 'from_me', and 'media_type' not 'message_type'
+    const { data: allMessages, error: msgError } = await supabaseAdmin
       .from("whatsapp_messages")
-      .select("id, conversation_id, content, message_type, from_me, created_at, contact_name")
+      .select("id, conversation_id, content, media_type, direction, created_at")
       .eq("tenant_id", tid)
       .gte("created_at", periodStart)
       .lt("created_at", periodEnd)
       .order("created_at", { ascending: true })
       .limit(2000);
+
+    if (msgError) console.error("whatsapp_messages fetch error:", msgError.message);
 
     const messages = (allMessages || []).filter((m: { id: string }) => !analyzedIds.has(m.id));
 
@@ -773,10 +777,12 @@ async function analyzeConversationBatch(
     const seen = new Set<string>();
     const dedupedMessages: typeof messages = [];
     for (const msg of messages) {
-      const key = `${(msg.content as string || "").toLowerCase().trim()}|${msg.from_me}`;
+      // direction column: 'outbound' = agent sent, 'inbound' = client sent
+      const fromMe = (msg.direction as string) === "outbound";
+      const key = `${(msg.content as string || "").toLowerCase().trim()}|${fromMe}`;
       if (!seen.has(key)) {
         seen.add(key);
-        dedupedMessages.push(msg);
+        dedupedMessages.push({ ...msg, _fromMe: fromMe });
       }
       allMessageIds.push(msg.id as string);
     }
@@ -787,8 +793,8 @@ async function analyzeConversationBatch(
       contact_phone: convDetails[convId]?.contact_phone || "",
       messages: dedupedMessages.map((m) => ({
         id: m.id,
-        content: m.content || `[${m.message_type || "mídia"}]`,
-        from_me: m.from_me,
+        content: m.content || `[${(m as Record<string, unknown>).media_type || "mídia"}]`,
+        from_me: (m as Record<string, unknown>)._fromMe,
         created_at: m.created_at,
       })),
     });

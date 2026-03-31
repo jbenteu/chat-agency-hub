@@ -230,7 +230,7 @@ export default function AIAnalysis() {
               <div className="flex-1 overflow-auto">
                 <Suspense fallback={<TabSkeleton />}>
                   <TabsContent value="overview" className="m-0 h-full">
-                    <AnalysisOverview run={run} summary={summary} conversations={conversations} />
+                    <AnalysisOverview run={run} summary={summary} conversations={conversations} improvements={improvements} />
                   </TabsContent>
                   <TabsContent value="conversations" className="m-0 h-full">
                     <AnalysisConversations conversations={conversations} />
