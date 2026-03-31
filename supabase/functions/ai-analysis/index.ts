@@ -881,31 +881,49 @@ function parseScore(val: unknown): number | null {
 }
 
 function buildAnalysisPrompt(conversations: Array<Record<string, unknown>>): string {
-  const convsJson = JSON.stringify(conversations, null, 2);
+  // Transform messages to human-readable format before sending to AI
+  // so technical field names never appear in the AI output
+  const humanConvs = conversations.map((conv) => ({
+    conversation_id: conv.conversation_id,
+    contato: conv.contact_name,
+    telefone: conv.contact_phone,
+    mensagens: ((conv.messages as Array<Record<string, unknown>>) || []).map((m) => ({
+      id: m.id,
+      remetente: m.from_me ? "Atendente" : "Cliente",
+      texto: m.content,
+      horario: m.created_at,
+    })),
+  }));
+
+  const convsJson = JSON.stringify(humanConvs, null, 2);
+
   return `Você é um especialista em análise de atendimento ao cliente para joalherias de luxo no Brasil.
 
-Analise as seguintes conversas de WhatsApp e avalie a qualidade do atendimento.
+Analise as conversas de WhatsApp abaixo e avalie a qualidade do atendimento prestado pelo atendente.
 
 CONVERSAS:
 ${convsJson}
 
-Para CADA conversa, avalie os seguintes critérios com nota de 0 a 10:
-1. score_response_time: Tempo de resposta (quão rápido o atendente responde)
-2. score_empathy: Empatia e cordialidade (tom acolhedor, personalizado)
-3. score_product_knowledge: Conhecimento do produto (joias, materiais, coleções)
-4. score_objection_handling: Tratamento de objeções ("está caro", "vou pensar", etc.)
-5. score_closing_technique: Técnica de fechamento (próximos passos, urgência, visita)
-6. score_follow_up: Follow-up (retoma contatos, não deixa conversa morrer)
-7. score_overall: Score geral calculado (média ponderada dos critérios)
+INSTRUÇÕES IMPORTANTES:
+- Nas observações, use apenas linguagem natural em português. NUNCA mencione nomes de campos técnicos como "from_me", "conversation_id", "message_id", "remetente", "inbound", "outbound" ou qualquer chave JSON.
+- Escreva como se estivesse num relatório para o gestor da joalheria: "O atendente respondeu rapidamente", "O cliente perguntou sobre preço", "Não houve resposta do atendente após a saudação", etc.
+- Se a conversa tiver poucas mensagens, avalie com base no que existe. Pontuação baixa é válida.
+- Se o atendente enviou apenas uma saudação sem retorno do cliente, registre isso de forma natural.
 
-Para cada critério, cite mensagens reais como evidências usando os IDs fornecidos.
-NÃO conte mensagens duplicadas (mesmo conteúdo = 1 ocorrência).
+Para CADA conversa, avalie os critérios com nota de 0 a 10:
+1. score_response_time: Tempo de resposta (rapidez do atendente em responder o cliente)
+2. score_empathy: Empatia e cordialidade (tom acolhedor, uso do nome, personalização)
+3. score_product_knowledge: Conhecimento do produto (joias, materiais, preços, coleções)
+4. score_objection_handling: Tratamento de objeções ("está caro", "vou pensar", "preciso ver com meu marido")
+5. score_closing_technique: Técnica de fechamento (proposta de visita, urgência, próximo passo)
+6. score_follow_up: Follow-up (retoma contato, não deixa conversa morrer)
+7. score_overall: Média ponderada dos critérios acima
 
-Retorne APENAS JSON válido neste formato exato:
+Retorne APENAS JSON válido neste formato:
 {
   "conversations": [
     {
-      "conversation_id": "id-da-conversa",
+      "conversation_id": "id-exato-da-conversa",
       "score_response_time": 7.5,
       "score_empathy": 8.0,
       "score_product_knowledge": 6.5,
@@ -915,27 +933,27 @@ Retorne APENAS JSON válido neste formato exato:
       "score_overall": 6.2,
       "details": {
         "response_time": {
-          "observations": ["Atendente demorou mais de 2h para responder no início"],
-          "message_refs": [{"message_id": "xxx", "excerpt": "trecho da mensagem..."}]
+          "observations": ["O atendente levou mais de 2 horas para responder a primeira mensagem do cliente"],
+          "message_refs": [{"message_id": "id-da-mensagem", "excerpt": "trecho breve da mensagem"}]
         },
         "empathy": {
-          "observations": ["Tom cordial e acolhedor durante toda a conversa"],
+          "observations": ["O atendente usou o nome do cliente e manteve tom acolhedor durante toda a conversa"],
           "message_refs": []
         },
         "product_knowledge": {
-          "observations": ["Demonstrou conhecimento sobre ouro 18k e diamantes"],
+          "observations": ["Demonstrou conhecimento sobre ouro 18k e diamantes, citando especificações"],
           "message_refs": []
         },
         "objection_handling": {
-          "observations": ["Não respondeu à objeção de preço de forma eficaz"],
+          "observations": ["O cliente mencionou que o preço estava alto e o atendente não ofereceu alternativas"],
           "message_refs": []
         },
         "closing_technique": {
-          "observations": ["Não propôs visita à loja nem criou urgência"],
+          "observations": ["O atendente não propôs visita à loja nem criou senso de urgência"],
           "message_refs": []
         },
         "follow_up": {
-          "observations": ["Não retomou contato após 48h de silêncio do cliente"],
+          "observations": ["Após 2 dias sem resposta do cliente, o atendente não retomou o contato"],
           "message_refs": []
         }
       },
@@ -943,14 +961,14 @@ Retorne APENAS JSON válido neste formato exato:
         {
           "category": "response_time",
           "title": "Reduzir tempo de resposta inicial",
-          "description": "O primeiro contato demorou mais de 2 horas. Para uma joalheria premium, o ideal é responder em até 15 minutos durante horário comercial.",
+          "description": "O primeiro contato demorou mais de 2 horas. Para uma joalheria premium, o ideal é responder em até 15 minutos durante o horário comercial.",
           "severity": "high"
         }
       ],
       "positive_points": [
         {
           "title": "Tom cordial e personalizado",
-          "description": "O atendente usou o nome do cliente e manteve um tom acolhedor."
+          "description": "O atendente usou o nome do cliente e manteve uma comunicação acolhedora e profissional."
         }
       ]
     }
