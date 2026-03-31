@@ -20,6 +20,7 @@ import { ptBR } from "date-fns/locale";
 interface ScheduleConfigProps {
   open: boolean;
   onClose: () => void;
+  tenantId?: string;
 }
 
 const DAYS_OF_WEEK = [
@@ -39,7 +40,7 @@ const FREQUENCIES = [
   { value: "monthly", label: "Mensal" },
 ];
 
-export default function ScheduleConfig({ open, onClose }: ScheduleConfigProps) {
+export default function ScheduleConfig({ open, onClose, tenantId }: ScheduleConfigProps) {
   const { getSchedule, updateSchedule } = useAIAnalysis();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -54,14 +55,14 @@ export default function ScheduleConfig({ open, onClose }: ScheduleConfigProps) {
 
   useEffect(() => {
     if (!open) return;
-    getSchedule()
+    getSchedule(tenantId)
       .then(({ schedule: s }) => {
         if (s) setSchedule(s);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, tenantId]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -72,6 +73,7 @@ export default function ScheduleConfig({ open, onClose }: ScheduleConfigProps) {
         time_of_day: schedule.time_of_day || "08:00",
         timezone: schedule.timezone || "America/Sao_Paulo",
         enabled: schedule.enabled ?? true,
+        tenant_id: tenantId,
       });
       toast({ title: "Agendamento salvo com sucesso" });
       onClose();

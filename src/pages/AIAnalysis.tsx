@@ -229,7 +229,7 @@ export default function AIAnalysis() {
       {/* Schedule Modal */}
       {showSchedule && (
         <Suspense fallback={null}>
-          <ScheduleConfig open={showSchedule} onClose={() => setShowSchedule(false)} />
+          <ScheduleConfig open={showSchedule} onClose={() => setShowSchedule(false)} tenantId={selectedTenantId} />
         </Suspense>
       )}
     </AppLayout>

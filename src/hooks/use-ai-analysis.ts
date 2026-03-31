@@ -202,10 +202,14 @@ export function useAIAnalysis() {
   };
 
   const updateSystemSettings = async (settings: Partial<AISystemSettings> & { api_key?: string }): Promise<AISystemSettings> => {
+    // Strip computed/non-DB fields before sending to PostgREST
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { api_key_configured, id, created_at, updated_at, ...dbFields } = settings as any;
+    void api_key_configured; void id; void created_at; void updated_at;
     const { data, error } = await supabase
       .from("ai_system_settings")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .update(settings as any)
+      .update(dbFields)
+      .not("id", "is", null) // singleton table — matches the only row
       .select()
       .single();
     if (error) throw error;
