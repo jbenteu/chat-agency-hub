@@ -41,9 +41,8 @@ export function InviteDialog({ defaultRole, trigger }: InviteDialogProps) {
   const userRole = profile?.role ?? "cliente";
   const allowedRoles = CREATION_PERMISSIONS[userRole] ?? [];
 
-  if (allowedRoles.length === 0) return null;
-
   // Load gestores and CS when the role changes to "cliente"
+  // IMPORTANT: useEffect must come BEFORE any conditional return (Rules of Hooks)
   useEffect(() => {
     if (roleToAssign !== "cliente") {
       setGestores([]);
@@ -67,6 +66,9 @@ export function InviteDialog({ defaultRole, trigger }: InviteDialogProps) {
         setLoadingStaff(false);
       });
   }, [roleToAssign]);
+
+  // Conditional render AFTER all hooks
+  if (allowedRoles.length === 0) return null;
 
   const handleGenerate = async () => {
     if (!roleToAssign) {

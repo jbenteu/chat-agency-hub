@@ -9,15 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import {
-  Search, UsersRound, UserPlus, Building2, Trash2, CalendarDays, Wifi, WifiOff,
-  Mail, Phone,
+  Search, UsersRound, Building2, Trash2, CalendarDays, Wifi, WifiOff,
+  Mail, Phone, LinkIcon, Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -75,16 +75,15 @@ const Team = () => {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
 
-  // Assignment dialog
-  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
-  const [selectedManagerId, setSelectedManagerId] = useState("");
-  const [selectedTenantId, setSelectedTenantId] = useState("");
-  const [assignmentNotes, setAssignmentNotes] = useState("");
+  // All tenants for assignment select
   const [allTenants, setAllTenants] = useState<TenantOption[]>([]);
-  const [assigning, setAssigning] = useState(false);
 
   // Detail dialog for a specific member
   const [detailMember, setDetailMember] = useState<TeamMember | null>(null);
+  const [detailAssignTenantId, setDetailAssignTenantId] = useState("");
+  const [detailAssignNotes, setDetailAssignNotes] = useState("");
+  const [detailAssigning, setDetailAssigning] = useState(false);
+  const [detailRefreshing, setDetailRefreshing] = useState(false);
 
   const fetchTeam = useCallback(async () => {
     setLoading(true);
@@ -107,101 +106,160 @@ const Team = () => {
         return;
       }
 
-      // Fetch all tenant assignments for these members
-      const { data: assignments } = await supabase
-        .from("tenant_assignments")
-        .select("id, manager_id, tenant_id, assigned_at, notes")
-        .in("manager_id", memberIds);
-
-      const tenantIds = [...new Set((assignments ?? []).map((a) => a.tenant_id))];
-
-      // Fetch tenant names + client profiles + instances in parallel
-      let tenantsMap = new Map<string, { name: string; slug: string }>();
-      let clientProfilesMap = new Map<string, { id: string; full_name: string; email: string | null; phone: string | null; is_active: boolean }>();
-      let instancesMap = new Map<string, ClientInstance[]>();
-
-      if (tenantIds.length > 0) {
-        const [tenantsRes, rolesRes, instancesRes] = await Promise.all([
-          supabase.from("tenants").select("id, name, slug").in("id", tenantIds),
-          supabase.from("user_roles").select("user_id, tenant_id").in("tenant_id", tenantIds),
-          supabase.from("whatsapp_instances").select("id, instance_name, display_name, status, phone_number, tenant_id").in("tenant_id", tenantIds),
-        ]);
-
-        (tenantsRes.data ?? []).forEach((t) => tenantsMap.set(t.id, { name: t.name, slug: t.slug }));
-
-        // Group instances by tenant
-        (instancesRes.data ?? []).forEach((inst) => {
-          const list = instancesMap.get(inst.tenant_id) || [];
-          list.push(inst);
-          instancesMap.set(inst.tenant_id, list);
-        });
-
-        // Get client profiles (users who own each tenant)
-        const clientUserIds = [...new Set((rolesRes.data ?? []).map((r) => r.user_id))];
-        if (clientUserIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from("profiles")
-            .select("id, full_name, email, phone, is_active")
-            .in("id", clientUserIds)
-            .eq("role", "cliente");
-
-          (profiles ?? []).forEach((p) => clientProfilesMap.set(p.id, {
-            id: p.id,
-            full_name: p.full_name || "Sem nome",
-            email: p.email,
-            phone: p.phone,
-            is_active: p.is_active ?? true,
-          }));
-        }
-
-        // Map tenant -> client profile
-        const tenantToClient = new Map<string, string>();
-        (rolesRes.data ?? []).forEach((r) => {
-          if (clientProfilesMap.has(r.user_id)) {
-            tenantToClient.set(r.tenant_id, r.user_id);
-          }
-        });
-
-        // Build enriched members
-        const enrichedMembers: TeamMember[] = rawMembers.map((m: any) => {
-          const memberAssignments = (assignments ?? []).filter((a) => a.manager_id === m.id);
-          const assignedClients: AssignedClient[] = memberAssignments.map((a) => {
-            const tenant = tenantsMap.get(a.tenant_id);
-            const clientUserId = tenantToClient.get(a.tenant_id);
-            const clientProfile = clientUserId ? clientProfilesMap.get(clientUserId) || null : null;
-            return {
-              tenant_id: a.tenant_id,
-              tenant_name: tenant?.name ?? "Desconhecido",
-              assignment_id: a.id,
-              assigned_at: a.assigned_at,
-              notes: a.notes,
-              client_profile: clientProfile,
-              instances: instancesMap.get(a.tenant_id) ?? [],
-            };
-          });
-
-          return {
-            id: m.id,
-            full_name: m.full_name,
-            email: m.email,
-            avatar_url: m.avatar_url,
-            role: m.role,
-            is_active: m.is_active,
-            created_at: m.created_at,
-            assignedClients,
-          };
-        });
-
-        setMembers(enrichedMembers);
-      } else {
-        setMembers(rawMembers.map((m: any) => ({ ...m, assignedClients: [] })));
-      }
+      const enrichedMembers = await buildEnrichedMembers(rawMembers, memberIds);
+      setMembers(enrichedMembers);
     } catch (e) {
       console.error("Erro ao buscar equipe:", e);
     } finally {
       setLoading(false);
     }
   }, [search, roleFilter]);
+
+  // Build enriched member list from raw profiles + assignment data
+  const buildEnrichedMembers = async (rawMembers: any[], memberIds: string[]): Promise<TeamMember[]> => {
+    const { data: assignments } = await supabase
+      .from("tenant_assignments")
+      .select("id, manager_id, tenant_id, assigned_at, notes")
+      .in("manager_id", memberIds);
+
+    const tenantIds = [...new Set((assignments ?? []).map((a) => a.tenant_id))];
+
+    if (tenantIds.length === 0) {
+      return rawMembers.map((m: any) => ({ ...m, assignedClients: [] }));
+    }
+
+    const [tenantsRes, rolesRes, instancesRes] = await Promise.all([
+      supabase.from("tenants").select("id, name, slug").in("id", tenantIds),
+      supabase.from("user_roles").select("user_id, tenant_id").in("tenant_id", tenantIds),
+      supabase.from("whatsapp_instances").select("id, instance_name, display_name, status, phone_number, tenant_id").in("tenant_id", tenantIds),
+    ]);
+
+    const tenantsMap = new Map((tenantsRes.data ?? []).map((t) => [t.id, t]));
+
+    const instancesMap = new Map<string, ClientInstance[]>();
+    (instancesRes.data ?? []).forEach((inst) => {
+      const list = instancesMap.get(inst.tenant_id) || [];
+      list.push(inst);
+      instancesMap.set(inst.tenant_id, list);
+    });
+
+    const clientUserIds = [...new Set((rolesRes.data ?? []).map((r) => r.user_id))];
+    const clientProfilesMap = new Map<string, any>();
+
+    if (clientUserIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, full_name, email, phone, is_active")
+        .in("id", clientUserIds)
+        .eq("role", "cliente");
+      (profiles ?? []).forEach((p) => clientProfilesMap.set(p.id, p));
+    }
+
+    const tenantToClient = new Map<string, string>();
+    (rolesRes.data ?? []).forEach((r) => {
+      if (clientProfilesMap.has(r.user_id)) tenantToClient.set(r.tenant_id, r.user_id);
+    });
+
+    return rawMembers.map((m: any) => {
+      const memberAssignments = (assignments ?? []).filter((a) => a.manager_id === m.id);
+      const assignedClients: AssignedClient[] = memberAssignments.map((a) => {
+        const tenant = tenantsMap.get(a.tenant_id);
+        const clientUserId = tenantToClient.get(a.tenant_id);
+        const clientProfile = clientUserId ? clientProfilesMap.get(clientUserId) || null : null;
+        return {
+          tenant_id: a.tenant_id,
+          tenant_name: tenant?.name ?? "Desconhecido",
+          assignment_id: a.id,
+          assigned_at: a.assigned_at,
+          notes: a.notes,
+          client_profile: clientProfile,
+          instances: instancesMap.get(a.tenant_id) ?? [],
+        };
+      });
+
+      return {
+        id: m.id,
+        full_name: m.full_name,
+        email: m.email,
+        avatar_url: m.avatar_url,
+        role: m.role,
+        is_active: m.is_active,
+        created_at: m.created_at,
+        assignedClients,
+      };
+    });
+  };
+
+  // Refresh just the detail member's assignments without full reload
+  const refreshDetailMember = useCallback(async (memberId: string) => {
+    setDetailRefreshing(true);
+    try {
+      const { data: assignments } = await supabase
+        .from("tenant_assignments")
+        .select("id, manager_id, tenant_id, assigned_at, notes")
+        .eq("manager_id", memberId);
+
+      const tenantIds = (assignments ?? []).map((a) => a.tenant_id);
+
+      if (tenantIds.length === 0) {
+        setDetailMember((prev) => prev ? { ...prev, assignedClients: [] } : null);
+        setMembers((prev) => prev.map((m) => m.id === memberId ? { ...m, assignedClients: [] } : m));
+        return;
+      }
+
+      const [tenantsRes, rolesRes, instancesRes] = await Promise.all([
+        supabase.from("tenants").select("id, name, slug").in("id", tenantIds),
+        supabase.from("user_roles").select("user_id, tenant_id").in("tenant_id", tenantIds),
+        supabase.from("whatsapp_instances").select("id, instance_name, display_name, status, phone_number, tenant_id").in("tenant_id", tenantIds),
+      ]);
+
+      const tenantsMap = new Map((tenantsRes.data ?? []).map((t) => [t.id, t]));
+      const instancesMap = new Map<string, ClientInstance[]>();
+      (instancesRes.data ?? []).forEach((inst) => {
+        const list = instancesMap.get(inst.tenant_id) || [];
+        list.push(inst);
+        instancesMap.set(inst.tenant_id, list);
+      });
+
+      const clientUserIds = [...new Set((rolesRes.data ?? []).map((r) => r.user_id))];
+      const clientProfilesMap = new Map<string, any>();
+      if (clientUserIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, full_name, email, phone, is_active")
+          .in("id", clientUserIds)
+          .eq("role", "cliente");
+        (profiles ?? []).forEach((p) => clientProfilesMap.set(p.id, p));
+      }
+
+      const tenantToClient = new Map<string, string>();
+      (rolesRes.data ?? []).forEach((r) => {
+        if (clientProfilesMap.has(r.user_id)) tenantToClient.set(r.tenant_id, r.user_id);
+      });
+
+      const assignedClients: AssignedClient[] = (assignments ?? []).map((a) => {
+        const tenant = tenantsMap.get(a.tenant_id);
+        const clientUserId = tenantToClient.get(a.tenant_id);
+        const clientProfile = clientUserId ? clientProfilesMap.get(clientUserId) || null : null;
+        return {
+          tenant_id: a.tenant_id,
+          tenant_name: tenant?.name ?? "Desconhecido",
+          assignment_id: a.id,
+          assigned_at: a.assigned_at,
+          notes: a.notes,
+          client_profile: clientProfile,
+          instances: instancesMap.get(a.tenant_id) ?? [],
+        };
+      });
+
+      setDetailMember((prev) => prev ? { ...prev, assignedClients } : null);
+      setMembers((prev) => prev.map((m) => m.id === memberId ? { ...m, assignedClients } : m));
+    } catch (e) {
+      console.error("Erro ao atualizar detalhe:", e);
+    } finally {
+      setDetailRefreshing(false);
+    }
+  }, []);
 
   const loadTenants = useCallback(async () => {
     const { data } = await supabase.from("tenants").select("id, name, slug").order("name");
@@ -215,15 +273,15 @@ const Team = () => {
 
   useEffect(() => { loadTenants(); }, [loadTenants]);
 
-  const handleAssign = async () => {
-    if (!selectedManagerId || !selectedTenantId) return;
-    setAssigning(true);
+  const handleDetailAssign = async () => {
+    if (!detailMember || !detailAssignTenantId) return;
+    setDetailAssigning(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from("tenant_assignments").insert({
-        manager_id: selectedManagerId,
-        tenant_id: selectedTenantId,
-        notes: assignmentNotes || null,
+        manager_id: detailMember.id,
+        tenant_id: detailAssignTenantId,
+        notes: detailAssignNotes || null,
         assigned_by: user?.id,
       });
       if (error) {
@@ -233,25 +291,23 @@ const Team = () => {
         }
         throw error;
       }
-      toast.success("Cliente atribuído com sucesso");
-      setAssignDialogOpen(false);
-      setSelectedManagerId("");
-      setSelectedTenantId("");
-      setAssignmentNotes("");
-      fetchTeam();
+      toast.success("Cliente vinculado com sucesso");
+      setDetailAssignTenantId("");
+      setDetailAssignNotes("");
+      await refreshDetailMember(detailMember.id);
     } catch (e: any) {
-      toast.error("Erro ao atribuir: " + (e.message || ""));
+      toast.error("Erro ao vincular: " + (e.message || ""));
     } finally {
-      setAssigning(false);
+      setDetailAssigning(false);
     }
   };
 
-  const handleRemoveAssignment = async (assignmentId: string, tenantName: string) => {
+  const handleRemoveAssignment = async (assignmentId: string, tenantName: string, memberId: string) => {
     if (!confirm(`Remover atribuição de "${tenantName}"?`)) return;
     try {
       await supabase.from("tenant_assignments").delete().eq("id", assignmentId);
       toast.success("Atribuição removida");
-      fetchTeam();
+      await refreshDetailMember(memberId);
     } catch (e: any) {
       toast.error("Erro ao remover: " + (e.message || ""));
     }
@@ -259,8 +315,6 @@ const Team = () => {
 
   const getInitials = (name: string) =>
     name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
-
-  const managerOptions = members.filter((m) => ["gestor", "sucesso_cliente", "gerente"].includes(m.role));
 
   const renderMembers = (filterRole?: string) => {
     const filtered = filterRole ? members.filter((m) => m.role === filterRole) : members;
@@ -292,10 +346,13 @@ const Team = () => {
           <Card
             key={member.id}
             className="cursor-pointer hover:border-primary/40 transition-colors"
-            onClick={() => setDetailMember(member)}
+            onClick={() => {
+              setDetailMember(member);
+              setDetailAssignTenantId("");
+              setDetailAssignNotes("");
+            }}
           >
             <CardContent className="p-5 space-y-3">
-              {/* Header */}
               <div className="flex items-center gap-3">
                 <Avatar className="h-10 w-10">
                   <AvatarImage src={member.avatar_url ?? undefined} />
@@ -307,7 +364,6 @@ const Team = () => {
                 </div>
               </div>
 
-              {/* Role + client count */}
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="outline" className="text-[10px]">
                   {ROLE_LABELS[member.role] ?? member.role}
@@ -318,7 +374,6 @@ const Team = () => {
                 </Badge>
               </div>
 
-              {/* Preview of assigned clients (max 3) */}
               {member.assignedClients.length > 0 && (
                 <div className="space-y-1.5 pt-1">
                   {member.assignedClients.slice(0, 3).map((ac) => (
@@ -344,6 +399,11 @@ const Team = () => {
     );
   };
 
+  // Tenants not yet assigned to the detail member
+  const availableTenantsForDetail = detailMember
+    ? allTenants.filter((t) => !detailMember.assignedClients.some((ac) => ac.tenant_id === t.id))
+    : [];
+
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -352,13 +412,7 @@ const Team = () => {
             <h1 className="text-2xl font-semibold tracking-tight">Equipe</h1>
             <p className="text-sm text-muted-foreground">Gestores e Sucesso do Cliente</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setAssignDialogOpen(true)}>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Atribuir Cliente
-            </Button>
-            <InviteDialog />
-          </div>
+          <InviteDialog />
         </div>
 
         <div className="relative max-w-sm">
@@ -408,10 +462,17 @@ const Team = () => {
 
               <Separator />
 
+              {/* Assigned clients list */}
               <div>
-                <h4 className="text-sm font-semibold mb-3">Clientes Atribuídos ({detailMember.assignedClients.length})</h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold">
+                    Clientes Vinculados ({detailMember.assignedClients.length})
+                  </h4>
+                  {detailRefreshing && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                </div>
+
                 {detailMember.assignedClients.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">Nenhum cliente atribuído</p>
+                  <p className="text-xs text-muted-foreground italic">Nenhum cliente vinculado ainda</p>
                 ) : (
                   <div className="space-y-3">
                     {detailMember.assignedClients.map((ac) => (
@@ -436,13 +497,16 @@ const Team = () => {
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-destructive shrink-0"
-                            onClick={() => handleRemoveAssignment(ac.assignment_id, ac.client_profile?.full_name ?? ac.tenant_name)}
+                            onClick={() => handleRemoveAssignment(
+                              ac.assignment_id,
+                              ac.client_profile?.full_name ?? ac.tenant_name,
+                              detailMember.id
+                            )}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
 
-                        {/* Instances */}
                         {ac.instances.length > 0 && (
                           <div className="space-y-1">
                             {ac.instances.map((inst) => (
@@ -463,7 +527,7 @@ const Team = () => {
 
                         <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                           <CalendarDays className="h-3 w-3" />
-                          <span>Atribuído em {format(new Date(ac.assigned_at), "dd MMM yyyy", { locale: ptBR })}</span>
+                          <span>Vinculado em {format(new Date(ac.assigned_at), "dd MMM yyyy", { locale: ptBR })}</span>
                         </div>
                         {ac.notes && <p className="text-[11px] text-muted-foreground/80 italic">{ac.notes}</p>}
                       </div>
@@ -471,62 +535,66 @@ const Team = () => {
                   </div>
                 )}
               </div>
+
+              {/* Vincular novo cliente */}
+              <Separator />
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold flex items-center gap-1.5">
+                  <LinkIcon className="h-3.5 w-3.5" />
+                  Vincular Cliente
+                </h4>
+
+                {availableTenantsForDetail.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">
+                    {allTenants.length === 0
+                      ? "Nenhum cliente cadastrado no sistema"
+                      : "Todos os clientes já estão vinculados a este membro"}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Cliente</Label>
+                      <Select value={detailAssignTenantId} onValueChange={setDetailAssignTenantId}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="Selecione um cliente..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableTenantsForDetail.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Observação <span className="text-muted-foreground">(opcional)</span></Label>
+                      <Textarea
+                        placeholder="Ex: Cliente prioritário..."
+                        value={detailAssignNotes}
+                        onChange={(e) => setDetailAssignNotes(e.target.value)}
+                        rows={2}
+                        className="text-sm resize-none"
+                      />
+                    </div>
+
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      onClick={handleDetailAssign}
+                      disabled={!detailAssignTenantId || detailAssigning}
+                    >
+                      {detailAssigning ? (
+                        <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> Vinculando...</>
+                      ) : (
+                        <><LinkIcon className="mr-2 h-3.5 w-3.5" /> Vincular</>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
             </>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Assignment Dialog */}
-      <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Atribuir Cliente</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Membro da Equipe</Label>
-              <Select value={selectedManagerId} onValueChange={setSelectedManagerId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um membro..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {managerOptions.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.full_name} ({ROLE_LABELS[m.role] ?? m.role})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Cliente (Tenant)</Label>
-              <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um cliente..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {allTenants.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Observações (opcional)</Label>
-              <Textarea
-                placeholder="Ex: Cliente prioritário..."
-                value={assignmentNotes}
-                onChange={(e) => setAssignmentNotes(e.target.value)}
-                rows={2}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleAssign} disabled={!selectedManagerId || !selectedTenantId || assigning}>
-              {assigning ? "Atribuindo..." : "Atribuir"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AppLayout>
