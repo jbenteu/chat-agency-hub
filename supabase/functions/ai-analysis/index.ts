@@ -130,6 +130,12 @@ Deno.serve(async (req) => {
       ]);
       if (profileRes.data?.role) userRole = profileRes.data.role;
       if (roleRes.data?.tenant_id) tenantId = roleRes.data.tenant_id;
+
+      // Fallback: clients may not have a user_roles entry — use the shared RPC
+      if (!tenantId) {
+        const { data: rpcTenantId } = await supabaseAdmin.rpc("get_user_tenant_id", { _user_id: userId });
+        if (rpcTenantId) tenantId = rpcTenantId as string;
+      }
     }
   }
 
@@ -160,6 +166,15 @@ Deno.serve(async (req) => {
     const tid = (body.tenant_id as string) || tenantId;
     if (!tid) return jsonResponse({ error: "tenant_id required" }, 400);
 
+    // Mark stuck processing runs (>10 min) as failed so they don't block forever
+    const stuckCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    await supabaseAdmin
+      .from("ai_analysis_runs")
+      .update({ status: "failed", error_message: "Timeout — análise demorou mais de 10 minutos" })
+      .eq("tenant_id", tid)
+      .eq("status", "processing")
+      .lt("created_at", stuckCutoff);
+
     const { data: run } = await supabaseAdmin
       .from("ai_analysis_runs")
       .select("*")
@@ -170,7 +185,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!run) {
-      // Check if there's a processing run
+      // Check if there's an active processing run
       const { data: processingRun } = await supabaseAdmin
         .from("ai_analysis_runs")
         .select("id, status, created_at, tenant_id")
@@ -376,172 +391,25 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Falha ao criar run de análise", detail: runError?.message }, 500);
     }
 
-    // Fetch already-analyzed message IDs to deduplicate
-    const { data: analyzedLog } = await supabaseAdmin
-      .from("ai_analysis_message_log")
-      .select("message_id")
-      .eq("tenant_id", tid)
-      .limit(10000);
-    const analyzedIds = new Set((analyzedLog || []).map((r: { message_id: string }) => r.message_id));
+    // Fire background processing — return immediately so the client can poll
+    const backgroundWork = processAnalysisInBackground(
+      supabaseAdmin,
+      resolvedApiKey,
+      run.id as string,
+      tid,
+      periodStart,
+      periodEnd,
+    );
 
-    // Fetch new messages in the analysis period
-    const { data: allMessages } = await supabaseAdmin
-      .from("whatsapp_messages")
-      .select("id, conversation_id, content, message_type, from_me, created_at, contact_name")
-      .eq("tenant_id", tid)
-      .gte("created_at", periodStart)
-      .lt("created_at", periodEnd)
-      .order("created_at", { ascending: true })
-      .limit(2000);
-
-    // Filter out messages already analyzed
-    const messages = (allMessages || []).filter((m) => !analyzedIds.has(m.id));
-
-    if (!messages || messages.length === 0) {
-      await supabaseAdmin
-        .from("ai_analysis_runs")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-          conversations_analyzed: 0,
-          messages_analyzed: 0,
-          summary: { score_overall: null, total_conversations: 0, total_messages: 0 },
-        })
-        .eq("id", run.id);
-      return jsonResponse({ run_id: run.id, message: "Nenhuma mensagem nova para analisar" });
+    // EdgeRuntime.waitUntil keeps the function alive after the response is sent
+    try {
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).EdgeRuntime?.waitUntil(backgroundWork);
+    } catch {
+      backgroundWork.catch(console.error);
     }
 
-    // Group messages by conversation
-    const convMap: Record<string, typeof messages> = {};
-    for (const msg of messages) {
-      if (!convMap[msg.conversation_id]) convMap[msg.conversation_id] = [];
-      convMap[msg.conversation_id].push(msg);
-    }
-
-    // Fetch conversation details
-    const convIds = Object.keys(convMap);
-    const { data: conversations } = await supabaseAdmin
-      .from("whatsapp_conversations")
-      .select("id, contact_name, contact_phone, push_name")
-      .eq("tenant_id", tid)
-      .in("id", convIds);
-
-    const convDetails: Record<string, { contact_name: string | null; contact_phone: string | null }> = {};
-    for (const c of (conversations || [])) {
-      convDetails[c.id] = {
-        contact_name: c.push_name || c.contact_name,
-        contact_phone: c.contact_phone,
-      };
-    }
-
-    // Process in batches of 5 conversations
-    const convEntries = Object.entries(convMap);
-    const BATCH_SIZE = 5;
-    const allConvResults: Array<Record<string, unknown>> = [];
-    const allMessageIds: string[] = [];
-
-    for (let i = 0; i < convEntries.length; i += BATCH_SIZE) {
-      const batch = convEntries.slice(i, i + BATCH_SIZE);
-      const batchResult = await analyzeConversationBatch(batch, convDetails, resolvedApiKey, tid);
-      allConvResults.push(...batchResult.conversations);
-      allMessageIds.push(...batchResult.messageIds);
-    }
-
-    // Save conversation analyses
-    if (allConvResults.length > 0) {
-      const convRows = allConvResults.map((c: any) => ({
-        run_id: run.id,
-        tenant_id: tid,
-        conversation_id: c.conversation_id,
-        contact_name: c.contact_name,
-        contact_phone: c.contact_phone,
-        messages_count: c.messages_count,
-        score_response_time: c.score_response_time,
-        score_empathy: c.score_empathy,
-        score_product_knowledge: c.score_product_knowledge,
-        score_objection_handling: c.score_objection_handling,
-        score_closing_technique: c.score_closing_technique,
-        score_follow_up: c.score_follow_up,
-        score_overall: c.score_overall,
-        details: c.details || {},
-        improvement_points: c.improvement_points || [],
-        positive_points: c.positive_points || [],
-      }));
-      const convInsert = await supabaseAdmin.from("ai_analysis_conversations").insert(convRows);
-      if (convInsert.error) console.warn("ai_analysis_conversations insert failed (migration pending?):", convInsert.error.message);
-    }
-
-    // Consolidate improvements across all conversations
-    const improvements = consolidateImprovements(allConvResults, run.id, tid);
-    if (improvements.length > 0) {
-      const impInsert = await supabaseAdmin.from("ai_analysis_improvements").insert(improvements);
-      if (impInsert.error) console.warn("ai_analysis_improvements insert failed (migration pending?):", impInsert.error.message);
-    }
-
-    // Log analyzed messages
-    if (allMessageIds.length > 0) {
-      const messageLogRows = allMessageIds.map((msgId) => ({
-        tenant_id: tid,
-        run_id: run.id,
-        message_id: msgId,
-      }));
-      // Insert in batches to avoid conflicts (silently ignore if table doesn't exist yet)
-      for (let i = 0; i < messageLogRows.length; i += 500) {
-        await supabaseAdmin
-          .from("ai_analysis_message_log")
-          .upsert(messageLogRows.slice(i, i + 500), { onConflict: "tenant_id,message_id", ignoreDuplicates: true })
-          .then(({ error }) => { if (error) console.warn("message_log upsert:", error.message); });
-      }
-    }
-
-    // Calculate summary
-    const scores = allConvResults.map((c: any) => c.score_overall).filter((s) => s != null) as number[];
-    const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
-
-    const summary = {
-      score_overall: avgScore ? Math.round(avgScore * 10) / 10 : null,
-      score_response_time: avgField(allConvResults, "score_response_time"),
-      score_empathy: avgField(allConvResults, "score_empathy"),
-      score_product_knowledge: avgField(allConvResults, "score_product_knowledge"),
-      score_objection_handling: avgField(allConvResults, "score_objection_handling"),
-      score_closing_technique: avgField(allConvResults, "score_closing_technique"),
-      score_follow_up: avgField(allConvResults, "score_follow_up"),
-      total_conversations: allConvResults.length,
-      total_messages: allMessageIds.length,
-    };
-
-    // Try to update with new columns, fallback to legacy columns
-    const updateResult = await supabaseAdmin
-      .from("ai_analysis_runs")
-      .update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-        conversations_analyzed: allConvResults.length,
-        messages_analyzed: allMessageIds.length,
-        summary,
-      })
-      .eq("id", run.id);
-
-    if (updateResult.error) {
-      // Legacy schema fallback
-      await supabaseAdmin
-        .from("ai_analysis_runs")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-          conversations_analyzed: allConvResults.length,
-          conversations_total: allConvResults.length,
-        })
-        .eq("id", run.id);
-    }
-
-    // Update schedule
-    await supabaseAdmin
-      .from("ai_analysis_schedule")
-      .update({ last_run_at: new Date().toISOString() })
-      .eq("tenant_id", tid);
-
-    return jsonResponse({ run_id: run.id, status: "completed", summary });
+    return jsonResponse({ run_id: run.id, status: "processing" });
   }
 
   // ─── chat_consultant ──────────────────────────────────────────────────────────
@@ -693,6 +561,166 @@ Se o usuário pedir scripts, crie scripts realistas para joalherias premium.`;
 
   return jsonResponse({ error: `Unknown action: ${action}` }, 400);
 });
+
+// ─── Background analysis processor ───────────────────────────────────────────
+
+// deno-lint-ignore no-explicit-any
+async function processAnalysisInBackground(supabaseAdmin: any, apiKey: string, runId: string, tid: string, periodStart: string, periodEnd: string) {
+  try {
+    // Fetch already-analyzed message IDs to deduplicate
+    const { data: analyzedLog } = await supabaseAdmin
+      .from("ai_analysis_message_log")
+      .select("message_id")
+      .eq("tenant_id", tid)
+      .limit(10000);
+    const analyzedIds = new Set((analyzedLog || []).map((r: { message_id: string }) => r.message_id));
+
+    // Fetch new messages in the analysis period
+    const { data: allMessages } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select("id, conversation_id, content, message_type, from_me, created_at, contact_name")
+      .eq("tenant_id", tid)
+      .gte("created_at", periodStart)
+      .lt("created_at", periodEnd)
+      .order("created_at", { ascending: true })
+      .limit(2000);
+
+    const messages = (allMessages || []).filter((m: { id: string }) => !analyzedIds.has(m.id));
+
+    if (!messages || messages.length === 0) {
+      await supabaseAdmin
+        .from("ai_analysis_runs")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          conversations_analyzed: 0,
+          messages_analyzed: 0,
+          summary: { score_overall: null, total_conversations: 0, total_messages: 0 },
+        })
+        .eq("id", runId);
+      return;
+    }
+
+    // Group messages by conversation
+    const convMap: Record<string, typeof messages> = {};
+    for (const msg of messages) {
+      if (!convMap[msg.conversation_id]) convMap[msg.conversation_id] = [];
+      convMap[msg.conversation_id].push(msg);
+    }
+
+    // Fetch conversation details
+    const convIds = Object.keys(convMap);
+    const { data: conversations } = await supabaseAdmin
+      .from("whatsapp_conversations")
+      .select("id, contact_name, contact_phone, push_name")
+      .eq("tenant_id", tid)
+      .in("id", convIds);
+
+    const convDetails: Record<string, { contact_name: string | null; contact_phone: string | null }> = {};
+    for (const c of (conversations || [])) {
+      convDetails[c.id] = {
+        contact_name: c.push_name || c.contact_name,
+        contact_phone: c.contact_phone,
+      };
+    }
+
+    // Process in batches of 5 conversations
+    const convEntries = Object.entries(convMap);
+    const BATCH_SIZE = 5;
+    const allConvResults: Array<Record<string, unknown>> = [];
+    const allMessageIds: string[] = [];
+
+    for (let i = 0; i < convEntries.length; i += BATCH_SIZE) {
+      const batch = convEntries.slice(i, i + BATCH_SIZE) as Array<[string, Array<Record<string, unknown>>]>;
+      const batchResult = await analyzeConversationBatch(batch, convDetails, apiKey, tid);
+      allConvResults.push(...batchResult.conversations);
+      allMessageIds.push(...batchResult.messageIds);
+    }
+
+    // Save conversation analyses
+    if (allConvResults.length > 0) {
+      // deno-lint-ignore no-explicit-any
+      const convRows = allConvResults.map((c: any) => ({
+        run_id: runId,
+        tenant_id: tid,
+        conversation_id: c.conversation_id,
+        contact_name: c.contact_name,
+        contact_phone: c.contact_phone,
+        messages_count: c.messages_count,
+        score_response_time: c.score_response_time,
+        score_empathy: c.score_empathy,
+        score_product_knowledge: c.score_product_knowledge,
+        score_objection_handling: c.score_objection_handling,
+        score_closing_technique: c.score_closing_technique,
+        score_follow_up: c.score_follow_up,
+        score_overall: c.score_overall,
+        details: c.details || {},
+        improvement_points: c.improvement_points || [],
+        positive_points: c.positive_points || [],
+      }));
+      const { error: convErr } = await supabaseAdmin.from("ai_analysis_conversations").insert(convRows);
+      if (convErr) console.warn("ai_analysis_conversations insert:", convErr.message);
+    }
+
+    // Consolidate improvements
+    const improvements = consolidateImprovements(allConvResults, runId, tid);
+    if (improvements.length > 0) {
+      const { error: impErr } = await supabaseAdmin.from("ai_analysis_improvements").insert(improvements);
+      if (impErr) console.warn("ai_analysis_improvements insert:", impErr.message);
+    }
+
+    // Log analyzed message IDs
+    if (allMessageIds.length > 0) {
+      const messageLogRows = allMessageIds.map((msgId) => ({ tenant_id: tid, run_id: runId, message_id: msgId }));
+      for (let i = 0; i < messageLogRows.length; i += 500) {
+        await supabaseAdmin
+          .from("ai_analysis_message_log")
+          .upsert(messageLogRows.slice(i, i + 500), { onConflict: "tenant_id,message_id", ignoreDuplicates: true })
+          .then(({ error }: { error: { message: string } | null }) => { if (error) console.warn("message_log upsert:", error.message); });
+      }
+    }
+
+    // Calculate and save summary
+    const scores = allConvResults.map((c) => c.score_overall as number).filter((s) => s != null);
+    const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+
+    const summary = {
+      score_overall: avgScore ? Math.round(avgScore * 10) / 10 : null,
+      score_response_time: avgField(allConvResults, "score_response_time"),
+      score_empathy: avgField(allConvResults, "score_empathy"),
+      score_product_knowledge: avgField(allConvResults, "score_product_knowledge"),
+      score_objection_handling: avgField(allConvResults, "score_objection_handling"),
+      score_closing_technique: avgField(allConvResults, "score_closing_technique"),
+      score_follow_up: avgField(allConvResults, "score_follow_up"),
+      total_conversations: allConvResults.length,
+      total_messages: allMessageIds.length,
+    };
+
+    await supabaseAdmin
+      .from("ai_analysis_runs")
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        conversations_analyzed: allConvResults.length,
+        messages_analyzed: allMessageIds.length,
+        summary,
+      })
+      .eq("id", runId);
+
+    await supabaseAdmin
+      .from("ai_analysis_schedule")
+      .update({ last_run_at: new Date().toISOString() })
+      .eq("tenant_id", tid);
+
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("processAnalysisInBackground failed:", msg);
+    await supabaseAdmin
+      .from("ai_analysis_runs")
+      .update({ status: "failed", error_message: msg })
+      .eq("id", runId);
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
