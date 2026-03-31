@@ -292,7 +292,18 @@ Deno.serve(async (req) => {
   if (action === "run_analysis") {
     const tid = (body.tenant_id as string) || tenantId;
     if (!tid) return jsonResponse({ error: "tenant_id required" }, 400);
-    if (!ANTHROPIC_API_KEY) return jsonResponse({ error: "ANTHROPIC_API_KEY não configurada" }, 500);
+
+    // Resolve API key: prefer env var, fall back to DB-stored key from admin panel
+    let resolvedApiKey = ANTHROPIC_API_KEY;
+    if (!resolvedApiKey) {
+      const { data: sysSettings } = await supabaseAdmin
+        .from("ai_system_settings")
+        .select("api_key")
+        .not("id", "is", null)
+        .maybeSingle();
+      if (sysSettings?.api_key) resolvedApiKey = sysSettings.api_key as string;
+    }
+    if (!resolvedApiKey) return jsonResponse({ error: "ANTHROPIC_API_KEY não configurada" }, 500);
 
     // Check if already processing
     const { data: existingProcessing } = await supabaseAdmin
@@ -433,7 +444,7 @@ Deno.serve(async (req) => {
 
     for (let i = 0; i < convEntries.length; i += BATCH_SIZE) {
       const batch = convEntries.slice(i, i + BATCH_SIZE);
-      const batchResult = await analyzeConversationBatch(batch, convDetails, ANTHROPIC_API_KEY, tid);
+      const batchResult = await analyzeConversationBatch(batch, convDetails, resolvedApiKey, tid);
       allConvResults.push(...batchResult.conversations);
       allMessageIds.push(...batchResult.messageIds);
     }
