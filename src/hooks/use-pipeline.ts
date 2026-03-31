@@ -36,6 +36,8 @@ export function usePipeline() {
 
   const query = useQuery({
     queryKey: ["pipeline_stages"],
+    staleTime: 300_000,
+    gcTime: 600_000,
     queryFn: async () => {
       const { data, error } = await (supabase as never as { from: (t: string) => { select: (s: string) => { order: (c: string, o: object) => Promise<{ data: PipelineStage[] | null; error: unknown }> } } })
         .from("pipeline_stages")
